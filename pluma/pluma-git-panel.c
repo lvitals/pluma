@@ -11,9 +11,42 @@
 #include <gtksourceview/gtksource.h>
 #include "pluma-pango.h"
 #include "pluma-git-status-parser.h"
+#include "pluma-git-commit.h"
 
 enum { COL_LABEL, COL_PATH, COL_GROUP, COL_STATUS, COL_IS_GROUP, N_COLS };
 enum { GROUP_OUTGOING, GROUP_CONFLICT, GROUP_STAGED, GROUP_CHANGED, GROUP_UNTRACKED, N_GROUPS };
+
+typedef struct _PlumaCommitTextView PlumaCommitTextView;
+typedef struct _PlumaCommitTextViewClass PlumaCommitTextViewClass;
+
+struct _PlumaCommitTextView { GtkTextView parent_instance; };
+struct _PlumaCommitTextViewClass { GtkTextViewClass parent_class; };
+
+GType pluma_commit_text_view_get_type (void);
+G_DEFINE_TYPE (PlumaCommitTextView, pluma_commit_text_view, GTK_TYPE_TEXT_VIEW)
+
+static void
+pluma_commit_text_view_get_preferred_width (GtkWidget *widget,
+	                                        gint      *minimum_width,
+	                                        gint      *natural_width)
+{
+	/* The panel controls width; buffer contents must only affect wrapped height. */
+	if (minimum_width != NULL)
+		*minimum_width = 1;
+	if (natural_width != NULL)
+		*natural_width = 1;
+}
+
+static void
+pluma_commit_text_view_class_init (PlumaCommitTextViewClass *klass)
+{
+	GTK_WIDGET_CLASS (klass)->get_preferred_width = pluma_commit_text_view_get_preferred_width;
+}
+
+static void
+pluma_commit_text_view_init (PlumaCommitTextView *view)
+{
+}
 
 typedef struct
 {
@@ -27,6 +60,7 @@ struct _PlumaGitPanel
 	GtkBox parent_instance;
 	PlumaWindow *window;
 	GtkWidget *branch_label, *summary_label, *tree, *message_entry, *commit_button;
+	GtkWidget *commit_count_label, *clear_message_button;
 	GtkWidget *open_button, *stage_button, *discard_button;
 	GtkWidget *filter_entry;
 	gchar *filter_query;
@@ -40,6 +74,7 @@ struct _PlumaGitPanel
 	gchar *repo;
 	GCancellable *cancellable;
 	GFileMonitor *git_monitor;
+	GSettings *settings;
 	guint refresh_source;
 	guint poll_source;
 	guint statusbar_context;
@@ -1217,7 +1252,7 @@ static void commit_clicked(GtkButton*b,gpointer data)
 	GtkTextIter start, end;
 	gtk_text_buffer_get_bounds (buf, &start, &end);
 	gchar *message = gtk_text_buffer_get_text (buf, &start, &end, FALSE);
-	if (message && *message)
+	if (pluma_git_commit_message_is_valid (message))
 	{
 		const gchar*a[]={"git","commit","-m",message,NULL};
 		run_git(p,a,FALSE,"commit");
@@ -1344,6 +1379,7 @@ pluma_git_panel_dispose(GObject*object)
 	g_clear_pointer (&p->outgoing_commits, g_free);
 	g_clear_pointer (&p->current_branch, g_free);
 	g_clear_pointer (&p->upstream, g_free);
+	g_clear_object (&p->settings);
 	G_OBJECT_CLASS(pluma_git_panel_parent_class)->dispose(object);
 }
 static void pluma_git_panel_class_init(PlumaGitPanelClass*k){G_OBJECT_CLASS(k)->dispose=pluma_git_panel_dispose;}
@@ -1351,12 +1387,24 @@ static void pluma_git_panel_class_init(PlumaGitPanelClass*k){G_OBJECT_CLASS(k)->
 static void
 on_commit_message_buffer_changed (GtkTextBuffer *buffer, gpointer data)
 {
-	GtkWidget *clear_btn = data;
+	PlumaGitPanel *panel = data;
 	GtkTextIter start, end;
 	gtk_text_buffer_get_bounds (buffer, &start, &end);
 	gchar *text = gtk_text_buffer_get_text (buffer, &start, &end, FALSE);
-	gboolean has_text = (text && *text != '\0');
-	gtk_widget_set_visible (clear_btn, has_text);
+	gboolean valid = pluma_git_commit_message_is_valid (text);
+	guint length = pluma_git_commit_message_length (text);
+	guint limit = g_settings_get_uint (panel->settings, "git-commit-message-limit");
+	gchar *counter = g_strdup_printf ("%u/%u", length, limit);
+	GtkStyleContext *context = gtk_widget_get_style_context (panel->commit_count_label);
+
+	gtk_widget_set_visible (panel->clear_message_button, text != NULL && *text != '\0');
+	gtk_widget_set_sensitive (panel->commit_button, valid);
+	gtk_label_set_text (GTK_LABEL (panel->commit_count_label), counter);
+	if (length > limit)
+		gtk_style_context_add_class (context, GTK_STYLE_CLASS_ERROR);
+	else
+		gtk_style_context_remove_class (context, GTK_STYLE_CLASS_ERROR);
+	g_free (counter);
 	g_free (text);
 }
 
@@ -1394,6 +1442,7 @@ pluma_git_panel_init(PlumaGitPanel*p)
 {
 	GtkWidget*row,*button,*scroll,*more,*menu;GtkCellRenderer*r;GtkTreeViewColumn*c;
 	gtk_orientable_set_orientation(GTK_ORIENTABLE(p),GTK_ORIENTATION_VERTICAL);gtk_box_set_spacing(GTK_BOX(p),4);gtk_container_set_border_width(GTK_CONTAINER(p),6);p->cancellable=g_cancellable_new();p->poll_source=g_timeout_add_seconds(2,poll_status,p);
+	p->settings = g_settings_new (PLUMA_SCHEMA_ID);
 	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,3);p->branch_label=gtk_label_new("");gtk_label_set_xalign(GTK_LABEL(p->branch_label),0);button=gtk_button_new_from_icon_name("view-refresh",GTK_ICON_SIZE_MENU);gtk_widget_set_tooltip_text(button,_("Refresh Git status"));g_signal_connect(button,"clicked",G_CALLBACK(refresh_clicked),p);gtk_box_pack_start(GTK_BOX(row),p->branch_label,TRUE,TRUE,0);gtk_box_pack_end(GTK_BOX(row),button,FALSE,FALSE,0);gtk_box_pack_start(GTK_BOX(p),row,FALSE,FALSE,0);
 	p->filter_entry = gtk_search_entry_new ();
 	gtk_entry_set_placeholder_text (GTK_ENTRY (p->filter_entry), _("Filter changes"));
@@ -1450,22 +1499,33 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	gtk_box_pack_start(GTK_BOX(top_box),row,FALSE,FALSE,0);
 
 	GtkWidget *commit_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+	gtk_widget_set_size_request (commit_box, 1, -1);
+	gtk_widget_set_hexpand (commit_box, TRUE);
 	gtk_paned_pack2 (GTK_PANED (main_paned), commit_box, FALSE, FALSE);
 
 	GtkWidget *overlay = gtk_overlay_new ();
+	gtk_widget_set_size_request (overlay, 1, -1);
+	gtk_widget_set_hexpand (overlay, TRUE);
 	gtk_widget_set_margin_top (overlay, 6);
 	gtk_widget_set_margin_bottom (overlay, 6);
 	GtkWidget *sw = gtk_scrolled_window_new (NULL, NULL);
 	gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (sw), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+	gtk_scrolled_window_set_propagate_natural_width (GTK_SCROLLED_WINDOW (sw), FALSE);
+	gtk_scrolled_window_set_min_content_width (GTK_SCROLLED_WINDOW (sw), 1);
+	gtk_scrolled_window_set_max_content_width (GTK_SCROLLED_WINDOW (sw), 1);
 	gtk_scrolled_window_set_shadow_type (GTK_SCROLLED_WINDOW (sw), GTK_SHADOW_IN);
-	gtk_widget_set_size_request (sw, -1, 24);
+	gtk_widget_set_size_request (sw, 1, 24);
 
-	GtkWidget *message_view = gtk_text_view_new ();
-	gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW (message_view), GTK_WRAP_WORD_CHAR);
+	GtkWidget *message_view = g_object_new (pluma_commit_text_view_get_type (), NULL);
+	gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW (message_view), GTK_WRAP_CHAR);
+	/* Long unbroken messages must wrap instead of increasing the panel's minimum width. */
+	gtk_widget_set_size_request (message_view, 1, -1);
+	gtk_widget_set_hexpand (message_view, TRUE);
 	gtk_text_view_set_top_margin (GTK_TEXT_VIEW (message_view), 0);
 	gtk_text_view_set_bottom_margin (GTK_TEXT_VIEW (message_view), 0);
 	gtk_text_view_set_left_margin (GTK_TEXT_VIEW (message_view), 4);
-	gtk_text_view_set_right_margin (GTK_TEXT_VIEW (message_view), 4);
+	/* Keep text clear of the overlayed clear button. */
+	gtk_text_view_set_right_margin (GTK_TEXT_VIEW (message_view), 34);
 	g_signal_connect_after (message_view, "draw", G_CALLBACK (on_message_view_draw), NULL);
 	gtk_container_add (GTK_CONTAINER (sw), message_view);
 	gtk_container_add (GTK_CONTAINER (overlay), sw);
@@ -1481,17 +1541,28 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	gtk_widget_set_visible (clear_btn, FALSE);
 
 	GtkTextBuffer *buf = gtk_text_view_get_buffer (GTK_TEXT_VIEW (message_view));
-	g_signal_connect (buf, "changed", G_CALLBACK (on_commit_message_buffer_changed), clear_btn);
 	g_signal_connect (clear_btn, "clicked", G_CALLBACK (on_clear_btn_clicked), buf);
 
 	p->message_entry = message_view;
+	p->clear_message_button = clear_btn;
 
 	p->commit_button = gtk_button_new_with_label (_("Commit"));
 	gtk_widget_set_tooltip_text (p->commit_button, _("Commit staged changes"));
 	g_signal_connect (p->commit_button, "clicked", G_CALLBACK (commit_clicked), p);
+	p->commit_count_label = gtk_label_new (NULL);
+	gtk_widget_set_tooltip_text (p->commit_count_label, _("Commit message character count and recommended limit"));
+	g_signal_connect (buf, "changed", G_CALLBACK (on_commit_message_buffer_changed), p);
+	on_commit_message_buffer_changed (buf, p);
 
 	gtk_box_pack_start (GTK_BOX (commit_box), overlay, TRUE, TRUE, 0);
-	gtk_box_pack_start (GTK_BOX (commit_box), p->commit_button, FALSE, FALSE, 0);
+	row = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 4);
+	gtk_box_set_homogeneous (GTK_BOX (row), TRUE);
+	GtkWidget *commit_spacer = gtk_label_new (NULL);
+	gtk_widget_set_halign (p->commit_count_label, GTK_ALIGN_END);
+	gtk_box_pack_start (GTK_BOX (row), commit_spacer, TRUE, TRUE, 0);
+	gtk_box_pack_start (GTK_BOX (row), p->commit_button, TRUE, TRUE, 0);
+	gtk_box_pack_start (GTK_BOX (row), p->commit_count_label, TRUE, TRUE, 0);
+	gtk_box_pack_start (GTK_BOX (commit_box), row, FALSE, FALSE, 0);
 
 	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,4);
 	gtk_box_set_homogeneous(GTK_BOX(row),TRUE);

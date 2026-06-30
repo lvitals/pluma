@@ -266,6 +266,12 @@
       <default>false</default>
       <summary>Include ignored files in project search</summary>
     </key>
+    <key name="git-commit-message-limit" type="u">
+      <range min="1" max="1000"/>
+      <default>72</default>
+      <summary>Commit message character guideline</summary>
+      <description>Character count shown as the recommended limit in the Git commit editor.</description>
+    </key>
     <key name="active-plugins" type="as">
       <default>[ 'docinfo', 'modelines', 'filebrowser', 'spell', 'time' ]</default>
       <summary>Active plugins</summary>

@@ -121,6 +121,7 @@ endif
 if enable_git
   libpluma_c_files += [
     'pluma-git-panel.c',
+    'pluma-git-commit.c',
     'pluma-git-status-parser.c',
   ]
 endif
