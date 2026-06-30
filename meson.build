@@ -62,6 +62,11 @@ if not ctags_program.found()
   warning('ctags not found: the Source Code Browser plugin will be unavailable. Install a package that provides the ctags executable.')
 endif
 
+ripgrep_program = find_program('rg', required: false)
+if not ripgrep_program.found()
+  warning('ripgrep not found: project search will use the slower grep fallback. Install a package that provides the rg executable for best performance.')
+endif
+
 optional_enchant_backends = {
   'aspell': 'aspell',
   'hspell': 'hspell',

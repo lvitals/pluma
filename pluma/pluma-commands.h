@@ -134,6 +134,8 @@ void		_pluma_cmd_view_leave_fullscreen_mode	(GtkAction   *action,
 
 void		_pluma_cmd_search_find			(GtkAction   *action,
 							 PlumaWindow *window);
+void		_pluma_cmd_search_find_in_files		(GtkAction   *action,
+							 PlumaWindow *window);
 void		_pluma_cmd_search_find_next		(GtkAction   *action,
 							 PlumaWindow *window);
 void		_pluma_cmd_search_find_prev		(GtkAction   *action,

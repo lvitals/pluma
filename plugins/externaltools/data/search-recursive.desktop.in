@@ -1,9 +1,8 @@
 [Pluma Tool]
 Name=Search
-Shortcut=<Primary><Shift>f
+Shortcut=
 Languages=
 Applicability=local
 Input=document
 Output=output-panel
 Save-files=nothing
-

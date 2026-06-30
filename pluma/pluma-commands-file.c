@@ -398,6 +398,7 @@ _pluma_cmd_load_files_from_prompt (PlumaWindow         *window,
 		if (g_file_query_file_type (file, G_FILE_QUERY_INFO_NONE, NULL) == G_FILE_TYPE_DIRECTORY)
 		{
 			gchar *uri = g_file_get_uri (file);
+			_pluma_window_set_default_location (window, file);
 			pluma_message_bus_send (pluma_window_get_message_bus (window),
 			                        "/plugins/filebrowser", "set_root",
 			                        "uri", uri, NULL);

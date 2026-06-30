@@ -235,6 +235,37 @@
       <summary>History for "replace with" entries</summary>
       <description>List of entries in "replace with" textbox.</description>
     </key>
+    <key name="project-search-text" type="s">
+      <default>''</default>
+      <summary>Last project search</summary>
+      <description>Text used by the integrated project search panel.</description>
+    </key>
+    <key name="project-search-include" type="s">
+      <default>''</default>
+      <summary>Project search inclusion glob</summary>
+      <description>File patterns included by project search.</description>
+    </key>
+    <key name="project-search-exclude" type="s">
+      <default>'build/**,.git/**'</default>
+      <summary>Project search exclusion glob</summary>
+      <description>File patterns excluded by project search.</description>
+    </key>
+    <key name="project-search-match-case" type="b">
+      <default>false</default>
+      <summary>Match case in project search</summary>
+    </key>
+    <key name="project-search-whole-word" type="b">
+      <default>false</default>
+      <summary>Match whole words in project search</summary>
+    </key>
+    <key name="project-search-regex" type="b">
+      <default>false</default>
+      <summary>Use regular expressions in project search</summary>
+    </key>
+    <key name="project-search-include-ignored" type="b">
+      <default>false</default>
+      <summary>Include ignored files in project search</summary>
+    </key>
     <key name="active-plugins" type="as">
       <default>[ 'docinfo', 'modelines', 'filebrowser', 'spell', 'time' ]</default>
       <summary>Active plugins</summary>

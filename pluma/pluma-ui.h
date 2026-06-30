@@ -120,6 +120,8 @@ static const GtkActionEntry pluma_menu_entries[] =
 	/* Search menu */
 	{ "SearchFind", "edit-find", N_("_Find..."), "<control>F",
 	  N_("Search for text"), G_CALLBACK (_pluma_cmd_search_find) },
+	{ "SearchFindInFiles", "edit-find", N_("Find in Fi_les"), "<shift><control>F",
+	  N_("Search for text in project files"), G_CALLBACK (_pluma_cmd_search_find_in_files) },
 	{ "SearchFindNext", NULL, N_("Find Ne_xt"), "<control>G",
 	  N_("Search forwards for the same text"), G_CALLBACK (_pluma_cmd_search_find_next) },
 	{ "SearchFindPrevious", NULL, N_("Find Pre_vious"), "<shift><control>G",

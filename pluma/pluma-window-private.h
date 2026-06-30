@@ -49,6 +49,7 @@ struct _PlumaWindowPrivate
 	GtkWidget      *notebook;
 
 	GtkWidget      *side_panel;
+	GtkWidget      *project_search_panel;
 	GtkWidget      *bottom_panel;
 	GtkWidget      *right_panel;
 

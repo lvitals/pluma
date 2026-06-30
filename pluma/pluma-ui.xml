@@ -99,6 +99,7 @@
 
     <menu name="SearchMenu" action="Search">
       <menuitem name="SearchFindMenu" action="SearchFind"/>
+      <menuitem name="SearchFindInFilesMenu" action="SearchFindInFiles"/>
       <menuitem name="SearchFindNextMenu" action="SearchFindNext"/>
       <menuitem name="SearchFindPreviousMenu" action="SearchFindPrevious"/>
       <menuitem name="SearchIncrementalSearchMenu" action="SearchIncrementalSearch"/>

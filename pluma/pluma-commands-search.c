@@ -45,11 +45,22 @@
 #include "pluma-statusbar.h"
 #include "pluma-window.h"
 #include "pluma-window-private.h"
+#include "pluma-project-search-panel.h"
 #include "pluma-utils.h"
 #include "dialogs/pluma-search-dialog.h"
 
 #define PLUMA_SEARCH_DIALOG_KEY		"pluma-search-dialog-key"
 #define PLUMA_LAST_SEARCH_DATA_KEY	"pluma-last-search-data-key"
+
+void
+_pluma_cmd_search_find_in_files (GtkAction *action, PlumaWindow *window)
+{
+	g_return_if_fail (PLUMA_IS_WINDOW (window));
+	gtk_widget_show (window->priv->side_panel);
+	pluma_panel_activate_item (PLUMA_PANEL (window->priv->side_panel),
+	                           window->priv->project_search_panel);
+	pluma_project_search_panel_focus (PLUMA_PROJECT_SEARCH_PANEL (window->priv->project_search_panel));
+}
 
 typedef struct _LastSearchData LastSearchData;
 struct _LastSearchData

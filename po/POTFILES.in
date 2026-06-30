@@ -30,6 +30,7 @@ pluma/pluma-plugins-engine.c
 pluma/pluma-print-job.c
 pluma/pluma-print-preferences.ui
 pluma/pluma-print-preview.c
+pluma/pluma-project-search-panel.c
 pluma/pluma-progress-message-area.c
 pluma/pluma-smart-charset-converter.c
 pluma/pluma-statusbar.c

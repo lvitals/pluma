@@ -47,6 +47,7 @@
 #include "pluma-ui.h"
 #include "pluma-window.h"
 #include "pluma-window-private.h"
+#include "pluma-project-search-panel.h"
 #include "pluma-app.h"
 #include "pluma-notebook.h"
 #include "pluma-statusbar.h"
@@ -3760,6 +3761,12 @@ create_side_panel (PlumaWindow *window)
                                     documents_panel,
                                     _("Documents"),
                                     "text-x-generic");
+
+    window->priv->project_search_panel = pluma_project_search_panel_new (window);
+    pluma_panel_add_item_with_icon (PLUMA_PANEL (window->priv->side_panel),
+                                    window->priv->project_search_panel,
+                                    _("Search"),
+                                    "edit-find");
 }
 
 static void
@@ -4759,7 +4766,10 @@ _pluma_window_set_default_location (PlumaWindow *window,
     g_return_if_fail (PLUMA_IS_WINDOW (window));
     g_return_if_fail (G_IS_FILE (location));
 
-    dir = g_file_get_parent (location);
+    if (g_file_query_file_type (location, G_FILE_QUERY_INFO_NONE, NULL) == G_FILE_TYPE_DIRECTORY)
+        dir = g_object_ref (location);
+    else
+        dir = g_file_get_parent (location);
     g_return_if_fail (dir != NULL);
 
     if (window->priv->default_location != NULL)
@@ -4988,4 +4998,3 @@ pluma_window_get_message_bus (PlumaWindow *window)
 
     return window->priv->message_bus;
 }
-
