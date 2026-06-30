@@ -83,9 +83,11 @@ git -C "$repo" show --format= --name-only HEAD | grep -Fx 'commit-all.txt'
 commit_count=$(git -C "$repo" rev-list --count HEAD)
 printf 'amended\n' >> "$repo/commit-all.txt"
 git -C "$repo" add -- commit-all.txt
-git -C "$repo" commit --amend -qm amended-commit
+amend_message=$(printf 'amended-commit\n\namended body')
+git -C "$repo" commit --amend -qm "$amend_message"
 test "$(git -C "$repo" rev-list --count HEAD)" -eq "$commit_count"
 test "$(git -C "$repo" log -1 --format=%s)" = amended-commit
+git -C "$repo" log -1 --format=%B | grep -Fx 'amended body'
 git -C "$repo" show HEAD:commit-all.txt | grep -Fx amended
 
 # A failed hook must prevent the commit and leave the staged contents recoverable.

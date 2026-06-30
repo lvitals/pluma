@@ -82,6 +82,7 @@ struct _PlumaGitPanel
 	gboolean status_running;
 	gboolean refresh_pending;
 	gboolean destroyed;
+	gboolean amend_mode;
 };
 
 G_DEFINE_TYPE (PlumaGitPanel, pluma_git_panel, GTK_TYPE_BOX)
@@ -560,10 +561,13 @@ call_done (GObject *source, GAsyncResult *result, gpointer data)
 				                              call->commit_after_success, NULL};
 				run_git (call->panel, commit_argv, FALSE, "commit");
 			}
-			else if (g_strcmp0 (call->title, "commit") == 0)
+			else if (g_strcmp0 (call->title, "commit") == 0 ||
+			         g_strcmp0 (call->title, "amend") == 0)
 			{
 				GtkTextBuffer *buf = gtk_text_view_get_buffer (GTK_TEXT_VIEW (call->panel->message_entry));
 				gtk_text_buffer_set_text (buf, "", -1);
+				call->panel->amend_mode = FALSE;
+				gtk_button_set_label (GTK_BUTTON (call->panel->commit_button), _("Commit"));
 			}
 			if (call->commit_after_success == NULL)
 				schedule_refresh(call->panel);
@@ -1287,8 +1291,20 @@ static void commit_clicked(GtkButton*b,gpointer data)
 	gchar *message = gtk_text_buffer_get_text (buf, &start, &end, FALSE);
 	if (pluma_git_commit_message_is_valid (message))
 	{
-		const gchar*a[]={"git","commit","-m",message,NULL};
-		run_git(p,a,FALSE,"commit");
+		if (p->amend_mode)
+		{
+			if (confirm_action (p, _("Amend the last commit?"),
+			                    _("The last commit will be replaced and its hash will change.")))
+			{
+				const gchar *a[]={"git","commit","--amend","-m",message,NULL};
+				run_git(p,a,FALSE,"amend");
+			}
+		}
+		else
+		{
+			const gchar*a[]={"git","commit","-m",message,NULL};
+			run_git(p,a,FALSE,"commit");
+		}
 	}
 	g_free (message);
 }
@@ -1314,21 +1330,23 @@ amend_commit_clicked (GtkMenuItem *item, gpointer data)
 {
 	PlumaGitPanel *panel = data;
 	GtkTextBuffer *buffer = gtk_text_view_get_buffer (GTK_TEXT_VIEW (panel->message_entry));
-	GtkTextIter start, end;
-	gchar *message;
+	const gchar *argv[] = {"git", "log", "-1", "--format=%B", NULL};
+	gchar *message = get_git_output (panel, argv);
 
-	gtk_text_buffer_get_bounds (buffer, &start, &end);
-	message = gtk_text_buffer_get_text (buffer, &start, &end, FALSE);
 	if (!pluma_git_commit_message_is_valid (message))
 	{
 		gtk_label_set_text (GTK_LABEL (panel->summary_label),
-		                    _("Enter a valid commit message first."));
+		                    _("There is no commit message available to amend."));
 	}
-	else if (confirm_action (panel, _("Amend the last commit?"),
-	                         _("The last commit will be replaced and its hash will change.")))
+	else
 	{
-		const gchar *argv[] = {"git", "commit", "--amend", "-m", message, NULL};
-		run_git (panel, argv, FALSE, "commit");
+		g_strchomp (message);
+		panel->amend_mode = TRUE;
+		gtk_text_buffer_set_text (buffer, message, -1);
+		gtk_button_set_label (GTK_BUTTON (panel->commit_button), _("Amend Commit"));
+		gtk_widget_grab_focus (panel->message_entry);
+		gtk_label_set_text (GTK_LABEL (panel->summary_label),
+		                    _("Edit the message, then select Amend Commit."));
 	}
 	g_free (message);
 }
