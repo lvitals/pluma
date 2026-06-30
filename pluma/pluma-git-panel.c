@@ -30,6 +30,8 @@ struct _PlumaGitPanel
 	GtkWidget *filter_entry;
 	gchar *filter_query;
 	gchar *last_status_output;
+	gchar *current_branch;
+	gchar *upstream;
 	GtkTreeStore *store;
 	GtkTreeIter groups[N_GROUPS];
 	gchar *repo;
@@ -177,6 +179,11 @@ parse_status (PlumaGitPanel *panel, const gchar *output)
 		}
 	}
 
+	g_free (panel->current_branch);
+	panel->current_branch = NULL;
+	g_free (panel->upstream);
+	panel->upstream = NULL;
+
 	gchar **lines = g_strsplit (output ? output : "", "\n", -1);
 	guint counts[N_GROUPS] = {0};
 	gchar *branch = NULL, *upstream = NULL; gint ahead = 0, behind = 0;
@@ -184,8 +191,22 @@ parse_status (PlumaGitPanel *panel, const gchar *output)
 	for (guint i = 0; lines[i]; i++)
 	{
 		const gchar *line = lines[i];
-		if (g_str_has_prefix (line, "# branch.head ")) { g_free (branch); branch = g_strdup (line + 14); continue; }
-		if (g_str_has_prefix (line, "# branch.upstream ")) { g_free (upstream); upstream = g_strdup (line + 18); continue; }
+		if (g_str_has_prefix (line, "# branch.head "))
+		{
+			g_free (branch);
+			branch = g_strdup (line + 14);
+			g_free (panel->current_branch);
+			panel->current_branch = g_strdup (branch);
+			continue;
+		}
+		if (g_str_has_prefix (line, "# branch.upstream "))
+		{
+			g_free (upstream);
+			upstream = g_strdup (line + 18);
+			g_free (panel->upstream);
+			panel->upstream = g_strdup (upstream);
+			continue;
+		}
 		if (g_str_has_prefix (line, "# branch.ab ")) { sscanf (line + 12, "+%d -%d", &ahead, &behind); continue; }
 		if (line[0] == '?' && line[1] == ' ')
 		{
@@ -891,7 +912,25 @@ static void tags_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const g
 static void remotes_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","remote","-v",NULL};run_git(p,a,TRUE,_("Git Remotes"));}
 static void fetch_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","fetch","--all","--prune",NULL};run_git(p,a,FALSE,NULL);}
 static void pull_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","pull",NULL};run_git(p,a,FALSE,NULL);}
-static void push_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","push",NULL};run_git(p,a,FALSE,NULL);}
+static void push_clicked(GtkButton*b,gpointer data)
+{
+	PlumaGitPanel*p=data;
+	if (p->upstream && *p->upstream)
+	{
+		const gchar*a[]={"git","push",NULL};
+		run_git(p,a,FALSE,NULL);
+	}
+	else if (p->current_branch && *p->current_branch)
+	{
+		const gchar*a[]={"git","push","-u","origin",p->current_branch,NULL};
+		run_git(p,a,FALSE,NULL);
+	}
+	else
+	{
+		const gchar*a[]={"git","push",NULL};
+		run_git(p,a,FALSE,NULL);
+	}
+}
 static void stash_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","stash","push","-u",NULL};run_git(p,a,FALSE,NULL);}
 static void stash_pop_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","stash","pop",NULL};run_git(p,a,FALSE,NULL);}
 static void stash_list_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","stash","list",NULL};run_git(p,a,TRUE,_("Git Stashes"));}
@@ -945,6 +984,8 @@ pluma_git_panel_dispose(GObject*object)
 	PlumaGitPanel*p=PLUMA_GIT_PANEL(object);p->destroyed=TRUE;if(p->cancellable)g_cancellable_cancel(p->cancellable);if(p->refresh_source){g_source_remove(p->refresh_source);p->refresh_source=0;}if(p->poll_source){g_source_remove(p->poll_source);p->poll_source=0;}g_clear_object(&p->git_monitor);g_clear_object(&p->cancellable);g_clear_pointer(&p->repo,g_free);
 	g_clear_pointer (&p->filter_query, g_free);
 	g_clear_pointer (&p->last_status_output, g_free);
+	g_clear_pointer (&p->current_branch, g_free);
+	g_clear_pointer (&p->upstream, g_free);
 	G_OBJECT_CLASS(pluma_git_panel_parent_class)->dispose(object);
 }
 static void pluma_git_panel_class_init(PlumaGitPanelClass*k){G_OBJECT_CLASS(k)->dispose=pluma_git_panel_dispose;}
@@ -988,17 +1029,30 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	gtk_box_pack_start(GTK_BOX(p),row,FALSE,FALSE,0);
 	g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(p->tree)),"changed",G_CALLBACK(selection_changed_cb),p);
 
-	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,2);
-#define TOOL(icon,tip,cb) button=gtk_button_new_from_icon_name(icon,GTK_ICON_SIZE_MENU);gtk_widget_set_tooltip_text(button,tip);g_signal_connect(button,"clicked",G_CALLBACK(cb),p);gtk_box_pack_start(GTK_BOX(row),button,FALSE,FALSE,0)
-	TOOL("document-open-recent",_("History"),history_clicked);TOOL("vcs-branch",_("Branches"),branches_clicked);TOOL("bookmark-new",_("Tags"),tags_clicked);TOOL("network-server",_("Remotes"),remotes_clicked);TOOL("system-search",_("Blame current file"),blame_clicked);
+	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,4);
+	gtk_box_set_homogeneous(GTK_BOX(row),TRUE);
+#define TOOL(icon,tip,cb) button=gtk_button_new_from_icon_name(icon,GTK_ICON_SIZE_MENU);gtk_widget_set_tooltip_text(button,tip);g_signal_connect(button,"clicked",G_CALLBACK(cb),p);gtk_box_pack_start(GTK_BOX(row),button,TRUE,TRUE,0)
+	TOOL("document-open-recent",_("History"),history_clicked);TOOL("vcs-branch",_("Branches"),branches_clicked);TOOL("bookmark-new",_("Tags"),tags_clicked);TOOL("network-server",_("Remotes"),remotes_clicked);TOOL("package-x-generic",_("Stashes"),stash_list_clicked);TOOL("system-search",_("Blame current file"),blame_clicked);
 #undef TOOL
 	gtk_box_pack_start(GTK_BOX(p),row,FALSE,FALSE,0);
-	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,2);
-#define ACTION(label,tip,cb) button=gtk_button_new_with_label(label);gtk_widget_set_tooltip_text(button,tip);g_signal_connect(button,"clicked",G_CALLBACK(cb),p);gtk_box_pack_start(GTK_BOX(row),button,FALSE,FALSE,0)
-	ACTION(_("Fetch"),_("Fetch all remotes and prune deleted refs"),fetch_clicked);ACTION(_("Pull"),_("Pull the current branch"),pull_clicked);ACTION(_("Push"),_("Push the current branch"),push_clicked);ACTION(_("Stash"),_("Stash tracked and untracked changes"),stash_clicked);ACTION(_("Pop"),_("Apply and remove the latest stash"),stash_pop_clicked);ACTION(_("Stashes"),_("Show stashes"),stash_list_clicked);
+
+	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,4);
+	gtk_box_set_homogeneous(GTK_BOX(row),TRUE);
+#define ACTION(label,tip,cb) button=gtk_button_new_with_label(label);gtk_widget_set_tooltip_text(button,tip);g_signal_connect(button,"clicked",G_CALLBACK(cb),p);gtk_box_pack_start(GTK_BOX(row),button,TRUE,TRUE,0)
+	ACTION(_("Pull"),_("Pull the current branch"),pull_clicked);
+	ACTION(_("Push"),_("Push the current branch"),push_clicked);
+	ACTION(_("Fetch"),_("Fetch all remotes and prune deleted refs"),fetch_clicked);
+#undef ACTION
+	gtk_box_pack_start(GTK_BOX(p),row,FALSE,FALSE,0);
+
+	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,4);
+	gtk_box_set_homogeneous(GTK_BOX(row),TRUE);
+#define ACTION(label,tip,cb) button=gtk_button_new_with_label(label);gtk_widget_set_tooltip_text(button,tip);g_signal_connect(button,"clicked",G_CALLBACK(cb),p);gtk_box_pack_start(GTK_BOX(row),button,TRUE,TRUE,0)
+	ACTION(_("Stash"),_("Stash tracked and untracked changes"),stash_clicked);
+	ACTION(_("Pop"),_("Apply and remove the latest stash"),stash_pop_clicked);
 #undef ACTION
 	more=gtk_menu_button_new();gtk_button_set_label(GTK_BUTTON(more),_("More"));gtk_widget_set_tooltip_text(more,_("More Git actions"));menu=gtk_menu_new();
-	add_more_item(menu,_("Create Branch…"),G_CALLBACK(new_branch),p);add_more_item(menu,_("Switch Branch…"),G_CALLBACK(switch_branch),p);add_more_item(menu,_("Delete Branch…"),G_CALLBACK(delete_branch),p);add_more_item(menu,_("Create Tag…"),G_CALLBACK(new_tag),p);add_more_item(menu,_("Add Remote…"),G_CALLBACK(add_remote),p);add_more_item(menu,_("Remove Remote…"),G_CALLBACK(remove_remote),p);add_more_item(menu,_("Merge…"),G_CALLBACK(merge_ref),p);add_more_item(menu,_("Rebase…"),G_CALLBACK(rebase_ref),p);add_more_item(menu,_("Cherry-pick…"),G_CALLBACK(cherry_pick_ref),p);add_more_item(menu,_("Revert Commit…"),G_CALLBACK(revert_ref),p);add_more_item(menu,_("Continue Merge"),G_CALLBACK(merge_continue),p);add_more_item(menu,_("Abort Merge"),G_CALLBACK(merge_abort),p);add_more_item(menu,_("Continue Rebase"),G_CALLBACK(rebase_continue),p);add_more_item(menu,_("Abort Rebase"),G_CALLBACK(rebase_abort),p);add_more_item(menu,_("Abort Cherry-pick"),G_CALLBACK(cherry_abort),p);gtk_widget_show_all(menu);gtk_menu_button_set_popup(GTK_MENU_BUTTON(more),menu);gtk_box_pack_end(GTK_BOX(row),more,FALSE,FALSE,0);
+	add_more_item(menu,_("Create Branch…"),G_CALLBACK(new_branch),p);add_more_item(menu,_("Switch Branch…"),G_CALLBACK(switch_branch),p);add_more_item(menu,_("Delete Branch…"),G_CALLBACK(delete_branch),p);add_more_item(menu,_("Create Tag…"),G_CALLBACK(new_tag),p);add_more_item(menu,_("Add Remote…"),G_CALLBACK(add_remote),p);add_more_item(menu,_("Remove Remote…"),G_CALLBACK(remove_remote),p);add_more_item(menu,_("Merge…"),G_CALLBACK(merge_ref),p);add_more_item(menu,_("Rebase…"),G_CALLBACK(rebase_ref),p);add_more_item(menu,_("Cherry-pick…"),G_CALLBACK(cherry_pick_ref),p);add_more_item(menu,_("Revert Commit…"),G_CALLBACK(revert_ref),p);add_more_item(menu,_("Continue Merge"),G_CALLBACK(merge_continue),p);add_more_item(menu,_("Abort Merge"),G_CALLBACK(merge_abort),p);add_more_item(menu,_("Continue Rebase"),G_CALLBACK(rebase_continue),p);add_more_item(menu,_("Abort Rebase"),G_CALLBACK(rebase_abort),p);add_more_item(menu,_("Abort Cherry-pick"),G_CALLBACK(cherry_abort),p);gtk_widget_show_all(menu);gtk_menu_button_set_popup(GTK_MENU_BUTTON(more),menu);gtk_box_pack_start(GTK_BOX(row),more,TRUE,TRUE,0);
 	gtk_box_pack_start(GTK_BOX(p),row,FALSE,FALSE,0);
 	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,3);p->message_entry=gtk_entry_new();gtk_entry_set_placeholder_text(GTK_ENTRY(p->message_entry),_("Commit message"));gtk_widget_set_tooltip_text(p->message_entry,_("Enter commit message"));p->commit_button=gtk_button_new_with_label(_("Commit"));gtk_widget_set_tooltip_text(p->commit_button,_("Commit staged changes"));g_signal_connect(p->commit_button,"clicked",G_CALLBACK(commit_clicked),p);g_signal_connect_swapped(p->message_entry,"activate",G_CALLBACK(gtk_button_clicked),p->commit_button);gtk_box_pack_start(GTK_BOX(row),p->message_entry,TRUE,TRUE,0);gtk_box_pack_end(GTK_BOX(row),p->commit_button,FALSE,FALSE,0);gtk_box_pack_end(GTK_BOX(p),row,FALSE,FALSE,0);reset_model(p);gtk_widget_show_all(GTK_WIDGET(p));
 	atk_object_set_name(gtk_widget_get_accessible(p->message_entry),_("Commit message"));
