@@ -280,6 +280,23 @@ start_search (PlumaProjectSearchPanel *panel)
 	g_subprocess_communicate_utf8_async (panel->process, NULL, panel->cancellable, search_finished, g_object_ref (panel));
 }
 
+static void
+search_changed (GtkSearchEntry *entry, gpointer data)
+{
+	PlumaProjectSearchPanel *panel = data;
+	const gchar *query = gtk_entry_get_text (GTK_ENTRY (entry));
+	if (query == NULL || *query == '\0')
+	{
+		if (panel->cancellable)
+			g_cancellable_cancel (panel->cancellable);
+		g_clear_object (&panel->process);
+		g_clear_object (&panel->cancellable);
+		gtk_tree_store_clear (panel->store);
+		gtk_label_set_text (GTK_LABEL (panel->status), "");
+		set_busy (panel, FALSE);
+	}
+}
+
 static void search_activate (GtkEntry *entry, gpointer data) { start_search (data); }
 static void search_clicked (GtkButton *button, gpointer data) { start_search (data); }
 static void cancel_clicked (GtkButton *button, gpointer data) { PlumaProjectSearchPanel *p=data; if (p->cancellable) g_cancellable_cancel (p->cancellable); }
@@ -420,6 +437,7 @@ pluma_project_search_panel_init (PlumaProjectSearchPanel *panel)
 	gtk_box_pack_start (GTK_BOX (row), panel->search_entry, TRUE, TRUE, 0); gtk_box_pack_start (GTK_BOX (row), button, FALSE, FALSE, 0);
 	gtk_box_pack_start (GTK_BOX (panel), row, FALSE, FALSE, 0);
 	g_signal_connect (panel->search_entry, "activate", G_CALLBACK (search_activate), panel);
+	g_signal_connect (panel->search_entry, "search-changed", G_CALLBACK (search_changed), panel);
 	g_signal_connect (button, "clicked", G_CALLBACK (search_clicked), panel);
 
 	row = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 3);
@@ -442,7 +460,7 @@ pluma_project_search_panel_init (PlumaProjectSearchPanel *panel)
 	gtk_widget_set_tooltip_text (panel->exclude_entry, _("Files to exclude (for example: build/**)"));
 	panel->settings = g_settings_new (PLUMA_SCHEMA_ID);
 	{
-		gchar *value = g_settings_get_string (panel->settings, "project-search-text"); gtk_entry_set_text (GTK_ENTRY (panel->search_entry), value); g_free (value);
+		gchar *value;
 		value = g_settings_get_string (panel->settings, "project-search-include"); gtk_entry_set_text (GTK_ENTRY (panel->include_entry), value); g_free (value);
 		value = g_settings_get_string (panel->settings, "project-search-exclude"); gtk_entry_set_text (GTK_ENTRY (panel->exclude_entry), value); g_free (value);
 	}
