@@ -21,5 +21,5 @@ install_data(python_files,
 )
 
 install_data('snippets.ui',
-  install_dir: join_paths(pkgdatadir, 'plugins/snippets')
+  install_dir: join_paths(pkgdatadir, 'plugins/snippets/ui')
 )

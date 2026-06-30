@@ -55,6 +55,27 @@ endif
 cc = meson.get_compiler('c')
 m_dep = cc.find_library('m', required: false)
 
+# Optional runtime helpers used by Pluma and pluma-plugins. Report missing
+# components during configuration instead of failing later at runtime.
+ctags_program = find_program('ctags', required: false)
+if not ctags_program.found()
+  warning('ctags not found: the Source Code Browser plugin will be unavailable. Install a package that provides the ctags executable.')
+endif
+
+optional_enchant_backends = {
+  'aspell': 'aspell',
+  'hspell': 'hspell',
+  'hunspell-1.7': 'hunspell',
+  'nuspell': 'nuspell',
+  'voikko': 'libvoikko',
+}
+foreach library_name, package_name : optional_enchant_backends
+  backend_library = cc.find_library(library_name, required: false)
+  if not backend_library.found()
+    warning('@0@ not found: Enchant cannot load this spell-checking backend. Install a package that provides the @1@ backend.'.format(library_name, package_name))
+  endif
+endforeach
+
 pluma_deps = [
   libxml_dep,
   glib_dep,

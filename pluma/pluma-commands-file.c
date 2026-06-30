@@ -385,9 +385,42 @@ _pluma_cmd_load_files_from_prompt (PlumaWindow         *window,
 				   const PlumaEncoding *encoding,
 				   gint                 line_pos)
 {
+	GSList *filtered_files = NULL;
+	GSList *item;
+	gint loaded_files;
+
+	/* A directory argument (for example `pluma .`) selects the project root
+	 * in the file-browser panel instead of trying to load it as a document. */
+	for (item = files; item != NULL; item = item->next)
+	{
+		GFile *file = G_FILE (item->data);
+
+		if (g_file_query_file_type (file, G_FILE_QUERY_INFO_NONE, NULL) == G_FILE_TYPE_DIRECTORY)
+		{
+			gchar *uri = g_file_get_uri (file);
+			pluma_message_bus_send (pluma_window_get_message_bus (window),
+			                        "/plugins/filebrowser", "set_root",
+			                        "uri", uri, NULL);
+			g_free (uri);
+		}
+		else
+		{
+			filtered_files = g_slist_append (filtered_files, file);
+		}
+	}
+
+	if (filtered_files == NULL)
+	{
+		pluma_window_create_tab (window, TRUE);
+		return 0;
+	}
+
 	pluma_debug (DEBUG_COMMANDS);
 
-	return load_file_list (window, files, encoding, line_pos, TRUE);
+	loaded_files = load_file_list (window, filtered_files, encoding, line_pos, TRUE);
+	g_slist_free (filtered_files);
+
+	return loaded_files;
 }
 
 static void

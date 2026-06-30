@@ -1191,7 +1191,10 @@ on_document_saved (PlumaDocument *doc,
 
 	if (spell != NULL)
 	{
-		key = pluma_spell_checker_language_to_key (pluma_spell_checker_get_language (spell));
+		const PlumaSpellCheckerLanguage *language;
+
+		language = pluma_spell_checker_get_language (spell);
+		key = language != NULL ? pluma_spell_checker_language_to_key (language) : NULL;
 	}
 	else
 	{

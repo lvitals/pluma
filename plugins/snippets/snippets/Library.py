@@ -855,7 +855,7 @@ class Library(Singleton):
             f = os.path.realpath(os.path.join(path, f))
 
             # Determine what language this file provides snippets for
-            if os.path.isfile(f):
+            if os.path.isfile(f) and f.endswith('.xml'):
                 addcb(f)
 
         return searched

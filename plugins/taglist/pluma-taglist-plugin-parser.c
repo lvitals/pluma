@@ -589,7 +589,23 @@ static TagList* parse_taglist_dir(const gchar* dir)
 	{
 		if (g_str_has_suffix(dirent, ".tags") || g_str_has_suffix(dirent, ".tags.gz"))
 		{
+			gchar *plain_file = NULL;
 			gchar* tags_file = g_build_filename(dir, dirent, NULL);
+
+			/* Prefer the uncompressed file. Recent libxml2 builds may be
+			 * compiled without transparent gzip input support. */
+			if (g_str_has_suffix(dirent, ".tags.gz"))
+			{
+				plain_file = g_strndup (tags_file, strlen (tags_file) - 3);
+				if (g_file_test (plain_file, G_FILE_TEST_IS_REGULAR))
+				{
+					g_free (plain_file);
+					g_free (tags_file);
+					continue;
+				}
+				g_free (plain_file);
+			}
+
 			parse_taglist_file(tags_file);
 			g_free (tags_file);
 		}

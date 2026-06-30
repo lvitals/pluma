@@ -55,14 +55,6 @@ foreach tag_in : taglist_in_files
       '-d', join_paths(meson.project_source_root(), 'po'),
       '-o', '@OUTPUT@',
     ],
-    install: false,
-  )
-  
-  custom_target(base + '.gz',
-    input: xml,
-    output: base + '.gz',
-    command: ['gzip', '-n', '-f', '-c', '@INPUT@'],
-    capture: true,
     install: true,
     install_dir: join_paths(pkgdatadir, 'plugins/taglist'),
   )
