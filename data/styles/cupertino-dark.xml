@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="cupertino-dark" _name="Cupertino Dark" version="1.0">
+  <author>Leandro Vitals</author>
+  <description>Cupertino Dark color scheme compatible with Cupertino-Dark theme</description>
+
+  <!-- Palette -->
+  <color name="bg" value="#242424"/>
+  <color name="fg" value="#dedede"/>
+  <color name="selection" value="#0088FF"/>
+  <color name="selection-fg" value="#ffffff"/>
+  <color name="current-line" value="#2c2c2c"/>
+  <color name="line-numbers-bg" value="#333333"/>
+  <color name="line-numbers" value="#8a8a8a"/>
+  
+  <!-- Syntax colors -->
+  <color name="blue" value="#0088FF"/>
+  <color name="orange" value="#E9873A"/>
+  <color name="red" value="#ED5F5D"/>
+  <color name="green" value="#79B757"/>
+  <color name="purple" value="#B267E6"/>
+  <color name="slate" value="#7a8a9a"/>
+
+  <!-- Global styles -->
+  <style name="text" foreground="fg" background="bg"/>
+  <style name="selection" foreground="selection-fg" background="selection"/>
+  <style name="cursor" foreground="selection"/>
+  <style name="current-line" background="current-line"/>
+  <style name="line-numbers" foreground="line-numbers" background="line-numbers-bg"/>
+  <style name="draw-spaces" foreground="line-numbers"/>
+
+  <!-- Syntax highlighting -->
+  <style name="def:comment" foreground="slate" italic="true"/>
+  <style name="def:string" foreground="green"/>
+  <style name="def:character" foreground="green"/>
+  <style name="def:keyword" foreground="blue" bold="true"/>
+  <style name="def:type" foreground="orange" bold="true"/>
+  <style name="def:constant" foreground="red"/>
+  <style name="def:boolean" foreground="red" bold="true"/>
+  <style name="def:number" foreground="red"/>
+  <style name="def:identifier" foreground="fg"/>
+  <style name="def:preprocessor" foreground="purple"/>
+  <style name="def:statement" foreground="blue" bold="true"/>
+  <style name="def:error" foreground="selection-fg" background="red" bold="true"/>
+  <style name="def:underlined" underline="true"/>
+</style-scheme>

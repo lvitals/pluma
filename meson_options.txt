@@ -1,0 +1,5 @@
+option('spell', type: 'boolean', value: true, description: 'Enable spell plugin')
+option('gvfs-metadata', type: 'boolean', value: true, description: 'Enable using gvfs to store metadata')
+option('introspection', type: 'boolean', value: true, description: 'Enable GObject Introspection')
+option('tests', type: 'boolean', value: true, description: 'Enable tests')
+option('gtk_doc', type: 'boolean', value: false, description: 'Build API reference documentation')

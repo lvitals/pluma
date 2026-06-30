@@ -77,6 +77,8 @@ add_pluma_styles_path (GtkSourceStyleSchemeManager *mgr)
 		gtk_source_style_scheme_manager_append_search_path (mgr, dir);
 		g_free (dir);
 	}
+
+	gtk_source_style_scheme_manager_append_search_path (mgr, PLUMA_DATADIR "/styles");
 }
 
 GtkSourceStyleSchemeManager *

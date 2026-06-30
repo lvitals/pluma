@@ -63,6 +63,51 @@
 #include "pluma-status-combo-box.h"
 #include "pluma-settings.h"
 
+static gboolean
+g_settings_has_key (GSettings *settings, const gchar *key)
+{
+	GSettingsSchema *schema = NULL;
+	gboolean has_key = FALSE;
+
+	g_object_get (settings, "settings-schema", &schema, NULL);
+	if (schema != NULL)
+	{
+		has_key = g_settings_schema_has_key (schema, key);
+		g_settings_schema_unref (schema);
+	}
+	return has_key;
+}
+
+static gint
+pluma_g_settings_get_int_safe (GSettings *settings, const gchar *key, gint default_val)
+{
+	if (g_settings_has_key (settings, key))
+		return g_settings_get_int (settings, key);
+	return default_val;
+}
+
+static void
+pluma_g_settings_set_int_safe (GSettings *settings, const gchar *key, gint val)
+{
+	if (g_settings_has_key (settings, key))
+		g_settings_set_int (settings, key, val);
+}
+
+static gboolean
+pluma_g_settings_get_boolean_safe (GSettings *settings, const gchar *key, gboolean default_val)
+{
+	if (g_settings_has_key (settings, key))
+		return g_settings_get_boolean (settings, key);
+	return default_val;
+}
+
+static void
+pluma_g_settings_set_boolean_safe (GSettings *settings, const gchar *key, gboolean val)
+{
+	if (g_settings_has_key (settings, key))
+		g_settings_set_boolean (settings, key, val);
+}
+
 #define LANGUAGE_NONE (const gchar *)"LangNone"
 #define TAB_WIDTH_DATA "PlumaWindowTabWidthData"
 #define LANGUAGE_DATA "PlumaWindowLanguageData"
@@ -156,14 +201,14 @@ save_panes_state (PlumaWindow *window)
                             PLUMA_SETTINGS_BOTTOM_PANEL_ACTIVE_PAGE, pane_page);
 
     if (window->priv->right_panel_size > 0)
-        g_settings_set_int (window->priv->editor_settings,
-                            PLUMA_SETTINGS_RIGHT_PANEL_SIZE,
-                            window->priv->right_panel_size);
+        pluma_g_settings_set_int_safe (window->priv->editor_settings,
+                                       PLUMA_SETTINGS_RIGHT_PANEL_SIZE,
+                                       window->priv->right_panel_size);
 
     pane_page = _pluma_panel_get_active_item_id (PLUMA_PANEL (window->priv->right_panel));
     if (pane_page != 0)
-        g_settings_set_int (window->priv->editor_settings,
-                            PLUMA_SETTINGS_RIGHT_PANEL_ACTIVE_PAGE, pane_page);
+        pluma_g_settings_set_int_safe (window->priv->editor_settings,
+                                       PLUMA_SETTINGS_RIGHT_PANEL_ACTIVE_PAGE, pane_page);
 }
 
 static void
@@ -3811,9 +3856,9 @@ right_panel_visibility_changed (PlumaPanel  *right_panel,
 
     visible = gtk_widget_get_visible (GTK_WIDGET (right_panel));
 
-    g_settings_set_boolean (window->priv->editor_settings,
-                            PLUMA_SETTINGS_RIGHT_PANE_VISIBLE,
-                            visible);
+    pluma_g_settings_set_boolean_safe (window->priv->editor_settings,
+                                       PLUMA_SETTINGS_RIGHT_PANE_VISIBLE,
+                                       visible);
 
     action = gtk_action_group_get_action (window->priv->panes_action_group,
                                           "ViewRightPane");
@@ -3868,8 +3913,9 @@ init_panels_visibility (PlumaWindow *window)
                                                 PLUMA_SETTINGS_SIDE_PANE_VISIBLE);
     bottom_pane_visible = g_settings_get_boolean (window->priv->editor_settings,
                                                   PLUMA_SETTINGS_BOTTOM_PANE_VISIBLE);
-    right_pane_visible = g_settings_get_boolean (window->priv->editor_settings,
-                                                 PLUMA_SETTINGS_RIGHT_PANE_VISIBLE);
+    right_pane_visible = pluma_g_settings_get_boolean_safe (window->priv->editor_settings,
+                                                            PLUMA_SETTINGS_RIGHT_PANE_VISIBLE,
+                                                            FALSE);
 
     if (side_pane_visible)
 
@@ -3901,8 +3947,9 @@ init_panels_visibility (PlumaWindow *window)
     /* right pane */
     if (pluma_panel_get_n_items (PLUMA_PANEL (window->priv->right_panel)) > 0)
     {
-        active_page = g_settings_get_int (window->priv->editor_settings,
-                                          PLUMA_SETTINGS_RIGHT_PANEL_ACTIVE_PAGE);
+        active_page = pluma_g_settings_get_int_safe (window->priv->editor_settings,
+                                                     PLUMA_SETTINGS_RIGHT_PANEL_ACTIVE_PAGE,
+                                                     0);
         _pluma_panel_set_active_item_by_id (PLUMA_PANEL (window->priv->right_panel),
                                             active_page);
 
@@ -4135,8 +4182,9 @@ pluma_window_init (PlumaWindow *window)
                                                         PLUMA_SETTINGS_SIDE_PANEL_SIZE);
     window->priv->bottom_panel_size = g_settings_get_int (window->priv->editor_settings,
                                                           PLUMA_SETTINGS_BOTTOM_PANEL_SIZE);
-    window->priv->right_panel_size = g_settings_get_int (window->priv->editor_settings,
-                                                         PLUMA_SETTINGS_RIGHT_PANEL_SIZE);
+    window->priv->right_panel_size = pluma_g_settings_get_int_safe (window->priv->editor_settings,
+                                                                    PLUMA_SETTINGS_RIGHT_PANEL_SIZE,
+                                                                    200);
 
     g_signal_connect_after (window->priv->hpaned,
                             "map",

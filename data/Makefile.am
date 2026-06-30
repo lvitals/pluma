@@ -23,12 +23,16 @@ pkgconfig_DATA = pluma.pc
 bugreportdir = $(libexecdir)/pluma
 bugreport_SCRIPTS = pluma-bugreport.sh
 
+stylesdir = $(datadir)/pluma/styles
+styles_DATA = styles/cupertino-dark.xml
+
 EXTRA_DIST = 			\
 	$(appdata_in_in_files)	\
 	$(desktop_in_in_files)	\
 	$(man_MANS)		\
 	pluma.pc.in		\
-	pluma-bugreport.sh.in
+	pluma-bugreport.sh.in	\
+	$(styles_DATA)
 
 CLEANFILES =	 		\
 	$(appdata_DATA)		\

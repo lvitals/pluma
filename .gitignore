@@ -1,0 +1,7 @@
+build/
+*.o
+*.so
+*.a
+*.la
+*.lo
+.meson-pyvenv

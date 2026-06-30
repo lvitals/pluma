@@ -65,6 +65,10 @@ pluma_plugins_engine_init (PlumaPluginsEngine *engine)
 
 	pluma_debug (DEBUG_PLUGINS);
 
+#ifdef HAVE_BUNDLED_PYTHON_LOADER
+	g_setenv ("PEAS_PLUGIN_LOADERS_DIR", PLUMA_PLUGIN_LOADERS_DIR, FALSE);
+#endif
+
 	peas_engine_enable_loader (PEAS_ENGINE (engine), "python3");
 
 	engine->priv = pluma_plugins_engine_get_instance_private (engine);
@@ -161,4 +165,3 @@ pluma_plugins_engine_get_default (void)
 
 	return default_engine;
 }
-
