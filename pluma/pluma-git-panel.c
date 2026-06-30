@@ -927,7 +927,17 @@ static gboolean menu_popup(GtkWidget*w,GdkEventButton*e,gpointer data)
 
 static void commit_clicked(GtkButton*b,gpointer data)
 {
-	PlumaGitPanel*p=data;const gchar*message=gtk_entry_get_text(GTK_ENTRY(p->message_entry));if(!*message)return;const gchar*a[]={"git","commit","-m",message,NULL};run_git(p,a,FALSE,NULL);
+	PlumaGitPanel*p=data;
+	GtkTextBuffer *buf = gtk_text_view_get_buffer (GTK_TEXT_VIEW (p->message_entry));
+	GtkTextIter start, end;
+	gtk_text_buffer_get_bounds (buf, &start, &end);
+	gchar *message = gtk_text_buffer_get_text (buf, &start, &end, FALSE);
+	if (message && *message)
+	{
+		const gchar*a[]={"git","commit","-m",message,NULL};
+		run_git(p,a,FALSE,NULL);
+	}
+	g_free (message);
 }
 static void stage_all_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","add","-A",NULL};run_git(p,a,FALSE,NULL);}
 static void refresh_clicked(GtkButton*b,gpointer data){pluma_git_panel_refresh(data);}
@@ -959,35 +969,41 @@ static void push_clicked(GtkButton*b,gpointer data)
 static void stash_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","stash","push","-u",NULL};run_git(p,a,FALSE,NULL);}
 static void stash_pop_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","stash","pop",NULL};run_git(p,a,FALSE,NULL);}
 static void stash_list_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","stash","list",NULL};run_git(p,a,TRUE,_("Git Stashes"));}
-static void blame_clicked(GtkButton*b,gpointer data)
+static void diff_selected_clicked(GtkButton*b,gpointer data)
 {
 	PlumaGitPanel*p=data;
-	PlumaDocument*doc=pluma_window_get_active_document(p->window);
-	GFile*loc=doc?pluma_document_get_location(doc):NULL;
-	if (loc)
+	gchar *path = NULL;
+	gint g = 0, s = 0;
+	if (selected_file (p, &path, &g, &s))
 	{
-		GFile*root=g_file_new_for_path(p->repo);
-		gchar*path=g_file_get_path(loc);
-		gchar*rel=g_file_get_relative_path(root,loc);
-		if(rel)
+		if (g == GROUP_STAGED)
 		{
-			const gchar*a[]={"git","blame","--",rel,NULL};
-			gchar *title=g_strconcat("Blame: ",rel,NULL);
+			const gchar*a[]={"git","diff","--cached","--",path,NULL};
+			gchar *title=g_strconcat("Diff: ",path,NULL);
 			run_git(p,a,TRUE,title);
 			g_free(title);
 		}
-		else
+		else if (g == GROUP_CHANGED)
 		{
-			gtk_label_set_text (GTK_LABEL (p->summary_label), _("Active file is not inside the Git repository."));
+			const gchar*a[]={"git","diff","--",path,NULL};
+			gchar *title=g_strconcat("Diff: ",path,NULL);
+			run_git(p,a,TRUE,title);
+			g_free(title);
 		}
-		g_free(rel);
-		g_free(path);
-		g_object_unref(root);
-		g_object_unref(loc);
+		else if (g == GROUP_UNTRACKED)
+		{
+			gchar *full_path = g_build_filename (p->repo, path, NULL);
+			const gchar*a[]={"git","diff","--no-index","--","/dev/null",full_path,NULL};
+			gchar *title=g_strconcat("Diff: ",path,NULL);
+			run_git(p,a,TRUE,title);
+			g_free(title);
+			g_free(full_path);
+		}
+		g_free (path);
 	}
 	else
 	{
-		gtk_label_set_text (GTK_LABEL (p->summary_label), _("No active file open to blame."));
+		gtk_label_set_text (GTK_LABEL (p->summary_label), _("No file selected in Source Control to diff."));
 	}
 }
 
@@ -1046,31 +1062,44 @@ pluma_git_panel_dispose(GObject*object)
 static void pluma_git_panel_class_init(PlumaGitPanelClass*k){G_OBJECT_CLASS(k)->dispose=pluma_git_panel_dispose;}
 
 static void
-on_commit_message_changed (GtkEditable *editable, gpointer data)
+on_commit_message_buffer_changed (GtkTextBuffer *buffer, gpointer data)
 {
-	GtkEntry *entry = GTK_ENTRY (editable);
-	const gchar *text = gtk_entry_get_text (entry);
-	if (text && *text != '\0')
-	{
-		gtk_entry_set_icon_from_icon_name (entry, GTK_ENTRY_ICON_SECONDARY, "edit-clear-symbolic");
-		gtk_entry_set_icon_sensitive (entry, GTK_ENTRY_ICON_SECONDARY, TRUE);
-		gtk_entry_set_icon_tooltip_text (entry, GTK_ENTRY_ICON_SECONDARY, _("Clear text"));
-	}
-	else
-	{
-		gtk_entry_set_icon_from_icon_name (entry, GTK_ENTRY_ICON_SECONDARY, NULL);
-		gtk_entry_set_icon_sensitive (entry, GTK_ENTRY_ICON_SECONDARY, FALSE);
-		gtk_entry_set_icon_tooltip_text (entry, GTK_ENTRY_ICON_SECONDARY, NULL);
-	}
+	GtkWidget *clear_btn = data;
+	GtkTextIter start, end;
+	gtk_text_buffer_get_bounds (buffer, &start, &end);
+	gchar *text = gtk_text_buffer_get_text (buffer, &start, &end, FALSE);
+	gboolean has_text = (text && *text != '\0');
+	gtk_widget_set_visible (clear_btn, has_text);
+	g_free (text);
 }
 
 static void
-on_commit_message_icon_press (GtkEntry *entry, GtkEntryIconPosition icon_pos, GdkEvent *event, gpointer data)
+on_clear_btn_clicked (GtkButton *btn, gpointer data)
 {
-	if (icon_pos == GTK_ENTRY_ICON_SECONDARY)
+	GtkTextBuffer *buffer = GTK_TEXT_BUFFER (data);
+	gtk_text_buffer_set_text (buffer, "", -1);
+}
+
+static gboolean
+on_message_view_draw (GtkWidget *widget, cairo_t *cr, gpointer data)
+{
+	GtkTextView *text_view = GTK_TEXT_VIEW (widget);
+	GtkTextBuffer *buffer = gtk_text_view_get_buffer (text_view);
+	if (gtk_text_buffer_get_char_count (buffer) == 0)
 	{
-		gtk_entry_set_text (entry, "");
+		GtkStyleContext *context = gtk_widget_get_style_context (widget);
+		PangoLayout *layout = gtk_widget_create_pango_layout (widget, _("Commit message"));
+		GdkRGBA color;
+		gtk_style_context_get_color (context, gtk_style_context_get_state (context), &color);
+		color.alpha = 0.45;
+		gdk_cairo_set_source_rgba (cr, &color);
+		int left_margin = gtk_text_view_get_left_margin (text_view);
+		int top_margin = gtk_text_view_get_top_margin (text_view);
+		cairo_move_to (cr, left_margin + 2, top_margin);
+		pango_cairo_show_layout (cr, layout);
+		g_object_unref (layout);
 	}
+	return FALSE;
 }
 
 static void
@@ -1085,7 +1114,15 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	g_signal_connect (p->filter_entry, "search-changed", G_CALLBACK (filter_changed_cb), p);
 	gtk_box_pack_start (GTK_BOX (p), p->filter_entry, FALSE, FALSE, 0);
 	p->summary_label=gtk_label_new("");gtk_label_set_xalign(GTK_LABEL(p->summary_label),0);gtk_box_pack_start(GTK_BOX(p),p->summary_label,FALSE,FALSE,0);
-	p->store=gtk_tree_store_new(N_COLS,G_TYPE_STRING,G_TYPE_STRING,G_TYPE_INT,G_TYPE_INT,G_TYPE_BOOLEAN);p->tree=gtk_tree_view_new_with_model(GTK_TREE_MODEL(p->store));gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(p->tree),FALSE);r=gtk_cell_renderer_text_new();c=gtk_tree_view_column_new_with_attributes(_("Source Control"),r,"text",COL_LABEL,NULL);gtk_tree_view_append_column(GTK_TREE_VIEW(p->tree),c);g_signal_connect(p->tree,"row-activated",G_CALLBACK(row_activated),p);g_signal_connect(p->tree,"button-press-event",G_CALLBACK(menu_popup),p);scroll=gtk_scrolled_window_new(NULL,NULL);gtk_container_add(GTK_CONTAINER(scroll),p->tree);gtk_box_pack_start(GTK_BOX(p),scroll,TRUE,TRUE,0);
+
+	GtkWidget *main_paned = gtk_paned_new (GTK_ORIENTATION_VERTICAL);
+	gtk_box_pack_start (GTK_BOX (p), main_paned, TRUE, TRUE, 0);
+
+	GtkWidget *top_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+	gtk_paned_pack1 (GTK_PANED (main_paned), top_box, TRUE, FALSE);
+
+	p->store=gtk_tree_store_new(N_COLS,G_TYPE_STRING,G_TYPE_STRING,G_TYPE_INT,G_TYPE_INT,G_TYPE_BOOLEAN);p->tree=gtk_tree_view_new_with_model(GTK_TREE_MODEL(p->store));gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(p->tree),FALSE);r=gtk_cell_renderer_text_new();c=gtk_tree_view_column_new_with_attributes(_("Source Control"),r,"text",COL_LABEL,NULL);gtk_tree_view_append_column(GTK_TREE_VIEW(p->tree),c);g_signal_connect(p->tree,"row-activated",G_CALLBACK(row_activated),p);g_signal_connect(p->tree,"button-press-event",G_CALLBACK(menu_popup),p);scroll=gtk_scrolled_window_new(NULL,NULL);gtk_container_add(GTK_CONTAINER(scroll),p->tree);
+	gtk_box_pack_start(GTK_BOX(top_box),scroll,TRUE,TRUE,0);
 	atk_object_set_name(gtk_widget_get_accessible(p->tree),_("Git changes"));
 	
 	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,3);
@@ -1109,15 +1146,60 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	g_signal_connect_swapped(p->discard_button,"clicked",G_CALLBACK(discard_selected),p);
 	gtk_box_pack_start(GTK_BOX(row),p->discard_button,FALSE,FALSE,0);
 
-	gtk_box_pack_start(GTK_BOX(p),row,FALSE,FALSE,0);
+	gtk_box_pack_start(GTK_BOX(top_box),row,FALSE,FALSE,0);
 	g_signal_connect(gtk_tree_view_get_selection(GTK_TREE_VIEW(p->tree)),"changed",G_CALLBACK(selection_changed_cb),p);
 
 	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,4);
 	gtk_box_set_homogeneous(GTK_BOX(row),TRUE);
 #define TOOL(icon,tip,cb) button=gtk_button_new_from_icon_name(icon,GTK_ICON_SIZE_MENU);gtk_widget_set_tooltip_text(button,tip);g_signal_connect(button,"clicked",G_CALLBACK(cb),p);gtk_box_pack_start(GTK_BOX(row),button,TRUE,TRUE,0)
-	TOOL("document-open-recent",_("History"),history_clicked);TOOL("vcs-branch",_("Branches"),branches_clicked);TOOL("bookmark-new",_("Tags"),tags_clicked);TOOL("network-server",_("Remotes"),remotes_clicked);TOOL("package-x-generic",_("Stashes"),stash_list_clicked);TOOL("system-search",_("Blame current file"),blame_clicked);
+	TOOL("document-open-recent",_("History"),history_clicked);TOOL("vcs-branch",_("Branches"),branches_clicked);TOOL("bookmark-new",_("Tags"),tags_clicked);TOOL("network-server",_("Remotes"),remotes_clicked);TOOL("package-x-generic",_("Stashes"),stash_list_clicked);TOOL("text-x-patch",_("Diff selected file"),diff_selected_clicked);
 #undef TOOL
-	gtk_box_pack_start(GTK_BOX(p),row,FALSE,FALSE,0);
+	gtk_widget_set_margin_bottom (row, 6);
+	gtk_box_pack_start(GTK_BOX(top_box),row,FALSE,FALSE,0);
+
+	GtkWidget *commit_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+	gtk_paned_pack2 (GTK_PANED (main_paned), commit_box, FALSE, FALSE);
+
+	GtkWidget *overlay = gtk_overlay_new ();
+	gtk_widget_set_margin_top (overlay, 6);
+	gtk_widget_set_margin_bottom (overlay, 6);
+	GtkWidget *sw = gtk_scrolled_window_new (NULL, NULL);
+	gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (sw), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+	gtk_scrolled_window_set_shadow_type (GTK_SCROLLED_WINDOW (sw), GTK_SHADOW_IN);
+	gtk_widget_set_size_request (sw, -1, 24);
+
+	GtkWidget *message_view = gtk_text_view_new ();
+	gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW (message_view), GTK_WRAP_WORD_CHAR);
+	gtk_text_view_set_top_margin (GTK_TEXT_VIEW (message_view), 0);
+	gtk_text_view_set_bottom_margin (GTK_TEXT_VIEW (message_view), 0);
+	gtk_text_view_set_left_margin (GTK_TEXT_VIEW (message_view), 4);
+	gtk_text_view_set_right_margin (GTK_TEXT_VIEW (message_view), 4);
+	g_signal_connect_after (message_view, "draw", G_CALLBACK (on_message_view_draw), NULL);
+	gtk_container_add (GTK_CONTAINER (sw), message_view);
+	gtk_container_add (GTK_CONTAINER (overlay), sw);
+
+	GtkWidget *clear_btn = gtk_button_new_from_icon_name ("edit-clear-symbolic", GTK_ICON_SIZE_MENU);
+	gtk_widget_set_tooltip_text (clear_btn, _("Clear text"));
+	gtk_widget_set_halign (clear_btn, GTK_ALIGN_END);
+	gtk_widget_set_valign (clear_btn, GTK_ALIGN_END);
+	gtk_widget_set_margin_end (clear_btn, 4);
+	gtk_widget_set_margin_bottom (clear_btn, 4);
+	gtk_widget_set_no_show_all (clear_btn, TRUE);
+	gtk_overlay_add_overlay (GTK_OVERLAY (overlay), clear_btn);
+	gtk_widget_set_visible (clear_btn, FALSE);
+
+	GtkTextBuffer *buf = gtk_text_view_get_buffer (GTK_TEXT_VIEW (message_view));
+	g_signal_connect (buf, "changed", G_CALLBACK (on_commit_message_buffer_changed), clear_btn);
+	g_signal_connect (clear_btn, "clicked", G_CALLBACK (on_clear_btn_clicked), buf);
+
+	p->message_entry = message_view;
+
+	p->commit_button = gtk_button_new_with_label (_("Commit"));
+	gtk_widget_set_tooltip_text (p->commit_button, _("Commit staged changes"));
+	g_signal_connect (p->commit_button, "clicked", G_CALLBACK (commit_clicked), p);
+
+	gtk_box_pack_start (GTK_BOX (commit_box), overlay, TRUE, TRUE, 0);
+	gtk_box_pack_start (GTK_BOX (commit_box), p->commit_button, FALSE, FALSE, 0);
 
 	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,4);
 	gtk_box_set_homogeneous(GTK_BOX(row),TRUE);
@@ -1126,7 +1208,7 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	ACTION(_("Push"),_("Push the current branch"),push_clicked);
 	ACTION(_("Fetch"),_("Fetch all remotes and prune deleted refs"),fetch_clicked);
 #undef ACTION
-	gtk_box_pack_start(GTK_BOX(p),row,FALSE,FALSE,0);
+	gtk_box_pack_start(GTK_BOX(commit_box),row,FALSE,FALSE,0);
 
 	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,4);
 	gtk_box_set_homogeneous(GTK_BOX(row),TRUE);
@@ -1136,8 +1218,10 @@ pluma_git_panel_init(PlumaGitPanel*p)
 #undef ACTION
 	more=gtk_menu_button_new();gtk_button_set_label(GTK_BUTTON(more),_("More"));gtk_widget_set_tooltip_text(more,_("More Git actions"));menu=gtk_menu_new();
 	add_more_item(menu,_("Create Branch…"),G_CALLBACK(new_branch),p);add_more_item(menu,_("Switch Branch…"),G_CALLBACK(switch_branch),p);add_more_item(menu,_("Delete Branch…"),G_CALLBACK(delete_branch),p);add_more_item(menu,_("Create Tag…"),G_CALLBACK(new_tag),p);add_more_item(menu,_("Add Remote…"),G_CALLBACK(add_remote),p);add_more_item(menu,_("Remove Remote…"),G_CALLBACK(remove_remote),p);add_more_item(menu,_("Merge…"),G_CALLBACK(merge_ref),p);add_more_item(menu,_("Rebase…"),G_CALLBACK(rebase_ref),p);add_more_item(menu,_("Cherry-pick…"),G_CALLBACK(cherry_pick_ref),p);add_more_item(menu,_("Revert Commit…"),G_CALLBACK(revert_ref),p);add_more_item(menu,_("Continue Merge"),G_CALLBACK(merge_continue),p);add_more_item(menu,_("Abort Merge"),G_CALLBACK(merge_abort),p);add_more_item(menu,_("Continue Rebase"),G_CALLBACK(rebase_continue),p);add_more_item(menu,_("Abort Rebase"),G_CALLBACK(rebase_abort),p);add_more_item(menu,_("Abort Cherry-pick"),G_CALLBACK(cherry_abort),p);gtk_widget_show_all(menu);gtk_menu_button_set_popup(GTK_MENU_BUTTON(more),menu);gtk_box_pack_start(GTK_BOX(row),more,TRUE,TRUE,0);
-	gtk_box_pack_start(GTK_BOX(p),row,FALSE,FALSE,0);
-	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,3);p->message_entry=gtk_entry_new();gtk_entry_set_placeholder_text(GTK_ENTRY(p->message_entry),_("Commit message"));gtk_widget_set_tooltip_text(p->message_entry,_("Enter commit message"));p->commit_button=gtk_button_new_with_label(_("Commit"));gtk_widget_set_tooltip_text(p->commit_button,_("Commit staged changes"));g_signal_connect(p->commit_button,"clicked",G_CALLBACK(commit_clicked),p);g_signal_connect_swapped(p->message_entry,"activate",G_CALLBACK(gtk_button_clicked),p->commit_button);g_signal_connect(p->message_entry,"changed",G_CALLBACK(on_commit_message_changed),NULL);g_signal_connect(p->message_entry,"icon-press",G_CALLBACK(on_commit_message_icon_press),NULL);gtk_entry_set_icon_activatable(GTK_ENTRY(p->message_entry),GTK_ENTRY_ICON_SECONDARY,TRUE);gtk_box_pack_start(GTK_BOX(row),p->message_entry,TRUE,TRUE,0);gtk_box_pack_end(GTK_BOX(row),p->commit_button,FALSE,FALSE,0);gtk_box_pack_end(GTK_BOX(p),row,FALSE,FALSE,0);reset_model(p);gtk_widget_show_all(GTK_WIDGET(p));
+	gtk_box_pack_start(GTK_BOX(commit_box),row,FALSE,FALSE,0);
+
+	reset_model(p);
+	gtk_widget_show_all(GTK_WIDGET(p));
 	atk_object_set_name(gtk_widget_get_accessible(p->message_entry),_("Commit message"));
 	update_selection_sensitivity(p);
 }
