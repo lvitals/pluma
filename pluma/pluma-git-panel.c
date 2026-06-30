@@ -1354,6 +1354,37 @@ amend_commit_clicked (GtkMenuItem *item, gpointer data)
 	}
 	g_free (message);
 }
+static void
+commit_with_option (PlumaGitPanel *panel, const gchar *option)
+{
+	GtkTextBuffer *buffer = gtk_text_view_get_buffer (GTK_TEXT_VIEW (panel->message_entry));
+	GtkTextIter start, end;
+	gchar *message;
+
+	gtk_text_buffer_get_bounds (buffer, &start, &end);
+	message = gtk_text_buffer_get_text (buffer, &start, &end, FALSE);
+	if (pluma_git_commit_message_is_valid (message))
+	{
+		const gchar *argv[] = {"git", "commit", option, "-m", message, NULL};
+		run_git (panel, argv, FALSE, "commit");
+	}
+	else
+		gtk_label_set_text (GTK_LABEL (panel->summary_label),
+		                    _("Enter a valid commit message first."));
+	g_free (message);
+}
+
+static void
+commit_signoff_clicked (GtkMenuItem *item, gpointer data)
+{
+	commit_with_option (data, "--signoff");
+}
+
+static void
+commit_signed_clicked (GtkMenuItem *item, gpointer data)
+{
+	commit_with_option (data, "-S");
+}
 static void stage_all_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","add","-A",NULL};run_git(p,a,FALSE,NULL);}
 static void refresh_clicked(GtkButton*b,gpointer data){pluma_git_panel_refresh(data);}
 static void history_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","log","--graph","--decorate","--oneline","--all","-n","500",NULL};run_git(p,a,TRUE,_("Git History"));}
@@ -1721,6 +1752,8 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	more=gtk_menu_button_new();gtk_button_set_label(GTK_BUTTON(more),_("More"));gtk_widget_set_tooltip_text(more,_("More Git actions"));menu=gtk_menu_new();
 	add_more_item(menu,_("Stage All and Commit"),G_CALLBACK(stage_all_commit_clicked),p);
 	add_more_item(menu,_("Amend Last Commit…"),G_CALLBACK(amend_commit_clicked),p);
+	add_more_item(menu,_("Commit with Sign-off"),G_CALLBACK(commit_signoff_clicked),p);
+	add_more_item(menu,_("Create Signed Commit"),G_CALLBACK(commit_signed_clicked),p);
 	add_more_item(menu,_("Force Push with Lease…"),G_CALLBACK(force_push_with_lease_clicked),p);
 	add_more_item(menu,_("View Stash Diff…"),G_CALLBACK(stash_diff_clicked),p);
 	add_more_item(menu,_("Create Branch…"),G_CALLBACK(new_branch),p);add_more_item(menu,_("Switch Branch…"),G_CALLBACK(switch_branch),p);add_more_item(menu,_("Delete Branch…"),G_CALLBACK(delete_branch),p);add_more_item(menu,_("Create Tag…"),G_CALLBACK(new_tag),p);add_more_item(menu,_("Add Remote…"),G_CALLBACK(add_remote),p);add_more_item(menu,_("Remove Remote…"),G_CALLBACK(remove_remote),p);add_more_item(menu,_("Merge…"),G_CALLBACK(merge_ref),p);add_more_item(menu,_("Rebase…"),G_CALLBACK(rebase_ref),p);add_more_item(menu,_("Cherry-pick…"),G_CALLBACK(cherry_pick_ref),p);add_more_item(menu,_("Revert Commit…"),G_CALLBACK(revert_ref),p);add_more_item(menu,_("Continue Merge"),G_CALLBACK(merge_continue),p);add_more_item(menu,_("Abort Merge"),G_CALLBACK(merge_abort),p);add_more_item(menu,_("Continue Rebase"),G_CALLBACK(rebase_continue),p);add_more_item(menu,_("Abort Rebase"),G_CALLBACK(rebase_abort),p);add_more_item(menu,_("Abort Cherry-pick"),G_CALLBACK(cherry_abort),p);gtk_widget_show_all(menu);gtk_menu_button_set_popup(GTK_MENU_BUTTON(more),menu);gtk_box_pack_start(GTK_BOX(row),more,TRUE,TRUE,0);

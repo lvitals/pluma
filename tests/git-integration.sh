@@ -107,6 +107,30 @@ rm -f "$repo/.git/hooks/pre-commit"
 git -C "$repo" reset -q HEAD -- .
 git -C "$repo" restore -- .
 
+# Sign-off uses Git's configured identity and adds the standard trailer.
+printf 'signoff\n' >> "$repo/commit-all.txt"
+git -C "$repo" add -- commit-all.txt
+git -C "$repo" commit --signoff -qm signed-off-commit
+git -C "$repo" log -1 --format=%B | grep -Fx 'Signed-off-by: Pluma Test <pluma@example.invalid>'
+
+# A configured signing failure must not create a commit or lose staged changes.
+printf 'signature failure\n' >> "$repo/commit-all.txt"
+git -C "$repo" add -- commit-all.txt
+signed_head=$(git -C "$repo" rev-parse HEAD)
+git -C "$repo" config gpg.program false
+if git -C "$repo" commit -S -m should-not-sign >/dev/null 2>&1; then
+  echo "signed commit unexpectedly succeeded without a signer" >&2
+  exit 1
+fi
+test "$(git -C "$repo" rev-parse HEAD)" = "$signed_head"
+git -C "$repo" diff --cached --quiet && {
+  echo "failed signed commit did not preserve staged changes" >&2
+  exit 1
+}
+git -C "$repo" config --unset gpg.program
+git -C "$repo" reset -q HEAD -- .
+git -C "$repo" restore -- .
+
 printf 'stash me\n' >> "$repo/tracked file.txt"
 git -C "$repo" stash push -qm test-stash
 git -C "$repo" stash list | grep -F test-stash
