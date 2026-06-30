@@ -48,6 +48,9 @@
 #include "pluma-window.h"
 #include "pluma-window-private.h"
 #include "pluma-project-search-panel.h"
+#ifdef ENABLE_GIT
+#include "pluma-git-panel.h"
+#endif
 #include "pluma-app.h"
 #include "pluma-notebook.h"
 #include "pluma-statusbar.h"
@@ -3767,6 +3770,14 @@ create_side_panel (PlumaWindow *window)
                                     window->priv->project_search_panel,
                                     _("Search"),
                                     "edit-find");
+
+#ifdef ENABLE_GIT
+    window->priv->git_panel = pluma_git_panel_new (window);
+    pluma_panel_add_item_with_icon (PLUMA_PANEL (window->priv->side_panel),
+                                    window->priv->git_panel,
+                                    _("Source Control"),
+                                    "vcs-branch-symbolic");
+#endif
 }
 
 static void

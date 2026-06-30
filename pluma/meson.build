@@ -40,6 +40,7 @@ noinst_h_files = [
   'pluma-document-saver.h',
   'pluma-documents-panel.h',
   'pluma-file-chooser-dialog.h',
+  'pluma-git-panel.h',
   'pluma-history-entry.h',
   'pluma-io-error-message-area.h',
   'pluma-language-manager.h',
@@ -115,6 +116,10 @@ libpluma_c_files = [
 
 if not enable_gvfs_metadata
   libpluma_c_files += 'pluma-metadata-manager.c'
+endif
+
+if enable_git
+  libpluma_c_files += 'pluma-git-panel.c'
 endif
 
 # enum-types templates

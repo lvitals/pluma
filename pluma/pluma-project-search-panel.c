@@ -414,7 +414,9 @@ pluma_project_search_panel_init (PlumaProjectSearchPanel *panel)
 	gtk_box_set_spacing (GTK_BOX (panel), 4); gtk_container_set_border_width (GTK_CONTAINER (panel), 6);
 	row = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 3);
 	panel->search_entry = gtk_search_entry_new (); gtk_entry_set_placeholder_text (GTK_ENTRY (panel->search_entry), _("Search in files"));
+	gtk_widget_set_tooltip_text (panel->search_entry, _("Enter search pattern"));
 	button = gtk_button_new_from_icon_name ("edit-find", GTK_ICON_SIZE_MENU);
+	gtk_widget_set_tooltip_text (button, _("Search"));
 	gtk_box_pack_start (GTK_BOX (row), panel->search_entry, TRUE, TRUE, 0); gtk_box_pack_start (GTK_BOX (row), button, FALSE, FALSE, 0);
 	gtk_box_pack_start (GTK_BOX (panel), row, FALSE, FALSE, 0);
 	g_signal_connect (panel->search_entry, "activate", G_CALLBACK (search_activate), panel);
@@ -422,7 +424,9 @@ pluma_project_search_panel_init (PlumaProjectSearchPanel *panel)
 
 	row = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 3);
 	panel->replace_entry = gtk_entry_new (); gtk_entry_set_placeholder_text (GTK_ENTRY (panel->replace_entry), _("Replace"));
+	gtk_widget_set_tooltip_text (panel->replace_entry, _("Enter replacement text"));
 	replace_button = gtk_button_new_with_label (_("Replace All"));
+	gtk_widget_set_tooltip_text (replace_button, _("Replace all occurrences"));
 	gtk_box_pack_start (GTK_BOX (row), panel->replace_entry, TRUE, TRUE, 0); gtk_box_pack_start (GTK_BOX (row), replace_button, FALSE, FALSE, 0);
 	gtk_box_pack_start (GTK_BOX (panel), row, FALSE, FALSE, 0);
 	g_signal_connect (replace_button, "clicked", G_CALLBACK (replace_all_clicked), panel);
@@ -433,7 +437,9 @@ pluma_project_search_panel_init (PlumaProjectSearchPanel *panel)
 	gtk_box_pack_start(GTK_BOX(row),panel->regex_button,FALSE,FALSE,0); gtk_box_pack_start(GTK_BOX(row),panel->ignored_button,FALSE,FALSE,0);
 	panel->spinner=gtk_spinner_new(); gtk_box_pack_end(GTK_BOX(row),panel->spinner,FALSE,FALSE,0); gtk_box_pack_start(GTK_BOX(panel),row,FALSE,FALSE,0);
 	panel->include_entry=gtk_entry_new(); gtk_entry_set_placeholder_text(GTK_ENTRY(panel->include_entry),_("Files to include (for example: *.c, src/**)"));
+	gtk_widget_set_tooltip_text (panel->include_entry, _("Files to include (for example: *.c, src/**)"));
 	panel->exclude_entry=gtk_entry_new(); gtk_entry_set_placeholder_text(GTK_ENTRY(panel->exclude_entry),_("Files to exclude (for example: build/**)"));
+	gtk_widget_set_tooltip_text (panel->exclude_entry, _("Files to exclude (for example: build/**)"));
 	panel->settings = g_settings_new (PLUMA_SCHEMA_ID);
 	{
 		gchar *value = g_settings_get_string (panel->settings, "project-search-text"); gtk_entry_set_text (GTK_ENTRY (panel->search_entry), value); g_free (value);
@@ -453,7 +459,7 @@ pluma_project_search_panel_init (PlumaProjectSearchPanel *panel)
 	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,3); panel->status=gtk_label_new(""); gtk_label_set_xalign(GTK_LABEL(panel->status),0);
 	expand_button=gtk_button_new_from_icon_name("list-add",GTK_ICON_SIZE_MENU); gtk_widget_set_tooltip_text(expand_button,_("Expand all")); g_signal_connect(expand_button,"clicked",G_CALLBACK(expand_clicked),panel);
 	collapse_button=gtk_button_new_from_icon_name("list-remove",GTK_ICON_SIZE_MENU); gtk_widget_set_tooltip_text(collapse_button,_("Collapse all")); g_signal_connect(collapse_button,"clicked",G_CALLBACK(collapse_clicked),panel);
-	button=gtk_button_new_with_label(_("Cancel")); g_signal_connect(button,"clicked",G_CALLBACK(cancel_clicked),panel);
+	button=gtk_button_new_with_label(_("Cancel")); gtk_widget_set_tooltip_text(button,_("Cancel search")); g_signal_connect(button,"clicked",G_CALLBACK(cancel_clicked),panel);
 	gtk_box_pack_start(GTK_BOX(row),panel->status,TRUE,TRUE,0); gtk_box_pack_end(GTK_BOX(row),button,FALSE,FALSE,0); gtk_box_pack_end(GTK_BOX(row),collapse_button,FALSE,FALSE,0); gtk_box_pack_end(GTK_BOX(row),expand_button,FALSE,FALSE,0); gtk_box_pack_end(GTK_BOX(panel),row,FALSE,FALSE,0);
 	gtk_widget_show_all(GTK_WIDGET(panel));
 }

@@ -22,6 +22,7 @@ pluma/pluma-documents-panel.c
 pluma/pluma-encodings.c
 pluma/pluma-encodings-combo-box.c
 pluma/pluma-file-chooser-dialog.c
+pluma/pluma-git-panel.c
 pluma/pluma-help.c
 pluma/pluma-io-error-message-area.c
 pluma/pluma-notebook.c

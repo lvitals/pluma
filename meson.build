@@ -67,6 +67,17 @@ if not ripgrep_program.found()
   warning('ripgrep not found: project search will use the slower grep fallback. Install a package that provides the rg executable for best performance.')
 endif
 
+enable_git = get_option('git')
+if enable_git
+  git_program = find_program('git', required: false)
+  if not git_program.found()
+    warning('git not found: integrated source control features will be unavailable. Install a package that provides the git executable.')
+    enable_git = false
+  endif
+else
+  enable_git = false
+endif
+
 optional_enchant_backends = {
   'aspell': 'aspell',
   'hspell': 'hspell',
@@ -143,6 +154,10 @@ endif
 if enable_spell
   conf_data.set('HAVE_ISO_CODES', 1)
   conf_data.set_quoted('ISO_CODES_PREFIX', iso_codes_prefix)
+endif
+
+if enable_git
+  conf_data.set('ENABLE_GIT', 1)
 endif
 
 if enable_introspection

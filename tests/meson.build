@@ -17,3 +17,12 @@ foreach t : test_progs
   )
   test(t, exe)
 endforeach
+
+git_program = find_program('git', required: false)
+shell_program = find_program('sh')
+if git_program.found() and enable_git
+  test('git-integration', shell_program,
+    args: files('git-integration.sh'),
+    env: ['GIT_CONFIG_NOSYSTEM=1'],
+  )
+endif

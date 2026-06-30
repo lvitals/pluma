@@ -50,6 +50,9 @@ struct _PlumaWindowPrivate
 
 	GtkWidget      *side_panel;
 	GtkWidget      *project_search_panel;
+#ifdef ENABLE_GIT
+	GtkWidget      *git_panel;
+#endif
 	GtkWidget      *bottom_panel;
 	GtkWidget      *right_panel;
 
