@@ -55,6 +55,10 @@ static void update_selection_sensitivity (PlumaGitPanel *panel);
 static void open_side_by_side_diff (PlumaGitPanel *p);
 static gboolean selected_file (PlumaGitPanel *panel, gchar **path, gint *group, gint *status);
 static gboolean match_filter (const gchar *str, const gchar *filter);
+static gboolean ensure_documents_saved (PlumaGitPanel *panel, const gchar *operation,
+	                                    const gchar *relative_path);
+static gboolean confirm_action (PlumaGitPanel *panel, const gchar *primary,
+	                            const gchar *secondary);
 
 static const gchar *group_names[N_GROUPS] = { N_("Commits to Push"), N_("Conflicts"), N_("Staged Changes"), N_("Changes"), N_("Untracked") };
 
@@ -88,6 +92,72 @@ match_filter (const gchar *str, const gchar *filter)
 	g_free (str_lower);
 	g_free (filter_lower);
 	return res;
+}
+
+static gboolean
+ensure_documents_saved (PlumaGitPanel *panel, const gchar *operation,
+	                    const gchar *relative_path)
+{
+	GList *documents = pluma_window_get_documents (panel->window);
+	GString *names = g_string_new (NULL);
+	gchar *target = relative_path != NULL && panel->repo != NULL
+	              ? g_canonicalize_filename (relative_path, panel->repo) : NULL;
+	guint modified = 0;
+
+	for (GList *item = documents; item != NULL; item = item->next)
+	{
+		PlumaDocument *document = PLUMA_DOCUMENT (item->data);
+		GFile *location;
+		gchar *path;
+		gboolean in_repo;
+
+		if (!gtk_text_buffer_get_modified (GTK_TEXT_BUFFER (document)))
+			continue;
+		location = pluma_document_get_location (document);
+		path = location != NULL ? g_file_get_path (location) : NULL;
+		if (location != NULL)
+			g_object_unref (location);
+		in_repo = path != NULL && panel->repo != NULL &&
+		          g_str_has_prefix (path, panel->repo) &&
+		          (path[strlen (panel->repo)] == '\0' || path[strlen (panel->repo)] == G_DIR_SEPARATOR);
+		if (path == NULL || panel->repo == NULL ||
+		    (!in_repo && g_strcmp0 (path, target) != 0) ||
+		    (target != NULL && g_strcmp0 (path, target) != 0))
+		{
+			g_free (path);
+			continue;
+		}
+		if (modified++ < 5)
+		{
+			gchar *display = g_filename_display_basename (path);
+			g_string_append_printf (names, "\n• %s", display);
+			g_free (display);
+		}
+		g_free (path);
+	}
+	g_list_free (documents);
+	g_free (target);
+
+	if (modified > 0)
+	{
+		GtkWidget *dialog;
+		gchar *primary = g_strdup_printf (_("Save modified files before %s"), operation);
+		if (modified > 5)
+			g_string_append_printf (names, _("\n• and %u more"), modified - 5);
+		dialog = gtk_message_dialog_new (GTK_WINDOW (panel->window), GTK_DIALOG_MODAL,
+		                                 GTK_MESSAGE_WARNING, GTK_BUTTONS_CLOSE,
+		                                 "%s", primary);
+		gtk_message_dialog_format_secondary_text (GTK_MESSAGE_DIALOG (dialog),
+		                                          _("This Git operation could overwrite unsaved editor contents:%s"),
+		                                          names->str);
+		gtk_dialog_run (GTK_DIALOG (dialog));
+		gtk_widget_destroy (dialog);
+		g_free (primary);
+		g_string_free (names, TRUE);
+		return FALSE;
+	}
+	g_string_free (names, TRUE);
+	return TRUE;
 }
 
 static gchar *
@@ -366,7 +436,7 @@ status_done (GObject *source, GAsyncResult *result, gpointer data)
 void
 pluma_git_panel_refresh (PlumaGitPanel *panel)
 {
-	const gchar *argv[]={"git","status","--porcelain=v2","--branch","--untracked-files=all",NULL}; GError *error=NULL; GSubprocess *process;
+	const gchar *argv[]={"git","-c","core.quotePath=false","status","--porcelain=v2","--branch","--untracked-files=all",NULL}; GError *error=NULL; GSubprocess *process;
 	gchar *repo;
 	if (panel->status_running) { panel->refresh_pending = TRUE; return; }
 	repo=find_repository(panel);
@@ -490,6 +560,7 @@ static void open_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_
 static void discard_selected (PlumaGitPanel *p)
 {
 	gchar *path;gint g,s;GtkWidget *d;if(!selected_file(p,&path,&g,&s)){g_free(path);return;}
+	if (g != GROUP_UNTRACKED && !ensure_documents_saved (p, _("discarding changes"), path)) { g_free (path); return; }
 	d=gtk_message_dialog_new(GTK_WINDOW(p->window),GTK_DIALOG_MODAL,GTK_MESSAGE_WARNING,GTK_BUTTONS_CANCEL,
 	                         g==GROUP_UNTRACKED?_("Permanently delete untracked file “%s”?"):_("Discard changes to “%s”?"),path);
 	gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(d),"%s",g==GROUP_UNTRACKED?_("This file is not tracked by Git and cannot be restored by Pluma."):_("Changes in the working tree will be lost."));
@@ -554,6 +625,143 @@ get_git_output (PlumaGitPanel *panel, const gchar * const *argv)
 		g_clear_error (&error);
 	return out;
 }
+
+static void
+run_git_with_input (PlumaGitPanel *panel, const gchar * const *argv,
+	                const gchar *input)
+{
+	GSubprocessLauncher *launcher;
+	GSubprocess *process;
+	GitCall *call;
+	GError *error = NULL;
+
+	launcher = g_subprocess_launcher_new (G_SUBPROCESS_FLAGS_STDIN_PIPE |
+	                                      G_SUBPROCESS_FLAGS_STDOUT_PIPE |
+	                                      G_SUBPROCESS_FLAGS_STDERR_PIPE);
+	g_subprocess_launcher_set_cwd (launcher, panel->repo);
+	g_subprocess_launcher_setenv (launcher, "LC_ALL", "C", TRUE);
+	process = g_subprocess_launcher_spawnv (launcher, argv, &error);
+	g_object_unref (launcher);
+	if (process == NULL)
+	{
+		gtk_label_set_text (GTK_LABEL (panel->summary_label),
+		                    error != NULL ? error->message : _("Git is unavailable"));
+		g_clear_error (&error);
+		return;
+	}
+	call = g_new0 (GitCall, 1);
+	call->panel = g_object_ref (panel);
+	g_subprocess_communicate_utf8_async (process, input, panel->cancellable,
+	                                     call_done, call);
+	g_object_unref (process);
+}
+
+static gchar *
+choose_hunk_patch (PlumaGitPanel *panel, const gchar *diff, const gchar *title)
+{
+	GPtrArray *patches = g_ptr_array_new_with_free_func (g_free);
+	GPtrArray *labels = g_ptr_array_new_with_free_func (g_free);
+	GString *header = g_string_new (NULL);
+	GString *current = NULL;
+	gchar **lines = g_strsplit (diff != NULL ? diff : "", "\n", -1);
+	GtkWidget *dialog, *box, *combo;
+	gchar *selected = NULL;
+
+	for (guint i = 0; lines[i] != NULL; i++)
+	{
+		if (g_str_has_prefix (lines[i], "@@ "))
+		{
+			if (current != NULL)
+				g_ptr_array_add (patches, g_string_free (current, FALSE));
+			current = g_string_new (header->str);
+			g_ptr_array_add (labels, g_strdup (lines[i]));
+		}
+		if (current != NULL)
+			g_string_append_printf (current, "%s\n", lines[i]);
+		else
+			g_string_append_printf (header, "%s\n", lines[i]);
+	}
+	if (current != NULL)
+		g_ptr_array_add (patches, g_string_free (current, FALSE));
+	g_string_free (header, TRUE);
+	g_strfreev (lines);
+
+	if (patches->len == 0)
+	{
+		gtk_label_set_text (GTK_LABEL (panel->summary_label),
+		                    _("No textual hunks are available for this file."));
+		goto out;
+	}
+	dialog = gtk_dialog_new_with_buttons (title, GTK_WINDOW (panel->window),
+	                                      GTK_DIALOG_MODAL,
+	                                      _("Cancel"), GTK_RESPONSE_CANCEL,
+	                                      _("Continue"), GTK_RESPONSE_ACCEPT, NULL);
+	box = gtk_dialog_get_content_area (GTK_DIALOG (dialog));
+	gtk_container_set_border_width (GTK_CONTAINER (box), 8);
+	combo = gtk_combo_box_text_new ();
+	for (guint i = 0; i < labels->len; i++)
+		gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), g_ptr_array_index (labels, i));
+	gtk_combo_box_set_active (GTK_COMBO_BOX (combo), 0);
+	gtk_box_pack_start (GTK_BOX (box), combo, FALSE, FALSE, 0);
+	gtk_widget_show_all (dialog);
+	if (gtk_dialog_run (GTK_DIALOG (dialog)) == GTK_RESPONSE_ACCEPT)
+	{
+		gint active = gtk_combo_box_get_active (GTK_COMBO_BOX (combo));
+		if (active >= 0 && (guint) active < patches->len)
+			selected = g_strdup (g_ptr_array_index (patches, active));
+	}
+	gtk_widget_destroy (dialog);
+out:
+	g_ptr_array_unref (patches);
+	g_ptr_array_unref (labels);
+	return selected;
+}
+
+static void
+apply_selected_hunk (PlumaGitPanel *panel, gboolean reverse, gboolean cached,
+	                 gboolean destructive)
+{
+	gchar *path = NULL, *diff = NULL, *patch = NULL;
+	gint group, status;
+	const gchar *diff_worktree[] = {"git", "diff", "--no-ext-diff", "--", NULL, NULL};
+	const gchar *diff_cached[] = {"git", "diff", "--cached", "--no-ext-diff", "--", NULL, NULL};
+	const gchar *apply_stage[] = {"git", "apply", "--cached", "--whitespace=nowarn", "-", NULL};
+	const gchar *apply_unstage[] = {"git", "apply", "--cached", "--reverse", "--whitespace=nowarn", "-", NULL};
+	const gchar *apply_discard[] = {"git", "apply", "--reverse", "--whitespace=nowarn", "-", NULL};
+
+	if (!selected_file (panel, &path, &group, &status))
+		return;
+	if (destructive && !ensure_documents_saved (panel, _("discarding a hunk"), path))
+		goto out;
+	if (cached)
+	{
+		diff_cached[5] = path;
+		diff = get_git_output (panel, diff_cached);
+	}
+	else
+	{
+		diff_worktree[4] = path;
+		diff = get_git_output (panel, diff_worktree);
+	}
+	patch = choose_hunk_patch (panel, diff,
+	                          destructive ? _("Discard Hunk") :
+	                          reverse ? _("Unstage Hunk") : _("Stage Hunk"));
+	if (patch == NULL)
+		goto out;
+	if (destructive && !confirm_action (panel, _("Discard the selected hunk?"),
+	                                   _("The selected working-tree changes will be lost.")))
+		goto out;
+	run_git_with_input (panel, destructive ? apply_discard :
+	                           reverse ? apply_unstage : apply_stage, patch);
+out:
+	g_free (patch);
+	g_free (diff);
+	g_free (path);
+}
+
+static void stage_hunk_selected (PlumaGitPanel *panel) { apply_selected_hunk (panel, FALSE, FALSE, FALSE); }
+static void unstage_hunk_selected (PlumaGitPanel *panel) { apply_selected_hunk (panel, TRUE, TRUE, FALSE); }
+static void discard_hunk_selected (PlumaGitPanel *panel) { apply_selected_hunk (panel, TRUE, FALSE, TRUE); }
 
 
 
@@ -995,9 +1203,16 @@ static gboolean menu_popup(GtkWidget*w,GdkEventButton*e,gpointer data)
 		ITEM(_("Open Unified Diff"),diff_selected);
 		ITEM(_("Open Side-by-Side Diff"),open_side_by_side_diff);
 	}
-	if(g==GROUP_STAGED) { ITEM(_("Unstage"),unstage_selected); }
+	if(g==GROUP_STAGED) {
+		ITEM(_("Unstage"),unstage_selected);
+		ITEM(_("Unstage Hunk…"),unstage_hunk_selected);
+	}
 	else { ITEM(_("Stage"),stage_selected); }
-	if(g==GROUP_CHANGED) { ITEM(_("Discard Changes"),discard_selected); }
+	if(g==GROUP_CHANGED) {
+		ITEM(_("Stage Hunk…"),stage_hunk_selected);
+		ITEM(_("Discard Changes"),discard_selected);
+		ITEM(_("Discard Hunk…"),discard_hunk_selected);
+	}
 	if(g==GROUP_UNTRACKED) { ITEM(_("Delete Permanently"),discard_selected); }
 #undef ITEM
 	gtk_widget_show_all(m);gtk_menu_popup_at_pointer(GTK_MENU(m),(GdkEvent*)e);return TRUE;
@@ -1024,7 +1239,7 @@ static void branches_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;con
 static void tags_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","tag","-n",NULL};run_git(p,a,TRUE,_("Git Tags"));}
 static void remotes_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","remote","-v",NULL};run_git(p,a,TRUE,_("Git Remotes"));}
 static void fetch_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","fetch","--all","--prune",NULL};run_git(p,a,FALSE,NULL);}
-static void pull_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","pull",NULL};run_git(p,a,FALSE,NULL);}
+static void pull_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;if(!ensure_documents_saved(p,_("pulling changes"),NULL))return;const gchar*a[]={"git","pull",NULL};run_git(p,a,FALSE,NULL);}
 static void push_clicked(GtkButton*b,gpointer data)
 {
 	PlumaGitPanel*p=data;
@@ -1045,7 +1260,7 @@ static void push_clicked(GtkButton*b,gpointer data)
 	}
 }
 static void stash_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","stash","push","-u",NULL};run_git(p,a,FALSE,NULL);}
-static void stash_pop_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","stash","pop",NULL};run_git(p,a,FALSE,NULL);}
+static void stash_pop_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;if(!ensure_documents_saved(p,_("applying a stash"),NULL))return;const gchar*a[]={"git","stash","pop",NULL};run_git(p,a,FALSE,NULL);}
 static void stash_list_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","stash","list",NULL};run_git(p,a,TRUE,_("Git Stashes"));}
 static void diff_selected_clicked(GtkButton*b,gpointer data)
 {
@@ -1099,20 +1314,20 @@ prompt_value(PlumaGitPanel*p,const gchar*title,const gchar*label)
 static gboolean confirm_action(PlumaGitPanel*p,const gchar*primary,const gchar*secondary)
 {GtkWidget*d=gtk_message_dialog_new(GTK_WINDOW(p->window),GTK_DIALOG_MODAL,GTK_MESSAGE_WARNING,GTK_BUTTONS_CANCEL,"%s",primary);gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(d),"%s",secondary);gtk_dialog_add_button(GTK_DIALOG(d),_("Continue"),GTK_RESPONSE_ACCEPT);gboolean ok=gtk_dialog_run(GTK_DIALOG(d))==GTK_RESPONSE_ACCEPT;gtk_widget_destroy(d);return ok;}
 static void new_branch(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Create Branch"),_("Branch name"));if(v){const gchar*a[]={"git","switch","-c",v,NULL};run_git(p,a,FALSE,NULL);g_free(v);}}
-static void switch_branch(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Switch Branch"),_("Branch or reference"));if(v){const gchar*a[]={"git","switch",v,NULL};run_git(p,a,FALSE,NULL);g_free(v);}}
+static void switch_branch(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Switch Branch"),_("Branch or reference"));if(v){if(ensure_documents_saved(p,_("switching branches"),NULL)){const gchar*a[]={"git","switch",v,NULL};run_git(p,a,FALSE,NULL);}g_free(v);}}
 static void delete_branch(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Delete Branch"),_("Local branch name"));if(v){gchar*q=g_strdup_printf(_("Delete local branch “%s”?"),v);if(confirm_action(p,q,_("The branch is deleted only if Git considers it fully merged."))){const gchar*a[]={"git","branch","-d",v,NULL};run_git(p,a,FALSE,NULL);}g_free(q);g_free(v);}}
 static void new_tag(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Create Tag"),_("Tag name"));if(v){const gchar*a[]={"git","tag",v,NULL};run_git(p,a,FALSE,NULL);g_free(v);}}
 static void add_remote(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*n=prompt_value(p,_("Add Remote"),_("Remote name"));if(n){gchar*u=prompt_value(p,_("Add Remote"),_("Remote URL"));if(u){const gchar*a[]={"git","remote","add",n,u,NULL};run_git(p,a,FALSE,NULL);g_free(u);}g_free(n);}}
 static void remove_remote(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Remove Remote"),_("Remote name"));if(v){gchar*q=g_strdup_printf(_("Remove remote “%s”?"),v);if(confirm_action(p,q,_("Local remote-tracking configuration will be removed."))){const gchar*a[]={"git","remote","remove",v,NULL};run_git(p,a,FALSE,NULL);}g_free(q);g_free(v);}}
-static void merge_ref(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Merge"),_("Branch or commit"));if(v){const gchar*a[]={"git","merge",v,NULL};run_git(p,a,FALSE,NULL);g_free(v);}}
-static void rebase_ref(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Rebase"),_("Upstream branch or commit"));if(v&&confirm_action(p,_("Rebase the current branch?"),_("Commits will be replayed and conflicts may require manual resolution."))){const gchar*a[]={"git","rebase",v,NULL};run_git(p,a,FALSE,NULL);}g_free(v);}
-static void cherry_pick_ref(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Cherry-pick"),_("Commit hash"));if(v){const gchar*a[]={"git","cherry-pick",v,NULL};run_git(p,a,FALSE,NULL);g_free(v);}}
-static void revert_ref(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Revert Commit"),_("Commit hash"));if(v&&confirm_action(p,_("Create a revert commit?"),_("Git will create a new commit that reverses the selected commit."))){const gchar*a[]={"git","revert","--no-edit",v,NULL};run_git(p,a,FALSE,NULL);}g_free(v);}
+static void merge_ref(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Merge"),_("Branch or commit"));if(v){if(ensure_documents_saved(p,_("merging"),NULL)){const gchar*a[]={"git","merge",v,NULL};run_git(p,a,FALSE,NULL);}g_free(v);}}
+static void rebase_ref(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Rebase"),_("Upstream branch or commit"));if(v&&ensure_documents_saved(p,_("rebasing"),NULL)&&confirm_action(p,_("Rebase the current branch?"),_("Commits will be replayed and conflicts may require manual resolution."))){const gchar*a[]={"git","rebase",v,NULL};run_git(p,a,FALSE,NULL);}g_free(v);}
+static void cherry_pick_ref(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Cherry-pick"),_("Commit hash"));if(v){if(ensure_documents_saved(p,_("cherry-picking"),NULL)){const gchar*a[]={"git","cherry-pick",v,NULL};run_git(p,a,FALSE,NULL);}g_free(v);}}
+static void revert_ref(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;gchar*v=prompt_value(p,_("Revert Commit"),_("Commit hash"));if(v&&ensure_documents_saved(p,_("reverting a commit"),NULL)&&confirm_action(p,_("Create a revert commit?"),_("Git will create a new commit that reverses the selected commit."))){const gchar*a[]={"git","revert","--no-edit",v,NULL};run_git(p,a,FALSE,NULL);}g_free(v);}
 static void merge_continue(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","merge","--continue",NULL};run_git(p,a,FALSE,NULL);}
-static void merge_abort(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;if(confirm_action(p,_("Abort merge?"),_("Merge progress and conflict resolutions will be discarded."))){const gchar*a[]={"git","merge","--abort",NULL};run_git(p,a,FALSE,NULL);}}
+static void merge_abort(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;if(ensure_documents_saved(p,_("aborting the merge"),NULL)&&confirm_action(p,_("Abort merge?"),_("Merge progress and conflict resolutions will be discarded."))){const gchar*a[]={"git","merge","--abort",NULL};run_git(p,a,FALSE,NULL);}}
 static void rebase_continue(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","-c","core.editor=true","rebase","--continue",NULL};run_git(p,a,FALSE,NULL);}
-static void rebase_abort(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;if(confirm_action(p,_("Abort rebase?"),_("The branch will return to its state before the rebase."))){const gchar*a[]={"git","rebase","--abort",NULL};run_git(p,a,FALSE,NULL);}}
-static void cherry_abort(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;if(confirm_action(p,_("Abort cherry-pick?"),_("Cherry-pick progress will be discarded."))){const gchar*a[]={"git","cherry-pick","--abort",NULL};run_git(p,a,FALSE,NULL);}}
+static void rebase_abort(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;if(ensure_documents_saved(p,_("aborting the rebase"),NULL)&&confirm_action(p,_("Abort rebase?"),_("The branch will return to its state before the rebase."))){const gchar*a[]={"git","rebase","--abort",NULL};run_git(p,a,FALSE,NULL);}}
+static void cherry_abort(GtkMenuItem*i,gpointer data){PlumaGitPanel*p=data;if(ensure_documents_saved(p,_("aborting the cherry-pick"),NULL)&&confirm_action(p,_("Abort cherry-pick?"),_("Cherry-pick progress will be discarded."))){const gchar*a[]={"git","cherry-pick","--abort",NULL};run_git(p,a,FALSE,NULL);}}
 static void add_more_item(GtkWidget*menu,const gchar*label,GCallback callback,PlumaGitPanel*p){GtkWidget*i=gtk_menu_item_new_with_label(label);g_signal_connect(i,"activate",callback,p);gtk_menu_shell_append(GTK_MENU_SHELL(menu),i);}
 static void monitor_changed(GFileMonitor*m,GFile*f,GFile*o,GFileMonitorEvent e,gpointer data){schedule_refresh(data);}
 static gboolean poll_status(gpointer data){PlumaGitPanel*p=data;if(gtk_widget_get_mapped(GTK_WIDGET(p)))schedule_refresh(p);return G_SOURCE_CONTINUE;}
