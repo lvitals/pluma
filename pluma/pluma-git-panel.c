@@ -12,7 +12,7 @@
 #include "pluma-pango.h"
 
 enum { COL_LABEL, COL_PATH, COL_GROUP, COL_STATUS, COL_IS_GROUP, N_COLS };
-enum { GROUP_CONFLICT, GROUP_STAGED, GROUP_CHANGED, GROUP_UNTRACKED, N_GROUPS };
+enum { GROUP_OUTGOING, GROUP_CONFLICT, GROUP_STAGED, GROUP_CHANGED, GROUP_UNTRACKED, N_GROUPS };
 
 typedef struct
 {
@@ -30,6 +30,7 @@ struct _PlumaGitPanel
 	GtkWidget *filter_entry;
 	gchar *filter_query;
 	gchar *last_status_output;
+	gchar *outgoing_commits;
 	gchar *current_branch;
 	gchar *upstream;
 	GtkTreeStore *store;
@@ -55,7 +56,7 @@ static void open_side_by_side_diff (PlumaGitPanel *p);
 static gboolean selected_file (PlumaGitPanel *panel, gchar **path, gint *group, gint *status);
 static gboolean match_filter (const gchar *str, const gchar *filter);
 
-static const gchar *group_names[N_GROUPS] = { N_("Conflicts"), N_("Staged Changes"), N_("Changes"), N_("Untracked") };
+static const gchar *group_names[N_GROUPS] = { N_("Commits to Push"), N_("Conflicts"), N_("Staged Changes"), N_("Changes"), N_("Untracked") };
 
 static gboolean
 match_filter (const gchar *str, const gchar *filter)
@@ -139,6 +140,19 @@ append_file (PlumaGitPanel *panel, gint group, const gchar *path, gchar status)
 	g_free (label);
 }
 
+static void
+append_outgoing_commit (PlumaGitPanel *panel, const gchar *commit)
+{
+	GtkTreeIter iter;
+	gchar *label = g_strdup_printf ("↑  %s", commit);
+
+	gtk_tree_store_append (panel->store, &iter, &panel->groups[GROUP_OUTGOING]);
+	/* COL_PATH stays NULL so file actions are not enabled for commit rows. */
+	gtk_tree_store_set (panel->store, &iter, COL_LABEL, label,
+	                    COL_GROUP, GROUP_OUTGOING, COL_IS_GROUP, FALSE, -1);
+	g_free (label);
+}
+
 static gboolean
 find_and_select_path (GtkTreeModel *model, GtkTreePath *path_in, GtkTreeIter *iter, gpointer data)
 {
@@ -168,7 +182,7 @@ parse_status (PlumaGitPanel *panel, const gchar *output)
 	gint selected_status = 0;
 	gboolean has_selection = selected_file (panel, &selected_path, &selected_group, &selected_status);
 
-	gboolean expanded[N_GROUPS] = {TRUE, TRUE, TRUE, TRUE};
+	gboolean expanded[N_GROUPS] = {TRUE, TRUE, TRUE, TRUE, TRUE};
 	for (gint g = 0; g < N_GROUPS; g++)
 	{
 		GtkTreePath *p = gtk_tree_model_get_path (GTK_TREE_MODEL (panel->store), &panel->groups[g]);
@@ -236,6 +250,19 @@ parse_status (PlumaGitPanel *panel, const gchar *output)
 			g_strfreev (parts);
 		}
 	}
+	if (ahead > 0 && panel->outgoing_commits != NULL)
+	{
+		gchar **commits = g_strsplit (panel->outgoing_commits, "\n", -1);
+		for (guint i = 0; commits[i] != NULL; i++)
+		{
+			if (*commits[i] != '\0' && match_filter (commits[i], panel->filter_query))
+			{
+				append_outgoing_commit (panel, commits[i]);
+				counts[GROUP_OUTGOING]++;
+			}
+		}
+		g_strfreev (commits);
+	}
 	for (gint i=0;i<N_GROUPS;i++) { gchar *name=g_strdup_printf ("%s (%u)",_(group_names[i]),counts[i]); gtk_tree_store_set(panel->store,&panel->groups[i],COL_LABEL,name,-1); g_free(name); }
 	
 	for (gint g = 0; g < N_GROUPS; g++)
@@ -253,7 +280,9 @@ parse_status (PlumaGitPanel *panel, const gchar *output)
 
 	{
 		gchar *head = g_strdup_printf ("%s%s%s", branch ? branch : _("No commits"), upstream ? " → " : "", upstream ? upstream : "");
-		gchar *summary = g_strdup_printf (_("%u changes  ↑%d ↓%d"), counts[0]+counts[1]+counts[2]+counts[3], ahead, behind);
+		guint file_changes = counts[GROUP_CONFLICT] + counts[GROUP_STAGED] +
+		                     counts[GROUP_CHANGED] + counts[GROUP_UNTRACKED];
+		gchar *summary = g_strdup_printf (_("%u changes  ↑%d ↓%d"), file_changes, ahead, behind);
 		gtk_label_set_text (GTK_LABEL (panel->branch_label), head); gtk_label_set_text (GTK_LABEL (panel->summary_label), summary);
 		if (panel->statusbar_context != 0)
 		{
@@ -282,6 +311,20 @@ status_done (GObject *source, GAsyncResult *result, gpointer data)
 		if (error) gtk_label_set_text(GTK_LABEL(panel->summary_label),error->message);
 		else if (g_subprocess_get_successful(G_SUBPROCESS(source)))
 		{
+			const gchar *log_argv[]={"git","log","--format=%h  %s","--max-count=100","@{upstream}..HEAD",NULL};
+			GSubprocess *log_process;
+			gchar *log_out = NULL;
+			GError *log_error = NULL;
+
+			log_process = spawn_git (panel, log_argv, &log_error);
+			if (log_process != NULL)
+			{
+				g_subprocess_communicate_utf8 (log_process, NULL, NULL, &log_out, NULL, &log_error);
+				g_object_unref (log_process);
+			}
+			g_clear_error (&log_error);
+			g_free (panel->outgoing_commits);
+			panel->outgoing_commits = log_out;
 			g_free (panel->last_status_output);
 			panel->last_status_output = g_strdup (out);
 			parse_status(panel,out);
@@ -1063,6 +1106,7 @@ pluma_git_panel_dispose(GObject*object)
 	PlumaGitPanel*p=PLUMA_GIT_PANEL(object);p->destroyed=TRUE;if(p->cancellable)g_cancellable_cancel(p->cancellable);if(p->refresh_source){g_source_remove(p->refresh_source);p->refresh_source=0;}if(p->poll_source){g_source_remove(p->poll_source);p->poll_source=0;}g_clear_object(&p->git_monitor);g_clear_object(&p->cancellable);g_clear_pointer(&p->repo,g_free);
 	g_clear_pointer (&p->filter_query, g_free);
 	g_clear_pointer (&p->last_status_output, g_free);
+	g_clear_pointer (&p->outgoing_commits, g_free);
 	g_clear_pointer (&p->current_branch, g_free);
 	g_clear_pointer (&p->upstream, g_free);
 	G_OBJECT_CLASS(pluma_git_panel_parent_class)->dispose(object);
