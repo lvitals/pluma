@@ -153,10 +153,13 @@ GSList *                pluma_settings_get_writable_vfs_schemes (GSettings *sett
 #define PLUMA_SETTINGS_WINDOW_SIZE                  "size"
 #define PLUMA_SETTINGS_SIDE_PANEL_SIZE              "side-panel-size"
 #define PLUMA_SETTINGS_SIDE_PANEL_ACTIVE_PAGE       "side-panel-active-page"
+#define PLUMA_SETTINGS_SIDE_PANEL_PAGE_ORDER        "side-panel-page-order"
 #define PLUMA_SETTINGS_BOTTOM_PANEL_SIZE            "bottom-panel-size"
 #define PLUMA_SETTINGS_BOTTOM_PANEL_ACTIVE_PAGE     "bottom-panel-active-page"
+#define PLUMA_SETTINGS_BOTTOM_PANEL_PAGE_ORDER      "bottom-panel-page-order"
 #define PLUMA_SETTINGS_RIGHT_PANEL_SIZE             "right-panel-size"
 #define PLUMA_SETTINGS_RIGHT_PANEL_ACTIVE_PAGE      "right-panel-active-page"
+#define PLUMA_SETTINGS_RIGHT_PANEL_PAGE_ORDER       "right-panel-page-order"
 #define PLUMA_SETTINGS_ACTIVE_FILE_FILTER           "filter-id"
 
 G_END_DECLS

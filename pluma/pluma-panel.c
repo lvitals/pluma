@@ -38,6 +38,7 @@
 
 #include "pluma-close-button.h"
 #include "pluma-window.h"
+#include "pluma-settings.h"
 #include "pluma-debug.h"
 
 #define PANEL_ITEM_KEY "PlumaPanelItemKey"
@@ -388,6 +389,161 @@ create_close_button (PlumaPanel *panel)
 	return button;
 }
 
+static void notebook_page_reordered (GtkNotebook *notebook, GtkWidget *child, guint page_num, PlumaPanel *panel);
+
+static void
+save_page_order (PlumaPanel *panel)
+{
+	const gchar *panel_id;
+	GSettings *settings;
+	const gchar *key;
+	GtkNotebook *notebook;
+	gint n_pages, i;
+	GQueue queue = G_QUEUE_INIT;
+
+	panel_id = g_object_get_data (G_OBJECT (panel), "panel-id");
+	if (panel_id == NULL)
+		return;
+
+	if (strcmp (panel_id, "side") == 0)
+		key = PLUMA_SETTINGS_SIDE_PANEL_PAGE_ORDER;
+	else if (strcmp (panel_id, "bottom") == 0)
+		key = PLUMA_SETTINGS_BOTTOM_PANEL_PAGE_ORDER;
+	else if (strcmp (panel_id, "right") == 0)
+		key = PLUMA_SETTINGS_RIGHT_PANEL_PAGE_ORDER;
+	else
+		return;
+
+	notebook = GTK_NOTEBOOK (panel->priv->notebook);
+	n_pages = gtk_notebook_get_n_pages (notebook);
+
+	for (i = 0; i < n_pages; i++)
+	{
+		GtkWidget *item = gtk_notebook_get_nth_page (notebook, i);
+		PlumaPanelItem *data = (PlumaPanelItem *)g_object_get_data (G_OBJECT (item), PANEL_ITEM_KEY);
+		if (data && data->name)
+		{
+			g_queue_push_tail (&queue, g_strdup (data->name));
+		}
+	}
+
+	gchar **names = g_new0 (gchar *, g_queue_get_length (&queue) + 1);
+	i = 0;
+	while (!g_queue_is_empty (&queue))
+	{
+		names[i++] = g_queue_pop_head (&queue);
+	}
+
+	settings = g_settings_new (PLUMA_SCHEMA_ID);
+	g_settings_set_strv (settings, key, (const gchar * const *)names);
+	g_object_unref (settings);
+
+	g_strfreev (names);
+}
+
+static void
+notebook_page_reordered (GtkNotebook *notebook, GtkWidget *child, guint page_num, PlumaPanel *panel)
+{
+	save_page_order (panel);
+}
+
+static void
+restore_page_order (PlumaPanel *panel)
+{
+	const gchar *panel_id;
+	GSettings *settings;
+	const gchar *key;
+	gchar **names;
+	GtkNotebook *notebook;
+	gint i, target_pos;
+
+	panel_id = g_object_get_data (G_OBJECT (panel), "panel-id");
+	if (panel_id == NULL)
+		return;
+
+	if (strcmp (panel_id, "side") == 0)
+		key = PLUMA_SETTINGS_SIDE_PANEL_PAGE_ORDER;
+	else if (strcmp (panel_id, "bottom") == 0)
+		key = PLUMA_SETTINGS_BOTTOM_PANEL_PAGE_ORDER;
+	else if (strcmp (panel_id, "right") == 0)
+		key = PLUMA_SETTINGS_RIGHT_PANEL_PAGE_ORDER;
+	else
+		return;
+
+	settings = g_settings_new (PLUMA_SCHEMA_ID);
+	names = g_settings_get_strv (settings, key);
+	g_object_unref (settings);
+
+	if (names == NULL || names[0] == NULL)
+	{
+		if (names)
+			g_strfreev (names);
+
+		names = g_new0 (gchar *, 5);
+		names[0] = g_strdup (_("File Browser"));
+		names[1] = g_strdup (_("Documents"));
+		names[2] = g_strdup (_("Search"));
+		names[3] = g_strdup (_("Source Control"));
+		names[4] = NULL;
+	}
+	else
+	{
+		gboolean has_file_browser = FALSE;
+		for (i = 0; names[i] != NULL; i++)
+		{
+			if (strcmp (names[i], _("File Browser")) == 0)
+			{
+				has_file_browser = TRUE;
+				break;
+			}
+		}
+
+		if (!has_file_browser)
+		{
+			gchar **new_names;
+			gint count = 0;
+			while (names[count] != NULL)
+				count++;
+
+			new_names = g_new0 (gchar *, count + 2);
+			new_names[0] = g_strdup (_("File Browser"));
+			for (i = 0; i < count; i++)
+			{
+				new_names[i + 1] = g_strdup (names[i]);
+			}
+			new_names[count + 1] = NULL;
+
+			g_strfreev (names);
+			names = new_names;
+		}
+	}
+
+	notebook = GTK_NOTEBOOK (panel->priv->notebook);
+	target_pos = 0;
+
+	g_signal_handlers_block_by_func (notebook, G_CALLBACK (notebook_page_reordered), panel);
+
+	for (i = 0; names[i] != NULL; i++)
+	{
+		gint n_pages = gtk_notebook_get_n_pages (notebook);
+		gint j;
+		for (j = 0; j < n_pages; j++)
+		{
+			GtkWidget *item = gtk_notebook_get_nth_page (notebook, j);
+			PlumaPanelItem *data = (PlumaPanelItem *)g_object_get_data (G_OBJECT (item), PANEL_ITEM_KEY);
+			if (data && data->name && strcmp (data->name, names[i]) == 0)
+			{
+				gtk_notebook_reorder_child (notebook, item, target_pos);
+				target_pos++;
+				break;
+			}
+		}
+	}
+
+	g_signal_handlers_unblock_by_func (notebook, G_CALLBACK (notebook_page_reordered), panel);
+	g_strfreev (names);
+}
+
 static void
 build_notebook_for_panel (PlumaPanel *panel)
 {
@@ -405,6 +561,11 @@ build_notebook_for_panel (PlumaPanel *panel)
 	g_signal_connect (panel->priv->notebook,
 			  "switch-page",
 			  G_CALLBACK (notebook_page_changed),
+			  panel);
+
+	g_signal_connect (panel->priv->notebook,
+			  "page-reordered",
+			  G_CALLBACK (notebook_page_reordered),
 			  panel);
 }
 
@@ -670,6 +831,8 @@ pluma_panel_add_item (PlumaPanel  *panel,
 	gtk_notebook_set_tab_reorderable (GTK_NOTEBOOK (panel->priv->notebook),
 						  item,
 						  TRUE);
+
+	restore_page_order (panel);
 
 	g_signal_emit (G_OBJECT (panel), signals[ITEM_ADDED], 0, item);
 }

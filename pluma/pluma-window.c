@@ -3744,6 +3744,7 @@ create_side_panel (PlumaWindow *window)
     pluma_debug (DEBUG_WINDOW);
 
     window->priv->side_panel = pluma_panel_new (GTK_ORIENTATION_VERTICAL);
+    g_object_set_data (G_OBJECT (window->priv->side_panel), "panel-id", "side");
 
     gtk_paned_pack1 (GTK_PANED (window->priv->hpaned),
                      window->priv->side_panel,
@@ -3849,6 +3850,7 @@ create_bottom_panel (PlumaWindow *window)
     pluma_debug (DEBUG_WINDOW);
 
     window->priv->bottom_panel = pluma_panel_new (GTK_ORIENTATION_HORIZONTAL);
+    g_object_set_data (G_OBJECT (window->priv->bottom_panel), "panel-id", "bottom");
 
     gtk_paned_pack2 (GTK_PANED (window->priv->vpaned),
                      window->priv->bottom_panel,
@@ -3895,6 +3897,7 @@ create_right_panel (PlumaWindow *window)
     pluma_debug (DEBUG_WINDOW);
 
     window->priv->right_panel = pluma_panel_new (GTK_ORIENTATION_VERTICAL);
+    g_object_set_data (G_OBJECT (window->priv->right_panel), "panel-id", "right");
 
     gtk_paned_pack2 (GTK_PANED (window->priv->hpaned_inner),
                      window->priv->right_panel,

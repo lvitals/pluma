@@ -317,6 +317,11 @@
       <summary>side-panel-active-page</summary>
       <description>The pluma side-panel-active-page</description>
     </key>
+    <key name="side-panel-page-order" type="as">
+      <default>[]</default>
+      <summary>Side Panel Page Order</summary>
+      <description>The order of pages in the side panel.</description>
+    </key>
     <key name="bottom-panel-size" type="i">
       <default>140</default>
       <summary>bottom-panel-size</summary>
@@ -327,6 +332,11 @@
       <summary>bottom-panel-active-page</summary>
       <description>The pluma bottom-panel-active-page</description>
     </key>
+    <key name="bottom-panel-page-order" type="as">
+      <default>[]</default>
+      <summary>Bottom Panel Page Order</summary>
+      <description>The order of pages in the bottom panel.</description>
+    </key>
     <key name="right-panel-size" type="i">
       <default>200</default>
       <summary>right-panel-size</summary>
@@ -336,6 +346,11 @@
       <default>0</default>
       <summary>right-panel-active-page</summary>
       <description>The pluma right-panel-active-page</description>
+    </key>
+    <key name="right-panel-page-order" type="as">
+      <default>[]</default>
+      <summary>Right Panel Page Order</summary>
+      <description>The order of pages in the right panel.</description>
     </key>
     <key name="filter-id" type="i">
       <default>0</default>

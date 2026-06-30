@@ -675,7 +675,6 @@ pluma_file_browser_plugin_activate (PlumaWindowActivatable *activatable)
 	PlumaWindow *window;
 	PlumaPanel *panel;
 	GtkWidget *image;
-	GdkPixbuf *pixbuf;
 	PlumaFileBrowserStore *store;
 	gchar *data_dir;
 	GSettingsSchemaSource *schema_source;
@@ -725,15 +724,7 @@ pluma_file_browser_plugin_activate (PlumaWindowActivatable *activatable)
 			  priv);
 
 	panel = pluma_window_get_side_panel (window);
-	pixbuf = pluma_file_browser_utils_pixbuf_from_theme("system-file-manager",
-	                                                    GTK_ICON_SIZE_MENU);
-
-	if (pixbuf) {
-		image = gtk_image_new_from_pixbuf(pixbuf);
-		g_object_unref(pixbuf);
-	} else {
-		image = gtk_image_new_from_icon_name("gtk-index", GTK_ICON_SIZE_MENU);
-	}
+	image = gtk_image_new_from_icon_name ("folder-symbolic", GTK_ICON_SIZE_MENU);
 
 	gtk_widget_show(image);
 	pluma_panel_add_item (panel,
