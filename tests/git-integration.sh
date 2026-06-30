@@ -152,6 +152,13 @@ git -C "$repo" status --porcelain=v2 | grep -F 'u UU '
 git -C "$repo" merge --abort
 test -z "$(git -C "$repo" status --porcelain)"
 
+# File history follows renames and keeps paths with spaces intact.
+git -C "$repo" mv -- 'path with spaces.txt' 'renamed path with spaces.txt'
+git -C "$repo" commit -qm rename-for-history
+file_history=$(git -C "$repo" log --follow --format=%s -- 'renamed path with spaces.txt')
+printf '%s\n' "$file_history" | grep -Fx rename-for-history
+printf '%s\n' "$file_history" | grep -Fx unusual-paths
+
 remote="${repo}-remote.git"
 git init --bare -q "$remote"
 git -C "$repo" remote add origin "$remote"

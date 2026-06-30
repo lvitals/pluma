@@ -1388,6 +1388,31 @@ commit_signed_clicked (GtkMenuItem *item, gpointer data)
 static void stage_all_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","add","-A",NULL};run_git(p,a,FALSE,NULL);}
 static void refresh_clicked(GtkButton*b,gpointer data){pluma_git_panel_refresh(data);}
 static void history_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","log","--graph","--decorate","--oneline","--all","-n","500",NULL};run_git(p,a,TRUE,_("Git History"));}
+static void
+current_file_history_clicked (GtkMenuItem *item, gpointer data)
+{
+	PlumaGitPanel *panel = data;
+	PlumaDocument *document = pluma_window_get_active_document (panel->window);
+	GFile *location = document != NULL ? pluma_document_get_location (document) : NULL;
+	GFile *root = panel->repo != NULL ? g_file_new_for_path (panel->repo) : NULL;
+	gchar *relative = location != NULL && root != NULL
+	                ? g_file_get_relative_path (root, location) : NULL;
+
+	if (relative == NULL)
+		gtk_label_set_text (GTK_LABEL (panel->summary_label),
+		                    _("The active document is not inside the Git repository."));
+	else
+	{
+		const gchar *argv[] = {"git", "log", "--follow", "--date=short",
+		                       "--format=%h  %ad  %an  %s", "--", relative, NULL};
+		gchar *title = g_strdup_printf (_("History: %s"), relative);
+		run_git (panel, argv, TRUE, title);
+		g_free (title);
+	}
+	g_free (relative);
+	g_clear_object (&root);
+	g_clear_object (&location);
+}
 static void branches_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","branch","-vv","--all",NULL};run_git(p,a,TRUE,_("Git Branches"));}
 static void tags_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","tag","-n",NULL};run_git(p,a,TRUE,_("Git Tags"));}
 static void remotes_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","remote","-v",NULL};run_git(p,a,TRUE,_("Git Remotes"));}
@@ -1754,6 +1779,7 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	add_more_item(menu,_("Amend Last Commit…"),G_CALLBACK(amend_commit_clicked),p);
 	add_more_item(menu,_("Commit with Sign-off"),G_CALLBACK(commit_signoff_clicked),p);
 	add_more_item(menu,_("Create Signed Commit"),G_CALLBACK(commit_signed_clicked),p);
+	add_more_item(menu,_("Current File History"),G_CALLBACK(current_file_history_clicked),p);
 	add_more_item(menu,_("Force Push with Lease…"),G_CALLBACK(force_push_with_lease_clicked),p);
 	add_more_item(menu,_("View Stash Diff…"),G_CALLBACK(stash_diff_clicked),p);
 	add_more_item(menu,_("Create Branch…"),G_CALLBACK(new_branch),p);add_more_item(menu,_("Switch Branch…"),G_CALLBACK(switch_branch),p);add_more_item(menu,_("Delete Branch…"),G_CALLBACK(delete_branch),p);add_more_item(menu,_("Create Tag…"),G_CALLBACK(new_tag),p);add_more_item(menu,_("Add Remote…"),G_CALLBACK(add_remote),p);add_more_item(menu,_("Remove Remote…"),G_CALLBACK(remove_remote),p);add_more_item(menu,_("Merge…"),G_CALLBACK(merge_ref),p);add_more_item(menu,_("Rebase…"),G_CALLBACK(rebase_ref),p);add_more_item(menu,_("Cherry-pick…"),G_CALLBACK(cherry_pick_ref),p);add_more_item(menu,_("Revert Commit…"),G_CALLBACK(revert_ref),p);add_more_item(menu,_("Continue Merge"),G_CALLBACK(merge_continue),p);add_more_item(menu,_("Abort Merge"),G_CALLBACK(merge_abort),p);add_more_item(menu,_("Continue Rebase"),G_CALLBACK(rebase_continue),p);add_more_item(menu,_("Abort Rebase"),G_CALLBACK(rebase_abort),p);add_more_item(menu,_("Abort Cherry-pick"),G_CALLBACK(cherry_abort),p);gtk_widget_show_all(menu);gtk_menu_button_set_popup(GTK_MENU_BUTTON(more),menu);gtk_box_pack_start(GTK_BOX(row),more,TRUE,TRUE,0);
