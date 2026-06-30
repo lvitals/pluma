@@ -159,6 +159,16 @@ file_history=$(git -C "$repo" log --follow --format=%s -- 'renamed path with spa
 printf '%s\n' "$file_history" | grep -Fx rename-for-history
 printf '%s\n' "$file_history" | grep -Fx unusual-paths
 
+# File/reference and two-reference comparisons remain path-safe.
+git -C "$repo" rev-parse --verify --quiet --end-of-options 'feature^{commit}' >/dev/null
+git -C "$repo" rev-parse --verify --quiet --end-of-options 'v1-test^{commit}' >/dev/null
+if git -C "$repo" rev-parse --verify --quiet --end-of-options 'missing-reference^{commit}' >/dev/null; then
+  echo "invalid comparison reference unexpectedly resolved" >&2
+  exit 1
+fi
+git -C "$repo" diff HEAD~1 -- 'renamed path with spaces.txt' | grep -F 'space'
+git -C "$repo" diff feature master -- 'tracked file.txt' | grep -F 'master'
+
 remote="${repo}-remote.git"
 git init --bare -q "$remote"
 git -C "$repo" remote add origin "$remote"

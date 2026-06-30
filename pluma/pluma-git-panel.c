@@ -100,6 +100,12 @@ static gboolean ensure_documents_saved (PlumaGitPanel *panel, const gchar *opera
 	                                    const gchar *relative_path);
 static gboolean confirm_action (PlumaGitPanel *panel, const gchar *primary,
 	                            const gchar *secondary);
+static gchar *prompt_value (PlumaGitPanel *panel, const gchar *title,
+	                       const gchar *label);
+static gchar *prompt_revision (PlumaGitPanel *panel, const gchar *title,
+	                          const gchar *label);
+static gboolean prompt_comparison_revisions (PlumaGitPanel *panel,
+	                                         gchar **base, gchar **target);
 static void run_git (PlumaGitPanel *panel, const gchar * const *argv,
 	                gboolean show_output, const gchar *title);
 
@@ -1259,6 +1265,26 @@ stage_clicked_cb (PlumaGitPanel *p)
 }
 
 static void row_activated(GtkTreeView*v,GtkTreePath*path,GtkTreeViewColumn*c,gpointer data){PlumaGitPanel*p=data;gchar*file;gint group,status;if(selected_file(p,&file,&group,&status)){g_free(file);if(group==GROUP_UNTRACKED)open_selected(p);else open_side_by_side_diff(p);}}
+static void
+compare_file_reference (PlumaGitPanel *panel)
+{
+	gchar *path = NULL, *reference;
+	gint group, status;
+
+	if (!selected_file (panel, &path, &group, &status))
+		return;
+	reference = prompt_revision (panel, _("Compare File"),
+	                             _("Branch, tag, or commit"));
+	if (reference != NULL)
+	{
+		const gchar *argv[] = {"git", "diff", reference, "--", path, NULL};
+		gchar *title = g_strdup_printf (_("Diff: %s against %s"), path, reference);
+		run_git (panel, argv, TRUE, title);
+		g_free (title);
+		g_free (reference);
+	}
+	g_free (path);
+}
 static gboolean menu_popup(GtkWidget*w,GdkEventButton*e,gpointer data)
 {
 	PlumaGitPanel*p=data;GtkWidget*m,*i;GtkTreePath*tree_path=NULL;gchar*path=NULL;gint g,s;
@@ -1270,6 +1296,7 @@ static gboolean menu_popup(GtkWidget*w,GdkEventButton*e,gpointer data)
 	if(g!=GROUP_UNTRACKED) {
 		ITEM(_("Open Unified Diff"),diff_selected);
 		ITEM(_("Open Side-by-Side Diff"),open_side_by_side_diff);
+		ITEM(_("Compare with Reference…"),compare_file_reference);
 	}
 	if(g==GROUP_STAGED) {
 		ITEM(_("Unstage"),unstage_selected);
@@ -1517,6 +1544,95 @@ prompt_value(PlumaGitPanel*p,const gchar*title,const gchar*label)
 	gtk_widget_destroy (d);
 	return value;
 }
+static gboolean
+revision_is_valid (PlumaGitPanel *panel, const gchar *revision)
+{
+	gchar *commit = g_strconcat (revision, "^{commit}", NULL);
+	const gchar *argv[] = {"git", "rev-parse", "--verify", "--quiet",
+	                       "--end-of-options", commit, NULL};
+	GError *error = NULL;
+	GSubprocess *process = spawn_git (panel, argv, &error);
+	gboolean valid = FALSE;
+
+	if (process != NULL)
+	{
+		g_subprocess_communicate_utf8 (process, NULL, NULL, NULL, NULL, &error);
+		valid = error == NULL && g_subprocess_get_successful (process);
+		g_object_unref (process);
+	}
+	g_clear_error (&error);
+	g_free (commit);
+	return valid;
+}
+
+static gchar *
+prompt_revision (PlumaGitPanel *panel, const gchar *title, const gchar *label)
+{
+	while (TRUE)
+	{
+		gchar *revision = prompt_value (panel, title, label);
+		if (revision == NULL)
+			return NULL;
+		g_strstrip (revision);
+		if (revision_is_valid (panel, revision))
+			return revision;
+		gtk_label_set_text (GTK_LABEL (panel->summary_label),
+		                    _("The branch, tag, or commit could not be resolved."));
+		g_free (revision);
+	}
+}
+
+static gboolean
+prompt_comparison_revisions (PlumaGitPanel *panel, gchar **base, gchar **target)
+{
+	GtkWidget *dialog = gtk_dialog_new_with_buttons (_("Compare References"),
+	                                                GTK_WINDOW (panel->window),
+	                                                GTK_DIALOG_MODAL,
+	                                                _("Cancel"), GTK_RESPONSE_CANCEL,
+	                                                _("Compare"), GTK_RESPONSE_ACCEPT, NULL);
+	GtkWidget *grid = gtk_grid_new ();
+	GtkWidget *base_entry = gtk_entry_new ();
+	GtkWidget *target_entry = gtk_entry_new ();
+	GtkWidget *error_label = gtk_label_new (NULL);
+	gboolean accepted = FALSE;
+
+	*base = NULL;
+	*target = NULL;
+	gtk_grid_set_row_spacing (GTK_GRID (grid), 6);
+	gtk_grid_set_column_spacing (GTK_GRID (grid), 8);
+	gtk_container_set_border_width (GTK_CONTAINER (grid), 8);
+	gtk_grid_attach (GTK_GRID (grid), gtk_label_new (_("Base")), 0, 0, 1, 1);
+	gtk_grid_attach (GTK_GRID (grid), base_entry, 1, 0, 1, 1);
+	gtk_grid_attach (GTK_GRID (grid), gtk_label_new (_("Target")), 0, 1, 1, 1);
+	gtk_grid_attach (GTK_GRID (grid), target_entry, 1, 1, 1, 1);
+	gtk_widget_set_halign (error_label, GTK_ALIGN_START);
+	gtk_grid_attach (GTK_GRID (grid), error_label, 0, 2, 2, 1);
+	gtk_box_pack_start (GTK_BOX (gtk_dialog_get_content_area (GTK_DIALOG (dialog))),
+	                    grid, TRUE, TRUE, 0);
+	gtk_widget_show_all (dialog);
+
+	while (gtk_dialog_run (GTK_DIALOG (dialog)) == GTK_RESPONSE_ACCEPT)
+	{
+		gchar *candidate_base = g_strdup (gtk_entry_get_text (GTK_ENTRY (base_entry)));
+		gchar *candidate_target = g_strdup (gtk_entry_get_text (GTK_ENTRY (target_entry)));
+		g_strstrip (candidate_base);
+		g_strstrip (candidate_target);
+		if (revision_is_valid (panel, candidate_base) &&
+		    revision_is_valid (panel, candidate_target))
+		{
+			*base = candidate_base;
+			*target = candidate_target;
+			accepted = TRUE;
+			break;
+		}
+		gtk_label_set_text (GTK_LABEL (error_label),
+		                    _("Both values must resolve to a branch, tag, or commit."));
+		g_free (candidate_base);
+		g_free (candidate_target);
+	}
+	gtk_widget_destroy (dialog);
+	return accepted;
+}
 static void
 stash_diff_clicked (GtkMenuItem *item, gpointer data)
 {
@@ -1531,6 +1647,22 @@ stash_diff_clicked (GtkMenuItem *item, gpointer data)
 		run_git (panel, argv, TRUE, title);
 		g_free (title);
 		g_free (reference);
+	}
+}
+static void
+compare_references_clicked (GtkMenuItem *item, gpointer data)
+{
+	PlumaGitPanel *panel = data;
+	gchar *base, *target;
+
+	if (prompt_comparison_revisions (panel, &base, &target))
+	{
+		const gchar *argv[] = {"git", "diff", base, target, NULL};
+		gchar *title = g_strdup_printf (_("Diff: %s against %s"), base, target);
+		run_git (panel, argv, TRUE, title);
+		g_free (title);
+		g_free (target);
+		g_free (base);
 	}
 }
 static gboolean confirm_action(PlumaGitPanel*p,const gchar*primary,const gchar*secondary)
@@ -1780,6 +1912,7 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	add_more_item(menu,_("Commit with Sign-off"),G_CALLBACK(commit_signoff_clicked),p);
 	add_more_item(menu,_("Create Signed Commit"),G_CALLBACK(commit_signed_clicked),p);
 	add_more_item(menu,_("Current File History"),G_CALLBACK(current_file_history_clicked),p);
+	add_more_item(menu,_("Compare Two References…"),G_CALLBACK(compare_references_clicked),p);
 	add_more_item(menu,_("Force Push with Lease…"),G_CALLBACK(force_push_with_lease_clicked),p);
 	add_more_item(menu,_("View Stash Diff…"),G_CALLBACK(stash_diff_clicked),p);
 	add_more_item(menu,_("Create Branch…"),G_CALLBACK(new_branch),p);add_more_item(menu,_("Switch Branch…"),G_CALLBACK(switch_branch),p);add_more_item(menu,_("Delete Branch…"),G_CALLBACK(delete_branch),p);add_more_item(menu,_("Create Tag…"),G_CALLBACK(new_tag),p);add_more_item(menu,_("Add Remote…"),G_CALLBACK(add_remote),p);add_more_item(menu,_("Remove Remote…"),G_CALLBACK(remove_remote),p);add_more_item(menu,_("Merge…"),G_CALLBACK(merge_ref),p);add_more_item(menu,_("Rebase…"),G_CALLBACK(rebase_ref),p);add_more_item(menu,_("Cherry-pick…"),G_CALLBACK(cherry_pick_ref),p);add_more_item(menu,_("Revert Commit…"),G_CALLBACK(revert_ref),p);add_more_item(menu,_("Continue Merge"),G_CALLBACK(merge_continue),p);add_more_item(menu,_("Abort Merge"),G_CALLBACK(merge_abort),p);add_more_item(menu,_("Continue Rebase"),G_CALLBACK(rebase_continue),p);add_more_item(menu,_("Abort Rebase"),G_CALLBACK(rebase_abort),p);add_more_item(menu,_("Abort Cherry-pick"),G_CALLBACK(cherry_abort),p);gtk_widget_show_all(menu);gtk_menu_button_set_popup(GTK_MENU_BUTTON(more),menu);gtk_box_pack_start(GTK_BOX(row),more,TRUE,TRUE,0);
