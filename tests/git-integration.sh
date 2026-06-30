@@ -79,6 +79,15 @@ git -C "$repo" commit -qm stage-all-and-commit
 test -z "$(git -C "$repo" status --porcelain)"
 git -C "$repo" show --format= --name-only HEAD | grep -Fx 'commit-all.txt'
 
+# Amend replaces HEAD instead of creating an additional commit.
+commit_count=$(git -C "$repo" rev-list --count HEAD)
+printf 'amended\n' >> "$repo/commit-all.txt"
+git -C "$repo" add -- commit-all.txt
+git -C "$repo" commit --amend -qm amended-commit
+test "$(git -C "$repo" rev-list --count HEAD)" -eq "$commit_count"
+test "$(git -C "$repo" log -1 --format=%s)" = amended-commit
+git -C "$repo" show HEAD:commit-all.txt | grep -Fx amended
+
 # A failed hook must prevent the commit and leave the staged contents recoverable.
 printf 'hook failure\n' >> "$repo/commit-all.txt"
 git -C "$repo" add -A
@@ -99,6 +108,7 @@ git -C "$repo" restore -- .
 printf 'stash me\n' >> "$repo/tracked file.txt"
 git -C "$repo" stash push -qm test-stash
 git -C "$repo" stash list | grep -F test-stash
+git -C "$repo" stash show --patch --stat 'stash@{0}' | grep -F 'stash me'
 git -C "$repo" stash pop -q
 git -C "$repo" restore -- "tracked file.txt"
 
