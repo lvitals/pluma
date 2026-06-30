@@ -53,6 +53,7 @@ typedef struct
 	PlumaGitPanel *panel;
 	gboolean show_output;
 	gchar *title;
+	gchar *commit_after_success;
 } GitCall;
 
 struct _PlumaGitPanel
@@ -96,6 +97,8 @@ static gboolean ensure_documents_saved (PlumaGitPanel *panel, const gchar *opera
 	                                    const gchar *relative_path);
 static gboolean confirm_action (PlumaGitPanel *panel, const gchar *primary,
 	                            const gchar *secondary);
+static void run_git (PlumaGitPanel *panel, const gchar * const *argv,
+	                gboolean show_output, const gchar *title);
 
 static const gchar *group_names[N_GROUPS] = { N_("Commits to Push"), N_("Conflicts"), N_("Staged Changes"), N_("Changes"), N_("Untracked") };
 
@@ -551,15 +554,22 @@ call_done (GObject *source, GAsyncResult *result, gpointer data)
 		if (error || !g_subprocess_get_successful(G_SUBPROCESS(source))) gtk_label_set_text(GTK_LABEL(call->panel->summary_label),error?error->message:(err&&*err?err:_("Git operation failed")));
 		else
 		{
-			if (g_strcmp0 (call->title, "commit") == 0)
+			if (call->commit_after_success != NULL)
+			{
+				const gchar *commit_argv[] = {"git", "commit", "-m",
+				                              call->commit_after_success, NULL};
+				run_git (call->panel, commit_argv, FALSE, "commit");
+			}
+			else if (g_strcmp0 (call->title, "commit") == 0)
 			{
 				GtkTextBuffer *buf = gtk_text_view_get_buffer (GTK_TEXT_VIEW (call->panel->message_entry));
 				gtk_text_buffer_set_text (buf, "", -1);
 			}
-			schedule_refresh(call->panel);
+			if (call->commit_after_success == NULL)
+				schedule_refresh(call->panel);
 		}
 	}
-	g_clear_error(&error);g_free(out);g_free(err);g_free(call->title);g_object_unref(call->panel);g_free(call);
+	g_clear_error(&error);g_free(out);g_free(err);g_free(call->title);g_free(call->commit_after_success);g_object_unref(call->panel);g_free(call);
 }
 
 static void
@@ -569,6 +579,29 @@ run_git (PlumaGitPanel *panel, const gchar * const *argv, gboolean show_output, 
 	if(!process){gtk_label_set_text(GTK_LABEL(panel->summary_label),error?error->message:_("Git is unavailable"));g_clear_error(&error);return;}
 	call=g_new0(GitCall,1);call->panel=g_object_ref(panel);call->show_output=show_output;call->title=g_strdup(title);
 	g_subprocess_communicate_utf8_async(process,NULL,panel->cancellable,call_done,call);g_object_unref(process);
+}
+
+static void
+stage_all_then_commit (PlumaGitPanel *panel, const gchar *message)
+{
+	const gchar *argv[] = {"git", "add", "-A", NULL};
+	GError *error = NULL;
+	GSubprocess *process = spawn_git (panel, argv, &error);
+	GitCall *call;
+
+	if (process == NULL)
+	{
+		gtk_label_set_text (GTK_LABEL (panel->summary_label),
+		                    error != NULL ? error->message : _("Git is unavailable"));
+		g_clear_error (&error);
+		return;
+	}
+	call = g_new0 (GitCall, 1);
+	call->panel = g_object_ref (panel);
+	call->commit_after_success = g_strdup (message);
+	g_subprocess_communicate_utf8_async (process, NULL, panel->cancellable,
+	                                     call_done, call);
+	g_object_unref (process);
 }
 
 static gboolean
@@ -1259,6 +1292,23 @@ static void commit_clicked(GtkButton*b,gpointer data)
 	}
 	g_free (message);
 }
+static void
+stage_all_commit_clicked (GtkMenuItem *item, gpointer data)
+{
+	PlumaGitPanel *panel = data;
+	GtkTextBuffer *buffer = gtk_text_view_get_buffer (GTK_TEXT_VIEW (panel->message_entry));
+	GtkTextIter start, end;
+	gchar *message;
+
+	gtk_text_buffer_get_bounds (buffer, &start, &end);
+	message = gtk_text_buffer_get_text (buffer, &start, &end, FALSE);
+	if (pluma_git_commit_message_is_valid (message))
+		stage_all_then_commit (panel, message);
+	else
+		gtk_label_set_text (GTK_LABEL (panel->summary_label),
+		                    _("Enter a valid commit message first."));
+	g_free (message);
+}
 static void stage_all_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","add","-A",NULL};run_git(p,a,FALSE,NULL);}
 static void refresh_clicked(GtkButton*b,gpointer data){pluma_git_panel_refresh(data);}
 static void history_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","log","--graph","--decorate","--oneline","--all","-n","500",NULL};run_git(p,a,TRUE,_("Git History"));}
@@ -1580,6 +1630,7 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	ACTION(_("Pop"),_("Apply and remove the latest stash"),stash_pop_clicked);
 #undef ACTION
 	more=gtk_menu_button_new();gtk_button_set_label(GTK_BUTTON(more),_("More"));gtk_widget_set_tooltip_text(more,_("More Git actions"));menu=gtk_menu_new();
+	add_more_item(menu,_("Stage All and Commit"),G_CALLBACK(stage_all_commit_clicked),p);
 	add_more_item(menu,_("Create Branch…"),G_CALLBACK(new_branch),p);add_more_item(menu,_("Switch Branch…"),G_CALLBACK(switch_branch),p);add_more_item(menu,_("Delete Branch…"),G_CALLBACK(delete_branch),p);add_more_item(menu,_("Create Tag…"),G_CALLBACK(new_tag),p);add_more_item(menu,_("Add Remote…"),G_CALLBACK(add_remote),p);add_more_item(menu,_("Remove Remote…"),G_CALLBACK(remove_remote),p);add_more_item(menu,_("Merge…"),G_CALLBACK(merge_ref),p);add_more_item(menu,_("Rebase…"),G_CALLBACK(rebase_ref),p);add_more_item(menu,_("Cherry-pick…"),G_CALLBACK(cherry_pick_ref),p);add_more_item(menu,_("Revert Commit…"),G_CALLBACK(revert_ref),p);add_more_item(menu,_("Continue Merge"),G_CALLBACK(merge_continue),p);add_more_item(menu,_("Abort Merge"),G_CALLBACK(merge_abort),p);add_more_item(menu,_("Continue Rebase"),G_CALLBACK(rebase_continue),p);add_more_item(menu,_("Abort Rebase"),G_CALLBACK(rebase_abort),p);add_more_item(menu,_("Abort Cherry-pick"),G_CALLBACK(cherry_abort),p);gtk_widget_show_all(menu);gtk_menu_button_set_popup(GTK_MENU_BUTTON(more),menu);gtk_box_pack_start(GTK_BOX(row),more,TRUE,TRUE,0);
 	gtk_box_pack_start(GTK_BOX(commit_box),row,FALSE,FALSE,0);
 

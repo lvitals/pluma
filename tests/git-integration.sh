@@ -71,6 +71,31 @@ git -C "$repo" log --oneline -1 | grep -F 'hunk-base'
 git -C "$repo" branch --format='%(refname:short)' | grep -Fx feature
 git -C "$repo" tag --list | grep -Fx v1-test
 
+# Stage-all-and-commit includes tracked and untracked changes in one commit.
+printf 'commit all\n' >> "$repo/path with spaces.txt"
+printf 'new file\n' > "$repo/commit-all.txt"
+git -C "$repo" add -A
+git -C "$repo" commit -qm stage-all-and-commit
+test -z "$(git -C "$repo" status --porcelain)"
+git -C "$repo" show --format= --name-only HEAD | grep -Fx 'commit-all.txt'
+
+# A failed hook must prevent the commit and leave the staged contents recoverable.
+printf 'hook failure\n' >> "$repo/commit-all.txt"
+git -C "$repo" add -A
+printf '#!/bin/sh\nexit 1\n' > "$repo/.git/hooks/pre-commit"
+chmod +x "$repo/.git/hooks/pre-commit"
+if git -C "$repo" commit -m should-fail >/dev/null 2>&1; then
+  echo "pre-commit hook failure did not stop commit" >&2
+  exit 1
+fi
+git -C "$repo" diff --cached --quiet && {
+  echo "failed commit did not preserve staged changes" >&2
+  exit 1
+}
+rm -f "$repo/.git/hooks/pre-commit"
+git -C "$repo" reset -q HEAD -- .
+git -C "$repo" restore -- .
+
 printf 'stash me\n' >> "$repo/tracked file.txt"
 git -C "$repo" stash push -qm test-stash
 git -C "$repo" stash list | grep -F test-stash
