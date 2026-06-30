@@ -12,6 +12,7 @@
 #include "pluma-pango.h"
 #include "pluma-git-status-parser.h"
 #include "pluma-git-commit.h"
+#include "pluma-git-diff.h"
 
 enum { COL_LABEL, COL_PATH, COL_GROUP, COL_STATUS, COL_IS_GROUP, N_COLS };
 enum { GROUP_OUTGOING, GROUP_CONFLICT, GROUP_STAGED, GROUP_CHANGED, GROUP_UNTRACKED, N_GROUPS };
@@ -108,6 +109,8 @@ static gboolean prompt_comparison_revisions (PlumaGitPanel *panel,
 	                                         gchar **base, gchar **target);
 static void run_git (PlumaGitPanel *panel, const gchar * const *argv,
 	                gboolean show_output, const gchar *title);
+static gboolean selected_diff_is_binary (PlumaGitPanel *panel,
+	                                     const gchar *path, gboolean cached);
 
 static const gchar *group_names[N_GROUPS] = { N_("Commits to Push"), N_("Conflicts"), N_("Staged Changes"), N_("Changes"), N_("Untracked") };
 
@@ -628,7 +631,7 @@ selected_file (PlumaGitPanel *panel, gchar **path, gint *group, gint *status)
 
 static void stage_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){const gchar *a[]={"git","add","--",path,NULL};run_git(p,a,FALSE,NULL);g_free(path);} }
 static void unstage_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){const gchar *a[]={"git","reset","-q","HEAD","--",path,NULL};run_git(p,a,FALSE,NULL);g_free(path);} }
-static void diff_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){const gchar *a1[]={"git","diff","--cached","--",path,NULL};const gchar *a2[]={"git","diff","--",path,NULL};gchar *title=g_strconcat("Diff: ",path,NULL);run_git(p,g==GROUP_STAGED?a1:a2,TRUE,title);g_free(title);g_free(path);} }
+static void diff_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){if(selected_diff_is_binary(p,path,g==GROUP_STAGED)){gtk_label_set_text(GTK_LABEL(p->summary_label),_("Binary files cannot be displayed as a text diff."));g_free(path);return;}const gchar *a1[]={"git","diff","--cached","--",path,NULL};const gchar *a2[]={"git","diff","--",path,NULL};gchar *title=g_strconcat("Diff: ",path,NULL);run_git(p,g==GROUP_STAGED?a1:a2,TRUE,title);g_free(title);g_free(path);} }
 static void open_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){gchar *full=g_build_filename(p->repo,path,NULL);gchar *uri=g_filename_to_uri(full,NULL,NULL);pluma_window_create_tab_from_uri(p->window,uri,NULL,0,FALSE,TRUE);g_free(uri);g_free(full);g_free(path);} }
 
 static void discard_selected (PlumaGitPanel *p)
@@ -698,6 +701,17 @@ get_git_output (PlumaGitPanel *panel, const gchar * const *argv)
 	if (error)
 		g_clear_error (&error);
 	return out;
+}
+
+static gboolean
+selected_diff_is_binary (PlumaGitPanel *panel, const gchar *path, gboolean cached)
+{
+	const gchar *worktree_argv[] = {"git", "diff", "--numstat", "--", path, NULL};
+	const gchar *cached_argv[] = {"git", "diff", "--cached", "--numstat", "--", path, NULL};
+	gchar *output = get_git_output (panel, cached ? cached_argv : worktree_argv);
+	gboolean binary = pluma_git_numstat_has_binary (output);
+	g_free (output);
+	return binary;
 }
 
 static void
@@ -873,6 +887,13 @@ open_side_by_side_diff (PlumaGitPanel *p)
 	gint g = 0, s = 0;
 	if (!selected_file (p, &path, &g, &s))
 		return;
+	if (selected_diff_is_binary (p, path, g == GROUP_STAGED))
+	{
+		gtk_label_set_text (GTK_LABEL (p->summary_label),
+		                    _("Binary files cannot be displayed as a side-by-side text diff."));
+		g_free (path);
+		return;
+	}
 	
 	PlumaDocument *active_doc = pluma_window_get_active_document (p->window);
 	GtkSourceStyleScheme *style_scheme = NULL;
@@ -1250,6 +1271,13 @@ stage_clicked_cb (PlumaGitPanel *p)
 	gint g, s;
 	if (selected_file (p, &path, &g, &s))
 	{
+		if (g != GROUP_UNTRACKED && selected_diff_is_binary (p, path, g == GROUP_STAGED))
+		{
+			gtk_label_set_text (GTK_LABEL (p->summary_label),
+			                    _("Binary files cannot be displayed as a text diff."));
+			g_free (path);
+			return;
+		}
 		if (g == GROUP_STAGED)
 		{
 			const gchar *a[] = {"git", "reset", "-q", "HEAD", "--", path, NULL};

@@ -47,25 +47,25 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 
 ## 2.1 Experiência de pesquisa
 
-- [ ] Abrir e focar Pesquisa com `Ctrl+Shift+F`.
-- [ ] Manter `Ctrl+F` para o documento atual.
-- [ ] Remover o conflito com a ferramenta externa baseada em `zenity`.
-- [ ] Adicionar campos de pesquisa e substituição.
-- [ ] Adicionar opções de caixa, palavra inteira e regex.
+- [x] Abrir e focar Pesquisa com `Ctrl+Shift+F`.
+- [x] Manter `Ctrl+F` para o documento atual.
+- [x] Remover o conflito com a ferramenta externa baseada em `zenity`.
+- [x] Adicionar campos de pesquisa e substituição.
+- [x] Adicionar opções de caixa, palavra inteira e regex.
 - [ ] Adicionar filtros recolhíveis de inclusão e exclusão.
 - [ ] Respeitar `.gitignore` por padrão.
-- [ ] Permitir incluir arquivos ignorados.
+- [x] Permitir incluir arquivos ignorados.
 - [ ] Manter histórico de consultas e substituições.
 - [ ] Pesquisar automaticamente após debounce configurável.
 - [ ] Mostrar progresso, duração, cancelamento e erros de regex inline.
-- [ ] Usar ripgrep com fallback funcional.
+- [x] Usar ripgrep com fallback funcional.
 
 ## 2.2 Resultados
 
 - [ ] Agrupar por arquivo, mostrando quantidade por grupo e total.
 - [ ] Exibir caminho relativo, linha, coluna e trecho destacado.
-- [ ] Expandir/recolher arquivos ou todos os resultados.
-- [ ] Abrir resultado com mouse ou teclado.
+- [x] Expandir/recolher arquivos ou todos os resultados.
+- [x] Abrir resultado com mouse ou teclado.
 - [ ] Exibir prévia sem criar aba definitiva.
 - [ ] Reutilizar documentos abertos.
 - [ ] Atualizar após salvar, criar, mover ou remover arquivos.
@@ -76,11 +76,11 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 - [ ] Substituir ocorrência, arquivo ou projeto.
 - [ ] Excluir resultados individuais antes de aplicar.
 - [ ] Mostrar diff/prévia da substituição global.
-- [ ] Suportar grupos de captura regex.
+- [x] Suportar grupos de captura regex.
 - [ ] Integrar documentos abertos ao histórico de desfazer.
 - [ ] Preservar codificação, final de linha e permissões.
-- [ ] Gravar arquivos fechados atomicamente.
-- [ ] Confirmar alterações globais e resumir falhas.
+- [x] Gravar arquivos fechados atomicamente.
+- [x] Confirmar alterações globais e resumir falhas.
 
 ---
 
@@ -118,14 +118,15 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 - [x] Separar Conflitos, Staged, Alterações e Não rastreados.
 - [x] Exibir códigos e contadores de status por arquivo/grupo.
 - [ ] Ordenar por status, caminho ou nome.
-- [ ] Filtrar alterações por texto.
+- [x] Filtrar alterações por texto.
 - [x] Atualizar automaticamente após salvar ou executar Git.
 - [x] Exibir branch, alterações e ahead/behind no painel e na barra de status.
 
 ## 4.2 Stage, unstage e descarte
 
 - [x] Stage de arquivo individual ou todos e unstage individual.
-- [ ] Stage/unstage de hunk e linhas selecionadas.
+- [x] Stage/unstage de hunk.
+- [ ] Stage/unstage de linhas selecionadas.
 - [x] Descartar alteração com confirmação.
 - [x] Exigir confirmação reforçada para excluir não rastreados.
 - [x] Restaurar arquivo removido pelo descarte da working tree.
@@ -141,26 +142,27 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 - [x] Diferenciar adições, remoções e modificações pela saída Git com destaque de sintaxe.
 - [ ] Exibir números de linha antigos e novos.
 - [ ] Navegar entre hunks.
-- [ ] Stage, unstage ou descartar hunk/linhas.
+- [x] Stage, unstage ou descartar hunk.
+- [ ] Stage, unstage ou descartar linhas selecionadas.
 - [x] Comparar working tree com index e index com `HEAD`.
-- [ ] Comparar arquivo ou commit com outra referência.
-- [ ] Detectar arquivos binários.
+- [x] Comparar arquivo ou commit com outra referência.
+- [x] Detectar arquivos binários.
 - [ ] Atualizar diff após salvar ou alterar o index.
-- [ ] Indicar claramente os lados working tree, index e commit.
+- [x] Indicar claramente os lados working tree, index e commit.
 
 ---
 
 # 6. Commit
 
 - [x] Adicionar campo para mensagem de commit.
-- [ ] Validar mensagem e exibir contador configurável.
+- [x] Validar mensagem e exibir contador configurável.
 - [x] Criar commit somente com staged.
-- [ ] Oferecer “stage all and commit” separadamente.
-- [ ] Suportar amend com confirmação.
-- [ ] Suportar sign-off e assinatura configurada no Git.
+- [x] Oferecer “stage all and commit” separadamente.
+- [x] Suportar amend com confirmação.
+- [x] Suportar sign-off e assinatura configurada no Git.
 - [x] Executar hooks do Git e mostrar falhas.
 - [x] Preservar mensagem quando houver falha.
-- [ ] Limpar mensagem somente após sucesso.
+- [x] Limpar mensagem somente após sucesso.
 - [ ] Mostrar o commit criado e atualizar status/log.
 
 ---
@@ -172,10 +174,10 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 - [x] Criar branch a partir da referência atual.
 - [x] Trocar branch delegando ao Git a validação de alterações pendentes.
 - [x] Excluir branch local com confirmação.
-- [ ] Publicar branch e configurar upstream.
-- [ ] Listar tags leves/anotadas.
+- [x] Publicar branch e configurar upstream.
+- [x] Listar tags leves/anotadas.
 - [x] Criar tags.
-- [ ] Avisar claramente ao entrar em detached HEAD.
+- [x] Avisar claramente ao entrar em detached HEAD.
 - [ ] Filtrar e pesquisar referências.
 
 ---
@@ -205,8 +207,8 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 - [ ] Abrir diff completo do commit.
 - [ ] Copiar hash/mensagem e criar branch/tag.
 - [x] Reverter com confirmação e executar cherry-pick, expondo conflitos no Source Control.
-- [ ] Comparar duas referências.
-- [ ] Mostrar histórico do arquivo atual com `--follow`.
+- [x] Comparar duas referências.
+- [x] Mostrar histórico do arquivo atual com `--follow`.
 
 ---
 
@@ -223,7 +225,7 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 
 # 11. Conflitos e merge
 
-- [ ] Criar visão/grupo dedicado de conflitos.
+- [x] Criar visão/grupo dedicado de conflitos.
 - [x] Detectar estados unmerged pelo index.
 - [ ] Criar editor com Base, Current, Incoming e Result.
 - [ ] Aceitar Current, Incoming, ambos ou edição manual.
@@ -240,7 +242,7 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 - [x] Listar stashes em aba integrada.
 - [x] Criar stash incluindo arquivos não rastreados.
 - [x] Pop do stash mais recente.
-- [ ] Visualizar diff do stash.
+- [x] Visualizar diff do stash.
 - [ ] Pré-visualizar arquivos antes de `git clean`.
 - [ ] Exigir seleção e confirmação para limpeza.
 
@@ -279,7 +281,7 @@ Operações destrutivas avançadas só serão entregues após testes específico
 
 - [ ] Classificar centralmente operações destrutivas.
 - [x] Informar arquivos e referências nas confirmações implementadas.
-- [ ] Bloquear operações incompatíveis com buffers não salvos.
+- [x] Bloquear operações incompatíveis com buffers não salvos.
 - [ ] Tratar caminhos com espaços, hífen, Unicode e bytes inválidos.
 - [x] Não armazenar nem registrar tokens ou credenciais.
 - [ ] Oferecer recuperação clara após falhas parciais.
@@ -305,7 +307,7 @@ Operações destrutivas avançadas só serão entregues após testes específico
 
 # 16. Testes
 
-- [ ] Parser de `status --porcelain=v2 -z`.
+- [x] Parser de `status --porcelain=v2 -z`.
 - [ ] Parsers de refs, log, diff e blame.
 - [x] Repositório inicial e commits normais em fixture isolada.
 - [ ] Worktrees, submódulos e bare repository.
@@ -322,6 +324,26 @@ Operações destrutivas avançadas só serão entregues após testes específico
 ---
 
 # Marcos
+
+## Prioridade imediata — integridade de dados
+
+Executar nesta ordem antes de ampliar as operações Git avançadas:
+
+1. **Testes dos parsers Git**
+   - Cobrir `status --porcelain=v2 -z`, refs, log, diff e blame.
+   - Incluir caminhos com espaços, hífen, Unicode e bytes inválidos.
+   - Incluir arquivos binários, repositórios sem commits e estados de conflito.
+2. **Proteção de buffers não salvos**
+   - Identificar operações capazes de substituir, remover ou trocar arquivos abertos.
+   - Bloquear a operação ou exigir que o usuário salve/descartar alterações explicitamente.
+   - Cobrir checkout, switch, merge, rebase, pull, restore, reset e limpeza.
+3. **Operações por hunk e linha**
+   - Implementar parser e aplicação segura de patches antes da interface de stage/unstage.
+   - Adicionar stage, unstage e descarte por hunk.
+   - Somente depois habilitar operações por linhas selecionadas.
+   - Exigir prévia, confirmação para descarte e testes de recuperação.
+
+Critério de saída: nenhuma operação dessas etapas pode modificar o repositório sem teste de sucesso, falha e recuperação correspondente.
 
 ## Marco A — Pesquisa integrada
 

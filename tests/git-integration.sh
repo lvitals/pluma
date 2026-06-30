@@ -65,9 +65,17 @@ git -C "$repo" diff -- hunks.txt | grep -F 'changed-last'
 git -C "$repo" restore -- hunks.txt
 rm -f "$repo/all.patch" "$repo/first.patch"
 
+# Numstat reports binary changes with '-' for both line counts.
+dd if=/dev/zero of="$repo/image.bin" bs=1024 count=1 2>/dev/null
+git -C "$repo" add -- image.bin
+git -C "$repo" commit -qm binary-base
+printf '\003\004' >> "$repo/image.bin"
+git -C "$repo" diff --numstat -- image.bin | awk -F '\t' '$1 == "-" && $2 == "-" && $3 == "image.bin" { found=1 } END { exit !found }'
+git -C "$repo" restore -- image.bin
+
 git -C "$repo" branch feature
 git -C "$repo" tag v1-test
-git -C "$repo" log --oneline -1 | grep -F 'hunk-base'
+git -C "$repo" log --oneline -1 | grep -F 'binary-base'
 git -C "$repo" branch --format='%(refname:short)' | grep -Fx feature
 git -C "$repo" tag --list | grep -Fx v1-test
 

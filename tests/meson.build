@@ -21,6 +21,13 @@ endforeach
 git_program = find_program('git', required: false)
 shell_program = find_program('sh')
 if git_program.found() and enable_git
+  git_diff_test = executable('git-diff',
+    'git-diff.c',
+    '../pluma/pluma-git-diff.c',
+    dependencies: pluma_deps,
+    include_directories: include_directories('../pluma'),
+  )
+  test('git-diff', git_diff_test)
   git_commit_test = executable('git-commit',
     'git-commit.c',
     '../pluma/pluma-git-commit.c',
