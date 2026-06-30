@@ -133,4 +133,13 @@ git init --bare -q "$remote"
 git -C "$repo" remote add origin "$remote"
 git -C "$repo" push -qu origin master
 git -C "$repo" remote -v | grep -F origin
+
+# Amending a published commit requires an explicit force-with-lease update.
+git -C "$repo" commit --amend -qm published-amend
+if git -C "$repo" push origin master >/dev/null 2>&1; then
+  echo "normal push unexpectedly accepted rewritten history" >&2
+  exit 1
+fi
+git -C "$repo" push --force-with-lease -q origin master
+test "$(git -C "$repo" rev-parse HEAD)" = "$(git --git-dir="$remote" rev-parse refs/heads/master)"
 rm -rf "$remote"

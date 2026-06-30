@@ -70,6 +70,8 @@ struct _PlumaGitPanel
 	gchar *outgoing_commits;
 	gchar *current_branch;
 	gchar *upstream;
+	gint ahead;
+	gint behind;
 	GtkTreeStore *store;
 	GtkTreeIter groups[N_GROUPS];
 	gchar *repo;
@@ -334,6 +336,8 @@ parse_status (PlumaGitPanel *panel, const guint8 *output, gsize output_length)
 	reset_model (panel);
 	panel->current_branch = detached ? NULL : g_strdup (status->branch);
 	panel->upstream = g_strdup (status->upstream);
+	panel->ahead = status->ahead;
+	panel->behind = status->behind;
 	for (guint i = 0; i < status->entries->len; i++)
 	{
 		PlumaGitStatusEntry *entry = g_ptr_array_index (status->entries, i);
@@ -1361,6 +1365,16 @@ static void pull_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;if(!ens
 static void push_clicked(GtkButton*b,gpointer data)
 {
 	PlumaGitPanel*p=data;
+	if (p->upstream && *p->upstream && p->ahead > 0 && p->behind > 0)
+	{
+		if (confirm_action (p, _("The local and remote histories have diverged."),
+		                    _("If this divergence was caused by amend, force-with-lease can safely replace the remote commit unless the remote changed again.")))
+		{
+			const gchar *a[]={"git","push","--force-with-lease",NULL};
+			run_git(p,a,FALSE,NULL);
+		}
+		return;
+	}
 	if (p->upstream && *p->upstream)
 	{
 		const gchar*a[]={"git","push",NULL};
@@ -1375,6 +1389,24 @@ static void push_clicked(GtkButton*b,gpointer data)
 	{
 		const gchar*a[]={"git","push",NULL};
 		run_git(p,a,FALSE,NULL);
+	}
+}
+static void
+force_push_with_lease_clicked (GtkMenuItem *item, gpointer data)
+{
+	PlumaGitPanel *panel = data;
+
+	if (panel->upstream == NULL || *panel->upstream == '\0')
+	{
+		gtk_label_set_text (GTK_LABEL (panel->summary_label),
+		                    _("Publish the branch before using force push with lease."));
+		return;
+	}
+	if (confirm_action (panel, _("Force push the amended history?"),
+	                    _("Force-with-lease updates the remote only if nobody else has changed it.")))
+	{
+		const gchar *argv[] = {"git", "push", "--force-with-lease", NULL};
+		run_git (panel, argv, FALSE, NULL);
 	}
 }
 static void stash_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","stash","push","-u",NULL};run_git(p,a,FALSE,NULL);}
@@ -1689,6 +1721,7 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	more=gtk_menu_button_new();gtk_button_set_label(GTK_BUTTON(more),_("More"));gtk_widget_set_tooltip_text(more,_("More Git actions"));menu=gtk_menu_new();
 	add_more_item(menu,_("Stage All and Commit"),G_CALLBACK(stage_all_commit_clicked),p);
 	add_more_item(menu,_("Amend Last Commit…"),G_CALLBACK(amend_commit_clicked),p);
+	add_more_item(menu,_("Force Push with Lease…"),G_CALLBACK(force_push_with_lease_clicked),p);
 	add_more_item(menu,_("View Stash Diff…"),G_CALLBACK(stash_diff_clicked),p);
 	add_more_item(menu,_("Create Branch…"),G_CALLBACK(new_branch),p);add_more_item(menu,_("Switch Branch…"),G_CALLBACK(switch_branch),p);add_more_item(menu,_("Delete Branch…"),G_CALLBACK(delete_branch),p);add_more_item(menu,_("Create Tag…"),G_CALLBACK(new_tag),p);add_more_item(menu,_("Add Remote…"),G_CALLBACK(add_remote),p);add_more_item(menu,_("Remove Remote…"),G_CALLBACK(remove_remote),p);add_more_item(menu,_("Merge…"),G_CALLBACK(merge_ref),p);add_more_item(menu,_("Rebase…"),G_CALLBACK(rebase_ref),p);add_more_item(menu,_("Cherry-pick…"),G_CALLBACK(cherry_pick_ref),p);add_more_item(menu,_("Revert Commit…"),G_CALLBACK(revert_ref),p);add_more_item(menu,_("Continue Merge"),G_CALLBACK(merge_continue),p);add_more_item(menu,_("Abort Merge"),G_CALLBACK(merge_abort),p);add_more_item(menu,_("Continue Rebase"),G_CALLBACK(rebase_continue),p);add_more_item(menu,_("Abort Rebase"),G_CALLBACK(rebase_abort),p);add_more_item(menu,_("Abort Cherry-pick"),G_CALLBACK(cherry_abort),p);gtk_widget_show_all(menu);gtk_menu_button_set_popup(GTK_MENU_BUTTON(more),menu);gtk_box_pack_start(GTK_BOX(row),more,TRUE,TRUE,0);
 	gtk_box_pack_start(GTK_BOX(commit_box),row,FALSE,FALSE,0);
