@@ -119,7 +119,10 @@ if not enable_gvfs_metadata
 endif
 
 if enable_git
-  libpluma_c_files += 'pluma-git-panel.c'
+  libpluma_c_files += [
+    'pluma-git-panel.c',
+    'pluma-git-status-parser.c',
+  ]
 endif
 
 # enum-types templates

@@ -21,6 +21,13 @@ endforeach
 git_program = find_program('git', required: false)
 shell_program = find_program('sh')
 if git_program.found() and enable_git
+  git_parser_test = executable('git-status-parser',
+    'git-status-parser.c',
+    '../pluma/pluma-git-status-parser.c',
+    dependencies: pluma_deps,
+    include_directories: include_directories('../pluma'),
+  )
+  test('git-status-parser', git_parser_test)
   test('git-integration', shell_program,
     args: files('git-integration.sh'),
     env: ['GIT_CONFIG_NOSYSTEM=1'],

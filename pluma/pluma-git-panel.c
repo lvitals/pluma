@@ -10,6 +10,7 @@
 #include "pluma-view.h"
 #include <gtksourceview/gtksource.h>
 #include "pluma-pango.h"
+#include "pluma-git-status-parser.h"
 
 enum { COL_LABEL, COL_PATH, COL_GROUP, COL_STATUS, COL_IS_GROUP, N_COLS };
 enum { GROUP_OUTGOING, GROUP_CONFLICT, GROUP_STAGED, GROUP_CHANGED, GROUP_UNTRACKED, N_GROUPS };
@@ -30,6 +31,7 @@ struct _PlumaGitPanel
 	GtkWidget *filter_entry;
 	gchar *filter_query;
 	gchar *last_status_output;
+	gsize last_status_length;
 	gchar *outgoing_commits;
 	gchar *current_branch;
 	gchar *upstream;
@@ -264,7 +266,7 @@ find_and_select_path (GtkTreeModel *model, GtkTreePath *path_in, GtkTreeIter *it
 }
 
 static void
-parse_status (PlumaGitPanel *panel, const gchar *output)
+parse_status (PlumaGitPanel *panel, const guint8 *output, gsize output_length)
 {
 	gchar *selected_path = NULL;
 	gint selected_group = -1;
@@ -287,59 +289,38 @@ parse_status (PlumaGitPanel *panel, const gchar *output)
 	g_free (panel->upstream);
 	panel->upstream = NULL;
 
-	gchar **lines = g_strsplit (output ? output : "", "\n", -1);
 	guint counts[N_GROUPS] = {0};
-	gchar *branch = NULL, *upstream = NULL; gint ahead = 0, behind = 0;
+	PlumaGitStatus *status = pluma_git_status_parse (output, output_length);
+	gboolean detached = g_strcmp0 (status->branch, "(detached)") == 0;
 	reset_model (panel);
-	for (guint i = 0; lines[i]; i++)
+	panel->current_branch = detached ? NULL : g_strdup (status->branch);
+	panel->upstream = g_strdup (status->upstream);
+	for (guint i = 0; i < status->entries->len; i++)
 	{
-		const gchar *line = lines[i];
-		if (g_str_has_prefix (line, "# branch.head "))
+		PlumaGitStatusEntry *entry = g_ptr_array_index (status->entries, i);
+		if (entry->kind == '?')
 		{
-			g_free (branch);
-			branch = g_strdup (line + 14);
-			g_free (panel->current_branch);
-			panel->current_branch = g_strdup (branch);
-			continue;
-		}
-		if (g_str_has_prefix (line, "# branch.upstream "))
-		{
-			g_free (upstream);
-			upstream = g_strdup (line + 18);
-			g_free (panel->upstream);
-			panel->upstream = g_strdup (upstream);
-			continue;
-		}
-		if (g_str_has_prefix (line, "# branch.ab ")) { sscanf (line + 12, "+%d -%d", &ahead, &behind); continue; }
-		if (line[0] == '?' && line[1] == ' ')
-		{
-			const gchar *path = line + 2;
-			if (match_filter (path, panel->filter_query))
+			if (match_filter (entry->path, panel->filter_query))
 			{
-				append_file (panel, GROUP_UNTRACKED, path, '?');
+				append_file (panel, GROUP_UNTRACKED, entry->path, '?');
 				counts[GROUP_UNTRACKED]++;
 			}
 			continue;
 		}
-		if (line[0] == '!' && line[1] == ' ') continue;
-		if ((line[0] == '1' || line[0] == '2' || line[0] == 'u') && line[1] == ' ')
+		if (entry->kind == '!' || !match_filter (entry->path, panel->filter_query))
+			continue;
+		if (entry->kind == 'u')
 		{
-			gchar **parts = g_strsplit (line, " ", line[0] == 'u' ? 11 : (line[0] == '2' ? 10 : 9));
-			gchar x = parts[1] && parts[1][0] ? parts[1][0] : '.', y = parts[1] && parts[1][1] ? parts[1][1] : '.';
-			gint path_index = line[0] == 'u' ? 10 : (line[0] == '2' ? 9 : 8);
-			gchar *rename_separator;
-			const gchar *path = parts[path_index] ? parts[path_index] : "";
-			if (line[0] == '2' && (rename_separator = strchr (parts[path_index], '\t')) != NULL)
-				*rename_separator = '\0';
-			if (match_filter (path, panel->filter_query))
-			{
-				if (line[0] == 'u') { append_file (panel, GROUP_CONFLICT, path, 'U'); counts[GROUP_CONFLICT]++; }
-				else { if (x != '.') { append_file (panel, GROUP_STAGED, path, x); counts[GROUP_STAGED]++; } if (y != '.') { append_file (panel, GROUP_CHANGED, path, y); counts[GROUP_CHANGED]++; } }
-			}
-			g_strfreev (parts);
+			append_file (panel, GROUP_CONFLICT, entry->path, 'U');
+			counts[GROUP_CONFLICT]++;
+		}
+		else
+		{
+			if (entry->index_status != '.') { append_file (panel, GROUP_STAGED, entry->path, entry->index_status); counts[GROUP_STAGED]++; }
+			if (entry->worktree_status != '.') { append_file (panel, GROUP_CHANGED, entry->path, entry->worktree_status); counts[GROUP_CHANGED]++; }
 		}
 	}
-	if (ahead > 0 && panel->outgoing_commits != NULL)
+	if (status->ahead > 0 && panel->outgoing_commits != NULL)
 	{
 		gchar **commits = g_strsplit (panel->outgoing_commits, "\n", -1);
 		for (guint i = 0; commits[i] != NULL; i++)
@@ -368,10 +349,12 @@ parse_status (PlumaGitPanel *panel, const gchar *output)
 	}
 
 	{
-		gchar *head = g_strdup_printf ("%s%s%s", branch ? branch : _("No commits"), upstream ? " → " : "", upstream ? upstream : "");
+		const gchar *branch_label = detached ? _("Detached HEAD") :
+		                            status->branch ? status->branch : _("No commits");
+		gchar *head = g_strdup_printf ("%s%s%s", branch_label, status->upstream ? " → " : "", status->upstream ? status->upstream : "");
 		guint file_changes = counts[GROUP_CONFLICT] + counts[GROUP_STAGED] +
 		                     counts[GROUP_CHANGED] + counts[GROUP_UNTRACKED];
-		gchar *summary = g_strdup_printf (_("%u changes  ↑%d ↓%d"), file_changes, ahead, behind);
+		gchar *summary = g_strdup_printf (_("%u changes  ↑%d ↓%d"), file_changes, status->ahead, status->behind);
 		gtk_label_set_text (GTK_LABEL (panel->branch_label), head); gtk_label_set_text (GTK_LABEL (panel->summary_label), summary);
 		if (panel->statusbar_context != 0)
 		{
@@ -380,7 +363,7 @@ parse_status (PlumaGitPanel *panel, const gchar *output)
 		}
 		g_free (head); g_free (summary);
 	}
-	g_free (branch); g_free (upstream); g_strfreev (lines);
+	pluma_git_status_free (status);
 	if (has_selection && selected_path != NULL)
 	{
 		struct { const gchar *path; gint group; GtkTreeView *tree; gboolean found; } args = { selected_path, selected_group, GTK_TREE_VIEW (panel->tree), FALSE };
@@ -393,8 +376,10 @@ parse_status (PlumaGitPanel *panel, const gchar *output)
 static void
 status_done (GObject *source, GAsyncResult *result, gpointer data)
 {
-	PlumaGitPanel *panel = data; gchar *out=NULL,*err=NULL; GError *error=NULL;
-	g_subprocess_communicate_utf8_finish (G_SUBPROCESS(source),result,&out,&err,&error);
+	PlumaGitPanel *panel = data; GBytes *out=NULL,*err=NULL; GError *error=NULL;
+	const guint8 *out_data = NULL; gsize out_length = 0;
+	g_subprocess_communicate_finish (G_SUBPROCESS(source),result,&out,&err,&error);
+	if (out != NULL) out_data = g_bytes_get_data (out, &out_length);
 	if (!panel->destroyed)
 	{
 		if (error) gtk_label_set_text(GTK_LABEL(panel->summary_label),error->message);
@@ -413,7 +398,8 @@ status_done (GObject *source, GAsyncResult *result, gpointer data)
 				g_object_unref (log_process);
 			}
 			g_clear_error (&log_error);
-			status_changed = g_strcmp0 (panel->last_status_output, out) != 0 ||
+			status_changed = panel->last_status_length != out_length ||
+			                 (out_length > 0 && memcmp (panel->last_status_output, out_data, out_length) != 0) ||
 			                 g_strcmp0 (panel->outgoing_commits, log_out) != 0;
 			if (status_changed)
 			{
@@ -421,22 +407,28 @@ status_done (GObject *source, GAsyncResult *result, gpointer data)
 				panel->outgoing_commits = log_out;
 				log_out = NULL;
 				g_free (panel->last_status_output);
-				panel->last_status_output = g_strdup (out);
-				parse_status(panel,out);
+				panel->last_status_output = out_length > 0 ? g_memdup2 (out_data, out_length) : NULL;
+				panel->last_status_length = out_length;
+				parse_status(panel,out_data,out_length);
 			}
 			g_free (log_out);
 		}
-		else gtk_label_set_text(GTK_LABEL(panel->summary_label),err && *err ? err : _("Git status failed"));
+		else
+		{
+			gsize err_length = 0; const gchar *err_data = err != NULL ? g_bytes_get_data (err, &err_length) : NULL;
+			gchar *message = err_length > 0 ? g_strndup (err_data, err_length) : g_strdup (_("Git status failed"));
+			gtk_label_set_text (GTK_LABEL (panel->summary_label), message); g_free (message);
+		}
 	}
 	panel->status_running = FALSE;
 	if (panel->refresh_pending && !panel->destroyed) { panel->refresh_pending = FALSE; schedule_refresh (panel); }
-	g_clear_error(&error); g_free(out); g_free(err); g_object_unref(panel);
+	g_clear_error(&error); g_clear_pointer(&out,g_bytes_unref); g_clear_pointer(&err,g_bytes_unref); g_object_unref(panel);
 }
 
 void
 pluma_git_panel_refresh (PlumaGitPanel *panel)
 {
-	const gchar *argv[]={"git","-c","core.quotePath=false","status","--porcelain=v2","--branch","--untracked-files=all",NULL}; GError *error=NULL; GSubprocess *process;
+	const gchar *argv[]={"git","status","--porcelain=v2","-z","--branch","--untracked-files=all",NULL}; GError *error=NULL; GSubprocess *process;
 	gchar *repo;
 	if (panel->status_running) { panel->refresh_pending = TRUE; return; }
 	repo=find_repository(panel);
@@ -462,7 +454,7 @@ pluma_git_panel_refresh (PlumaGitPanel *panel)
 	process=spawn_git(panel,argv,&error);
 	if (!process) { gtk_label_set_text(GTK_LABEL(panel->summary_label),error?error->message:_("Git is unavailable")); g_clear_error(&error); return; }
 	panel->status_running = TRUE;
-	g_subprocess_communicate_utf8_async(process,NULL,panel->cancellable,status_done,g_object_ref(panel)); g_object_unref(process);
+	g_subprocess_communicate_async(process,NULL,panel->cancellable,status_done,g_object_ref(panel)); g_object_unref(process);
 }
 
 static gboolean refresh_timeout (gpointer data) { PlumaGitPanel *p=data; p->refresh_source=0; pluma_git_panel_refresh(p); return G_SOURCE_REMOVE; }
@@ -1339,7 +1331,8 @@ filter_changed_cb (GtkSearchEntry *entry, gpointer data)
 	g_free (panel->filter_query);
 	const gchar *text = gtk_entry_get_text (GTK_ENTRY (entry));
 	panel->filter_query = (text && *text) ? g_strdup (text) : NULL;
-	parse_status (panel, panel->last_status_output);
+	parse_status (panel, (const guint8 *) panel->last_status_output,
+	              panel->last_status_length);
 }
 
 static void
