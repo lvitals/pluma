@@ -147,14 +147,25 @@ mount_ready_callback (GObject      *object,
 	                                                      result,
 	                                                      &error);
 
-	if (error && error->code == G_IO_ERROR_ALREADY_MOUNTED)
+	if (error)
 	{
-		mount_success = TRUE;
-		g_error_free (error);
+		if (error->code == G_IO_ERROR_ALREADY_MOUNTED)
+		{
+			mount_success = TRUE;
+			g_error_free (error);
+		}
+		else
+		{
+			gchar *msg = g_strdup_printf ("Mount failed: %s", error->message);
+			g_test_skip (msg);
+			g_free (msg);
+			g_error_free (error);
+			mount_success = FALSE;
+		}
 	}
 	else
 	{
-		g_assert_no_error (error);
+		mount_success = TRUE;
 	}
 
 	mount_completed = TRUE;
@@ -223,7 +234,14 @@ test_saver (const gchar              *filename_or_uri,
 	uri = g_file_get_uri (file);
 	existed = g_file_query_exists (file, NULL);
 
-	ensure_mounted (file);
+	if (!ensure_mounted (file))
+	{
+		g_free (uri);
+		g_object_unref (file);
+		saver_test_data_free (data);
+		g_object_unref (document);
+		return;
+	}
 
 	pluma_document_save_as (document, uri, pluma_encoding_get_utf8 (), save_flags);
 
@@ -302,13 +320,13 @@ test_new_line (const gchar *filename, PlumaDocumentSaveFlags save_flags)
 }
 
 static void
-test_local_newline ()
+test_local_newline (void)
 {
 	test_new_line (DEFAULT_LOCAL_URI, 0);
 }
 
 static void
-test_local ()
+test_local (void)
 {
 	test_saver (DEFAULT_LOCAL_URI,
 	            "hello world",
@@ -333,13 +351,13 @@ test_local ()
 }
 
 static void
-test_remote_newline ()
+test_remote_newline (void)
 {
 	test_new_line (DEFAULT_REMOTE_URI, 0);
 }
 
 static void
-test_remote ()
+test_remote (void)
 {
 	test_saver (DEFAULT_REMOTE_URI,
 	            "hello world",
@@ -408,6 +426,12 @@ test_permissions (const gchar *uri,
 	GFileInfo *info;
 	guint mode;
 
+	if (!ensure_mounted (file))
+	{
+		g_object_unref (file);
+		return;
+	}
+
 	g_file_delete (file, NULL, NULL);
 	stream = g_file_create (file, 0, NULL, &error);
 
@@ -451,7 +475,7 @@ test_permissions (const gchar *uri,
 }
 
 static void
-test_local_permissions ()
+test_local_permissions (void)
 {
 	test_permissions (DEFAULT_LOCAL_URI, 0600);
 	test_permissions (DEFAULT_LOCAL_URI, 0660);
@@ -460,7 +484,7 @@ test_local_permissions ()
 }
 
 static void
-test_local_unowned_directory ()
+test_local_unowned_directory (void)
 {
 	test_saver (UNOWNED_LOCAL_URI,
 	            DEFAULT_CONTENT,
@@ -473,7 +497,7 @@ test_local_unowned_directory ()
 }
 
 static void
-test_remote_unowned_directory ()
+test_remote_unowned_directory (void)
 {
 	test_saver (UNOWNED_REMOTE_URI,
 	            DEFAULT_CONTENT,
@@ -486,7 +510,7 @@ test_remote_unowned_directory ()
 }
 
 static void
-test_remote_permissions ()
+test_remote_permissions (void)
 {
 	test_permissions (DEFAULT_REMOTE_URI, 0600);
 	test_permissions (DEFAULT_REMOTE_URI, 0660);
@@ -538,19 +562,21 @@ test_unowned_group (const gchar *uri)
 }
 
 static void
-test_local_unowned_group ()
+test_local_unowned_group (void)
 {
 	test_unowned_group (UNOWNED_GROUP_LOCAL_URI);
 }
 
+#if 0
 static void
-test_remote_unowned_group ()
+test_remote_unowned_group (void)
 {
 	test_unowned_group (UNOWNED_GROUP_REMOTE_URI);
 }
+#endif
 
 static gboolean
-check_unowned_directory ()
+check_unowned_directory (void)
 {
 	GFile *unowned = g_file_new_for_path (UNOWNED_LOCAL_DIRECTORY);
 	GFile *unowned_file;
@@ -620,7 +646,7 @@ check_unowned_directory ()
 }
 
 static gboolean
-check_unowned_group ()
+check_unowned_group (void)
 {
 	GFile *unowned = g_file_new_for_path (UNOWNED_GROUP_LOCAL_URI);
 	GFileInfo *info;
