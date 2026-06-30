@@ -382,7 +382,15 @@ call_done (GObject *source, GAsyncResult *result, gpointer data)
 				g_free (display_out);
 		}
 		if (error || !g_subprocess_get_successful(G_SUBPROCESS(source))) gtk_label_set_text(GTK_LABEL(call->panel->summary_label),error?error->message:(err&&*err?err:_("Git operation failed")));
-		else schedule_refresh(call->panel);
+		else
+		{
+			if (g_strcmp0 (call->title, "commit") == 0)
+			{
+				GtkTextBuffer *buf = gtk_text_view_get_buffer (GTK_TEXT_VIEW (call->panel->message_entry));
+				gtk_text_buffer_set_text (buf, "", -1);
+			}
+			schedule_refresh(call->panel);
+		}
 	}
 	g_clear_error(&error);g_free(out);g_free(err);g_free(call->title);g_object_unref(call->panel);g_free(call);
 }
@@ -935,7 +943,7 @@ static void commit_clicked(GtkButton*b,gpointer data)
 	if (message && *message)
 	{
 		const gchar*a[]={"git","commit","-m",message,NULL};
-		run_git(p,a,FALSE,NULL);
+		run_git(p,a,FALSE,"commit");
 	}
 	g_free (message);
 }
