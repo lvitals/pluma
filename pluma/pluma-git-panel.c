@@ -1173,7 +1173,14 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	GtkWidget *top_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
 	gtk_paned_pack1 (GTK_PANED (main_paned), top_box, TRUE, FALSE);
 
-	p->store=gtk_tree_store_new(N_COLS,G_TYPE_STRING,G_TYPE_STRING,G_TYPE_INT,G_TYPE_INT,G_TYPE_BOOLEAN);p->tree=gtk_tree_view_new_with_model(GTK_TREE_MODEL(p->store));gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(p->tree),FALSE);r=gtk_cell_renderer_text_new();c=gtk_tree_view_column_new_with_attributes(_("Source Control"),r,"text",COL_LABEL,NULL);gtk_tree_view_append_column(GTK_TREE_VIEW(p->tree),c);g_signal_connect(p->tree,"row-activated",G_CALLBACK(row_activated),p);g_signal_connect(p->tree,"button-press-event",G_CALLBACK(menu_popup),p);scroll=gtk_scrolled_window_new(NULL,NULL);gtk_container_add(GTK_CONTAINER(scroll),p->tree);
+	p->store=gtk_tree_store_new(N_COLS,G_TYPE_STRING,G_TYPE_STRING,G_TYPE_INT,G_TYPE_INT,G_TYPE_BOOLEAN);p->tree=gtk_tree_view_new_with_model(GTK_TREE_MODEL(p->store));gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(p->tree),FALSE);r=gtk_cell_renderer_text_new();
+	g_object_set (r, "ellipsize", PANGO_ELLIPSIZE_END, NULL);
+	c=gtk_tree_view_column_new_with_attributes(_("Source Control"),r,"text",COL_LABEL,NULL);
+	gtk_tree_view_column_set_sizing (c, GTK_TREE_VIEW_COLUMN_FIXED);
+	gtk_tree_view_column_set_expand (c, TRUE);
+	gtk_tree_view_append_column(GTK_TREE_VIEW(p->tree),c);g_signal_connect(p->tree,"row-activated",G_CALLBACK(row_activated),p);g_signal_connect(p->tree,"button-press-event",G_CALLBACK(menu_popup),p);scroll=gtk_scrolled_window_new(NULL,NULL);
+	gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+	gtk_container_add(GTK_CONTAINER(scroll),p->tree);
 	gtk_box_pack_start(GTK_BOX(top_box),scroll,TRUE,TRUE,0);
 	atk_object_set_name(gtk_widget_get_accessible(p->tree),_("Git changes"));
 	
