@@ -211,6 +211,12 @@
     <separator/>
     <placeholder name="NotebookPupupOps_1"/>
     <separator/>
+    <menu action="CloseMultipleTabs">
+      <menuitem action="FileCloseTabsLeft"/>
+      <menuitem action="FileCloseTabsRight"/>
+      <menuitem action="FileCloseOtherTabs"/>
+    </menu>
+    <separator/>
     <menuitem name="FileCloseMenu" action="FileClose"/>
   </popup>
 

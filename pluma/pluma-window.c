@@ -3626,7 +3626,7 @@ show_notebook_popup_menu (GtkNotebook    *notebook,
                           GdkEventButton *event)
 {
     GtkWidget *menu;
-//    GtkAction *action;
+    GtkAction *action;
 
     menu = gtk_ui_manager_get_widget (window->priv->manager, "/NotebookPopup");
     g_return_val_if_fail (menu != NULL, FALSE);
@@ -3645,6 +3645,25 @@ show_notebook_popup_menu (GtkNotebook    *notebook,
 
     tab = GTK_WIDGET (pluma_window_get_active_tab (window));
     g_return_val_if_fail (tab != NULL, FALSE);
+
+    gint page = gtk_notebook_page_num (notebook, tab);
+    gint pages = gtk_notebook_get_n_pages (notebook);
+
+    action = gtk_action_group_get_action (window->priv->action_group,
+                                          "FileCloseTabsLeft");
+    gtk_action_set_sensitive (action, page > 0);
+
+    action = gtk_action_group_get_action (window->priv->action_group,
+                                          "FileCloseTabsRight");
+    gtk_action_set_sensitive (action, page >= 0 && page < pages - 1);
+
+    action = gtk_action_group_get_action (window->priv->action_group,
+                                          "FileCloseOtherTabs");
+    gtk_action_set_sensitive (action, pages > 1);
+
+    action = gtk_action_group_get_action (window->priv->action_group,
+                                          "CloseMultipleTabs");
+    gtk_action_set_sensitive (action, pages > 1);
 
     tab_label = gtk_notebook_get_tab_label (notebook, tab);
 

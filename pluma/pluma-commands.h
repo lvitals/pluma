@@ -91,6 +91,12 @@ void		_pluma_cmd_file_close			(GtkAction   *action,
 							 PlumaWindow *window);
 void		_pluma_cmd_file_close_all		(GtkAction   *action,
 							 PlumaWindow *window);
+void		_pluma_cmd_file_close_tabs_left		(GtkAction   *action,
+							 PlumaWindow *window);
+void		_pluma_cmd_file_close_tabs_right	(GtkAction   *action,
+							 PlumaWindow *window);
+void		_pluma_cmd_file_close_other_tabs	(GtkAction   *action,
+							 PlumaWindow *window);
 void		_pluma_cmd_file_quit			(GtkAction   *action,
 							 PlumaWindow *window);
 

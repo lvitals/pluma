@@ -61,6 +61,7 @@
 #define PLUMA_IS_QUITTING 	        "pluma-is-quitting"
 #define PLUMA_IS_CLOSING_TAB		"pluma-is-closing-tab"
 #define PLUMA_IS_QUITTING_ALL		"pluma-is-quitting-all"
+#define PLUMA_LIST_OF_TABS_TO_CLOSE     "pluma-list-of-tabs-to-close"
 
 static void tab_state_changed_while_saving (PlumaTab    *tab,
 					    GParamSpec  *pspec,
@@ -1513,8 +1514,12 @@ save_and_close_all_documents (const GList  *docs,
 
 	g_return_if_fail (!(pluma_window_get_state (window) & PLUMA_WINDOW_STATE_PRINTING));
 
-	tabs = gtk_container_get_children (
-			GTK_CONTAINER (_pluma_window_get_notebook (window)));
+	tabs = g_object_get_data (G_OBJECT (window), PLUMA_LIST_OF_TABS_TO_CLOSE);
+	if (tabs != NULL)
+		tabs = g_list_copy (tabs);
+	else
+		tabs = gtk_container_get_children (
+				GTK_CONTAINER (_pluma_window_get_notebook (window)));
 
 	tabs_to_save_as = NULL;
 	tabs_to_save_and_close = NULL;
@@ -1674,6 +1679,18 @@ close_all_tabs (PlumaWindow *window)
 }
 
 static void
+close_selected_tabs (PlumaWindow *window)
+{
+	GList *tabs;
+
+	tabs = g_object_get_data (G_OBJECT (window), PLUMA_LIST_OF_TABS_TO_CLOSE);
+	if (tabs != NULL)
+		pluma_window_close_tabs (window, tabs);
+	else
+		close_all_tabs (window);
+}
+
+static void
 close_document (PlumaWindow   *window,
 		PlumaDocument *doc)
 {
@@ -1715,7 +1732,8 @@ close_confirmation_dialog_response_handler (PlumaCloseConfirmationDialog *dlg,
 					 * because close_all_tabs could destroy the pluma window */
 					gtk_widget_destroy (GTK_WIDGET (dlg));
 
-					close_all_tabs (window);
+					close_selected_tabs (window);
+					g_object_set_data (G_OBJECT (window), PLUMA_LIST_OF_TABS_TO_CLOSE, NULL);
 
 					return;
 				}
@@ -1747,7 +1765,8 @@ close_confirmation_dialog_response_handler (PlumaCloseConfirmationDialog *dlg,
 				 * because close_all_tabs could destroy the pluma window */
 				gtk_widget_destroy (GTK_WIDGET (dlg));
 
-				close_all_tabs (window);
+				close_selected_tabs (window);
+				g_object_set_data (G_OBJECT (window), PLUMA_LIST_OF_TABS_TO_CLOSE, NULL);
 
 				return;
 			}
@@ -1774,6 +1793,7 @@ close_confirmation_dialog_response_handler (PlumaCloseConfirmationDialog *dlg,
 	}
 
 	gtk_widget_destroy (GTK_WIDGET (dlg));
+	g_object_set_data (G_OBJECT (window), PLUMA_LIST_OF_TABS_TO_CLOSE, NULL);
 }
 
 /* Returns TRUE if the tab can be immediately closed */
@@ -1941,6 +1961,131 @@ _pluma_cmd_file_close_all (GtkAction   *action,
 	                    PLUMA_WINDOW_STATE_SAVING_SESSION)));
 
 	file_close_all (window, FALSE);
+}
+
+static void
+file_close_tabs (PlumaWindow *window,
+		 const GList *tabs)
+{
+	GList *unsaved_docs = NULL;
+	const GList *l;
+	GtkWidget *dlg;
+
+	if (tabs == NULL)
+		return;
+
+	g_return_if_fail (!(pluma_window_get_state (window) &
+	                    (PLUMA_WINDOW_STATE_SAVING |
+	                     PLUMA_WINDOW_STATE_PRINTING |
+	                     PLUMA_WINDOW_STATE_SAVING_SESSION)));
+
+	g_object_set_data (G_OBJECT (window),
+	                   PLUMA_IS_CLOSING_ALL,
+	                   GBOOLEAN_TO_POINTER (TRUE));
+	g_object_set_data (G_OBJECT (window),
+	                   PLUMA_IS_QUITTING,
+	                   GBOOLEAN_TO_POINTER (FALSE));
+	g_object_set_data_full (G_OBJECT (window),
+	                        PLUMA_LIST_OF_TABS_TO_CLOSE,
+	                        g_list_copy ((GList *) tabs),
+	                        (GDestroyNotify) g_list_free);
+
+	for (l = tabs; l != NULL; l = g_list_next (l))
+	{
+		PlumaTab *tab = PLUMA_TAB (l->data);
+
+		if (!_pluma_tab_can_close (tab))
+			unsaved_docs = g_list_prepend (unsaved_docs,
+			                               pluma_tab_get_document (tab));
+	}
+
+	unsaved_docs = g_list_reverse (unsaved_docs);
+
+	if (unsaved_docs == NULL)
+	{
+		close_selected_tabs (window);
+		g_object_set_data (G_OBJECT (window), PLUMA_LIST_OF_TABS_TO_CLOSE, NULL);
+		return;
+	}
+
+	if (unsaved_docs->next == NULL)
+		dlg = pluma_close_confirmation_dialog_new_single (GTK_WINDOW (window),
+		                                                PLUMA_DOCUMENT (unsaved_docs->data),
+		                                                FALSE);
+	else
+		dlg = pluma_close_confirmation_dialog_new (GTK_WINDOW (window),
+		                                         unsaved_docs,
+		                                         FALSE);
+
+	g_list_free (unsaved_docs);
+
+	g_signal_connect (dlg,
+	                  "response",
+	                  G_CALLBACK (close_confirmation_dialog_response_handler),
+	                  window);
+	gtk_widget_show (dlg);
+}
+
+typedef enum
+{
+	CLOSE_TABS_LEFT,
+	CLOSE_TABS_RIGHT,
+	CLOSE_TABS_OTHER
+} CloseTabsMode;
+
+static void
+close_tabs_relative_to_active (PlumaWindow  *window,
+			       CloseTabsMode mode)
+{
+	GtkWidget *notebook;
+	PlumaTab *active_tab;
+	GList *tabs;
+	GList *tabs_to_close = NULL;
+	GList *l;
+	gint active_position;
+	gint position = 0;
+
+	notebook = _pluma_window_get_notebook (window);
+	active_tab = pluma_window_get_active_tab (window);
+	if (active_tab == NULL)
+		return;
+
+	active_position = gtk_notebook_page_num (GTK_NOTEBOOK (notebook),
+	                                         GTK_WIDGET (active_tab));
+	tabs = gtk_container_get_children (GTK_CONTAINER (notebook));
+
+	for (l = tabs; l != NULL; l = g_list_next (l), position++)
+	{
+		if ((mode == CLOSE_TABS_LEFT && position < active_position) ||
+		    (mode == CLOSE_TABS_RIGHT && position > active_position) ||
+		    (mode == CLOSE_TABS_OTHER && position != active_position))
+			tabs_to_close = g_list_append (tabs_to_close, l->data);
+	}
+
+	file_close_tabs (window, tabs_to_close);
+	g_list_free (tabs_to_close);
+	g_list_free (tabs);
+}
+
+void
+_pluma_cmd_file_close_tabs_left (GtkAction   *action,
+				 PlumaWindow *window)
+{
+	close_tabs_relative_to_active (window, CLOSE_TABS_LEFT);
+}
+
+void
+_pluma_cmd_file_close_tabs_right (GtkAction   *action,
+				  PlumaWindow *window)
+{
+	close_tabs_relative_to_active (window, CLOSE_TABS_RIGHT);
+}
+
+void
+_pluma_cmd_file_close_other_tabs (GtkAction   *action,
+				  PlumaWindow *window)
+{
+	close_tabs_relative_to_active (window, CLOSE_TABS_OTHER);
 }
 
 void
