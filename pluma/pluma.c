@@ -650,10 +650,24 @@ main (int argc, char *argv[])
 			g_setenv (PLUMA_BACKGROUNDED_ENV, "1", TRUE);
 
 #if defined(__linux__)
-			execv ("/proc/self/exe", argv);
-#else
-			execvp (argv[0], argv);
+			/* Do not pass /proc/self/exe directly to execv().  Linux uses
+			 * the basename of the executed path for the process comm field,
+			 * which would make process monitors show this process as "exe".
+			 * Resolve the link first so the re-exec keeps the real executable
+			 * name (normally "pluma"). */
+			{
+				gchar *executable = g_file_read_link ("/proc/self/exe", NULL);
+
+				if (executable != NULL)
+				{
+					execv (executable, argv);
+					g_free (executable);
+				}
+			}
 #endif
+			/* Also serves as a fallback if resolving or executing the Linux
+			 * /proc link failed. */
+			execvp (argv[0], argv);
 			/* Only reached if the re-exec itself failed; keep going in
 			 * this process rather than losing the window entirely. */
 			g_warning ("Could not re-exec after detaching: %s", g_strerror (errno));
