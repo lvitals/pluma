@@ -116,6 +116,12 @@ void		_pluma_cmd_edit_title_case		(GtkAction   *action,
 							 PlumaWindow *window);
 void		_pluma_cmd_edit_select_all		(GtkAction   *action,
 							 PlumaWindow *window);
+void		_pluma_cmd_edit_zoom_in		(GtkAction   *action,
+							 PlumaWindow *window);
+void		_pluma_cmd_edit_zoom_out		(GtkAction   *action,
+							 PlumaWindow *window);
+void		_pluma_cmd_edit_zoom_reset		(GtkAction   *action,
+							 PlumaWindow *window);
 void		_pluma_cmd_edit_preferences		(GtkAction   *action,
 							 PlumaWindow *window);
 

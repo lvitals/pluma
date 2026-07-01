@@ -68,6 +68,10 @@
       <menuitem name="EditSelectAllMenu" action="EditSelectAll"/>
       <placeholder name="EditOps_3" />
       <separator/>
+      <menuitem name="EditZoomInMenu" action="EditZoomIn"/>
+      <menuitem name="EditZoomOutMenu" action="EditZoomOut"/>
+      <menuitem name="EditZoomResetMenu" action="EditZoomReset"/>
+      <separator/>
       <placeholder name="EditOps_4" />
       <separator/>
       <placeholder name="EditOps_5" />

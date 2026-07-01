@@ -1003,6 +1003,67 @@ pluma_view_set_font (PlumaView   *view,
     update_css_provider (view);
 }
 
+#define MIN_ZOOM_FONT_SIZE 6
+#define MAX_ZOOM_FONT_SIZE 72
+
+static void
+pluma_view_zoom (PlumaView *view,
+                 gint       increment)
+{
+    gint size;
+
+    g_return_if_fail (PLUMA_IS_VIEW (view));
+    g_return_if_fail (view->priv->font_desc != NULL);
+
+    size = pango_font_description_get_size (view->priv->font_desc);
+    if (size == 0)
+        size = 10 * PANGO_SCALE;
+
+    size = CLAMP (size + increment * PANGO_SCALE,
+                  MIN_ZOOM_FONT_SIZE * PANGO_SCALE,
+                  MAX_ZOOM_FONT_SIZE * PANGO_SCALE);
+
+    pango_font_description_set_size (view->priv->font_desc, size);
+    update_css_provider (view);
+}
+
+void
+pluma_view_zoom_in (PlumaView *view)
+{
+    pluma_view_zoom (view, 1);
+}
+
+void
+pluma_view_zoom_out (PlumaView *view)
+{
+    pluma_view_zoom (view, -1);
+}
+
+void
+pluma_view_zoom_reset (PlumaView *view)
+{
+    gboolean use_default_font;
+
+    g_return_if_fail (PLUMA_IS_VIEW (view));
+
+    use_default_font = g_settings_get_boolean (view->priv->editor_settings,
+                                               PLUMA_SETTINGS_USE_DEFAULT_FONT);
+
+    if (use_default_font)
+    {
+        pluma_view_set_font (view, TRUE, NULL);
+    }
+    else
+    {
+        gchar *editor_font;
+
+        editor_font = g_settings_get_string (view->priv->editor_settings,
+                                             PLUMA_SETTINGS_EDITOR_FONT);
+        pluma_view_set_font (view, FALSE, editor_font);
+        g_free (editor_font);
+    }
+}
+
 static void
 add_search_completion_entry (const gchar *str)
 {

@@ -114,6 +114,10 @@ void 		 pluma_view_set_font		(PlumaView       *view,
 						 gboolean         def,
 						 const gchar     *font_name);
 
+void		 pluma_view_zoom_in		(PlumaView       *view);
+void		 pluma_view_zoom_out		(PlumaView       *view);
+void		 pluma_view_zoom_reset		(PlumaView       *view);
+
 #ifdef GTK_SOURCE_VERSION_3_24
 void
 pluma_set_source_space_drawer_by_level (GtkSourceView          *view,

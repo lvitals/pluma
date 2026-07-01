@@ -166,6 +166,51 @@ _pluma_cmd_edit_select_all (GtkAction   *action,
 }
 
 void
+_pluma_cmd_edit_zoom_in (GtkAction   *action,
+			 PlumaWindow *window)
+{
+	PlumaView *active_view;
+
+	pluma_debug (DEBUG_COMMANDS);
+
+	active_view = pluma_window_get_active_view (window);
+	g_return_if_fail (active_view);
+
+	pluma_view_zoom_in (active_view);
+	gtk_widget_grab_focus (GTK_WIDGET (active_view));
+}
+
+void
+_pluma_cmd_edit_zoom_out (GtkAction   *action,
+			  PlumaWindow *window)
+{
+	PlumaView *active_view;
+
+	pluma_debug (DEBUG_COMMANDS);
+
+	active_view = pluma_window_get_active_view (window);
+	g_return_if_fail (active_view);
+
+	pluma_view_zoom_out (active_view);
+	gtk_widget_grab_focus (GTK_WIDGET (active_view));
+}
+
+void
+_pluma_cmd_edit_zoom_reset (GtkAction   *action,
+			    PlumaWindow *window)
+{
+	PlumaView *active_view;
+
+	pluma_debug (DEBUG_COMMANDS);
+
+	active_view = pluma_window_get_active_view (window);
+	g_return_if_fail (active_view);
+
+	pluma_view_zoom_reset (active_view);
+	gtk_widget_grab_focus (GTK_WIDGET (active_view));
+}
+
+void
 _pluma_cmd_edit_upper_case (GtkAction   *action,
 			    PlumaWindow *window)
 {
