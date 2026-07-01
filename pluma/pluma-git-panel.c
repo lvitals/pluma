@@ -4,6 +4,7 @@
 
 #include <glib/gi18n.h>
 #include "pluma-git-panel.h"
+#include "pluma-commands.h"
 #include "pluma-window-private.h"
 #include "pluma-document.h"
 #include "pluma-tab.h"
@@ -543,7 +544,8 @@ call_done (GObject *source, GAsyncResult *result, gpointer data)
 			if (display_out && *display_out)
 			{
 				PlumaTab *tab=pluma_window_create_tab(call->panel->window,TRUE); PlumaDocument *doc=pluma_tab_get_document(tab);
-				
+				pluma_tab_set_reusable (tab, FALSE);
+
 				gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc),display_out,-1);
 				gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc), FALSE);
 				
@@ -632,7 +634,7 @@ selected_file (PlumaGitPanel *panel, gchar **path, gint *group, gint *status)
 static void stage_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){const gchar *a[]={"git","add","--",path,NULL};run_git(p,a,FALSE,NULL);g_free(path);} }
 static void unstage_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){const gchar *a[]={"git","reset","-q","HEAD","--",path,NULL};run_git(p,a,FALSE,NULL);g_free(path);} }
 static void diff_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){if(selected_diff_is_binary(p,path,g==GROUP_STAGED)){gtk_label_set_text(GTK_LABEL(p->summary_label),_("Binary files cannot be displayed as a text diff."));g_free(path);return;}const gchar *a1[]={"git","diff","--cached","--",path,NULL};const gchar *a2[]={"git","diff","--",path,NULL};gchar *title=g_strconcat("Diff: ",path,NULL);run_git(p,g==GROUP_STAGED?a1:a2,TRUE,title);g_free(title);g_free(path);} }
-static void open_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){gchar *full=g_build_filename(p->repo,path,NULL);gchar *uri=g_filename_to_uri(full,NULL,NULL);pluma_window_create_tab_from_uri(p->window,uri,NULL,0,FALSE,TRUE);g_free(uri);g_free(full);g_free(path);} }
+static void open_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){gchar *full=g_build_filename(p->repo,path,NULL);gchar *uri=g_filename_to_uri(full,NULL,NULL);pluma_commands_load_uri(p->window,uri,NULL,0);g_free(uri);g_free(full);g_free(path);} }
 
 static void discard_selected (PlumaGitPanel *p)
 {
@@ -932,7 +934,8 @@ open_side_by_side_diff (PlumaGitPanel *p)
 	
 	PlumaTab *tab = pluma_window_create_tab (p->window, TRUE);
 	PlumaDocument *doc = pluma_tab_get_document (tab);
-	
+	pluma_tab_set_reusable (tab, FALSE);
+
 	gchar *display_title = g_strconcat ("Diff: ", path, NULL);
 	pluma_document_set_short_name_for_display (doc, display_title);
 	g_free (display_title);

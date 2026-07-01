@@ -191,7 +191,8 @@ load_file_list (PlumaWindow         *window,
 		doc = pluma_tab_get_document (tab);
 
 		if (pluma_document_is_untouched (doc) &&
-		    (pluma_tab_get_state (tab) == PLUMA_TAB_STATE_NORMAL))
+		    (pluma_tab_get_state (tab) == PLUMA_TAB_STATE_NORMAL) &&
+		    pluma_tab_get_reusable (tab))
 		{
 			gchar *uri;
 

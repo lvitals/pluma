@@ -80,6 +80,7 @@ struct _PlumaTabPrivate
 
 	gint	                not_editable : 1;
 	gint                    auto_save : 1;
+	gint                    reusable : 1;
 
 	gint                    ask_if_externally_modified : 1;
 
@@ -313,6 +314,23 @@ pluma_tab_get_state (PlumaTab *tab)
 	g_return_val_if_fail (PLUMA_IS_TAB (tab), PLUMA_TAB_STATE_NORMAL);
 
 	return tab->priv->state;
+}
+
+gboolean
+pluma_tab_get_reusable (PlumaTab *tab)
+{
+	g_return_val_if_fail (PLUMA_IS_TAB (tab), FALSE);
+
+	return tab->priv->reusable;
+}
+
+void
+pluma_tab_set_reusable (PlumaTab *tab,
+			gboolean  reusable)
+{
+	g_return_if_fail (PLUMA_IS_TAB (tab));
+
+	tab->priv->reusable = reusable != FALSE;
 }
 
 static void
@@ -1553,6 +1571,7 @@ pluma_tab_init (PlumaTab *tab)
 	tab->priv->state = PLUMA_TAB_STATE_NORMAL;
 
 	tab->priv->not_editable = FALSE;
+	tab->priv->reusable = TRUE;
 
 	tab->priv->save_flags = 0;
 

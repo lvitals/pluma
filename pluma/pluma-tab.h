@@ -108,6 +108,11 @@ PlumaTab	*pluma_tab_get_from_document	(PlumaDocument       *doc);
 
 PlumaTabState	 pluma_tab_get_state		(PlumaTab	     *tab);
 
+gboolean	 pluma_tab_get_reusable		(PlumaTab            *tab);
+
+void		 pluma_tab_set_reusable		(PlumaTab            *tab,
+						 gboolean             reusable);
+
 gboolean	 pluma_tab_get_auto_save_enabled
 						(PlumaTab            *tab);
 
