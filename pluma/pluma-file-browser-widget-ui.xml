@@ -4,6 +4,7 @@
     <toolitem action="DirectoryUp"/>
     <separator/>
     <toolitem action="DirectoryRefresh"/>
+    <toolitem action="QuickSearch"/>
     <separator/>
     <placeholder name="Tool_Opt2"/>
     <separator/>

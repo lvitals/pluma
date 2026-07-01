@@ -111,6 +111,22 @@ typedef struct
 	GdkPixbuf *icon;
 } NameIcon;
 
+typedef struct
+{
+	gchar *relative_path;
+	gchar *uri;
+	gchar *name_folded;
+	gchar *path_folded;
+} QuickFile;
+
+enum
+{
+	QUICK_SEARCH_COLUMN_ICON,
+	QUICK_SEARCH_COLUMN_PATH,
+	QUICK_SEARCH_COLUMN_URI,
+	QUICK_SEARCH_N_COLUMNS
+};
+
 struct _PlumaFileBrowserWidgetPrivate
 {
 	PlumaFileBrowserView *treeview;
@@ -124,6 +140,16 @@ struct _PlumaFileBrowserWidgetPrivate
 
 	GtkWidget *filter_expander;
 	GtkWidget *filter_entry;
+	GtkWidget *tree_scrolled_window;
+	GtkWidget *quick_search_box;
+	GtkWidget *quick_search_entry;
+	GtkWidget *quick_search_view;
+	GtkListStore *quick_search_store;
+	GtkWidget *quick_search_status;
+	GPtrArray *quick_files;
+	GCancellable *quick_search_cancellable;
+	gchar *quick_search_root_uri;
+	guint quick_search_generation;
 
 	GtkUIManager *manager;
 	GtkActionGroup *action_group;
@@ -228,6 +254,8 @@ static void on_action_directory_refresh        (GtkAction * action,
 						PlumaFileBrowserWidget * obj);
 static void on_action_directory_open           (GtkAction * action,
 						PlumaFileBrowserWidget * obj);
+static void on_action_quick_search             (GtkAction * action,
+						PlumaFileBrowserWidget * obj);
 static void on_action_filter_hidden            (GtkAction * action,
 						PlumaFileBrowserWidget * obj);
 static void on_action_filter_binary            (GtkAction * action,
@@ -331,6 +359,29 @@ cancel_async_operation (PlumaFileBrowserWidget *widget)
 }
 
 static void
+cancel_quick_search_on_destroy (GtkWidget              *widget,
+				PlumaFileBrowserWidget *obj)
+{
+	obj->priv->quick_search_generation++;
+
+	if (obj->priv->quick_search_cancellable != NULL)
+	{
+		g_cancellable_cancel (obj->priv->quick_search_cancellable);
+		g_clear_object (&obj->priv->quick_search_cancellable);
+	}
+}
+
+static void
+quick_file_free (QuickFile *file)
+{
+	g_free (file->relative_path);
+	g_free (file->uri);
+	g_free (file->name_folded);
+	g_free (file->path_folded);
+	g_free (file);
+}
+
+static void
 pluma_file_browser_widget_finalize (GObject * object)
 {
 	PlumaFileBrowserWidget *obj = PLUMA_FILE_BROWSER_WIDGET (object);
@@ -358,6 +409,16 @@ pluma_file_browser_widget_finalize (GObject * object)
 	g_hash_table_destroy (obj->priv->bookmarks_hash);
 
 	cancel_async_operation (obj);
+
+	if (obj->priv->quick_search_cancellable != NULL)
+	{
+		g_cancellable_cancel (obj->priv->quick_search_cancellable);
+		g_clear_object (&obj->priv->quick_search_cancellable);
+	}
+
+	g_clear_pointer (&obj->priv->quick_files, g_ptr_array_unref);
+	g_clear_object (&obj->priv->quick_search_store);
+	g_clear_pointer (&obj->priv->quick_search_root_uri, g_free);
 
 	g_object_unref (obj->priv->busy_cursor);
 
@@ -801,7 +862,10 @@ static const GtkActionEntry tree_actions_file_selection[] =
 static const GtkActionEntry tree_actions[] =
 {
 	{"DirectoryUp", "go-up", N_("Up"), NULL,
-	 N_("Open the parent folder"), G_CALLBACK (on_action_directory_up)}
+	 N_("Open the parent folder"), G_CALLBACK (on_action_directory_up)},
+	{"QuickSearch", "edit-find", N_("Quick Open"), NULL,
+	 N_("Find a file by name in the current folder"),
+	 G_CALLBACK (on_action_quick_search)}
 };
 
 static const GtkActionEntry tree_actions_single_most_selection[] =
@@ -1151,6 +1215,393 @@ on_end_loading (PlumaFileBrowserStore  *model,
 	gdk_window_set_cursor (gtk_widget_get_window (GTK_WIDGET (obj)), NULL);
 }
 
+typedef struct
+{
+	gchar *root_path;
+	guint generation;
+} QuickSearchTaskData;
+
+typedef struct
+{
+	QuickFile *file;
+	gint score;
+} QuickMatch;
+
+static void
+quick_search_task_data_free (QuickSearchTaskData *data)
+{
+	g_free (data->root_path);
+	g_free (data);
+}
+
+static void
+quick_search_scan_directory (const gchar  *root_path,
+			     const gchar  *directory,
+			     GPtrArray    *files,
+			     GCancellable *cancellable)
+{
+	GDir *dir;
+	const gchar *name;
+
+	if (g_cancellable_is_cancelled (cancellable))
+		return;
+
+	dir = g_dir_open (directory, 0, NULL);
+	if (dir == NULL)
+		return;
+
+	while ((name = g_dir_read_name (dir)) != NULL)
+	{
+		gchar *full_path;
+
+		if (g_cancellable_is_cancelled (cancellable))
+			break;
+
+		full_path = g_build_filename (directory, name, NULL);
+
+		if (g_file_test (full_path, G_FILE_TEST_IS_DIR) &&
+		    !g_file_test (full_path, G_FILE_TEST_IS_SYMLINK))
+		{
+			if (g_strcmp0 (name, ".git") != 0 &&
+			    g_strcmp0 (name, ".hg") != 0 &&
+			    g_strcmp0 (name, ".svn") != 0)
+				quick_search_scan_directory (root_path, full_path, files, cancellable);
+		}
+		else if (g_file_test (full_path, G_FILE_TEST_IS_REGULAR))
+		{
+			QuickFile *file;
+			gchar *basename;
+
+			file = g_new0 (QuickFile, 1);
+			const gchar *relative_start = full_path + strlen (root_path);
+			if (G_IS_DIR_SEPARATOR (*relative_start))
+				relative_start++;
+
+			file->relative_path = g_filename_to_utf8 (relative_start,
+			                                                -1, NULL, NULL, NULL);
+			file->uri = g_filename_to_uri (full_path, NULL, NULL);
+			basename = g_path_get_basename (full_path);
+			file->name_folded = g_utf8_casefold (basename, -1);
+			file->path_folded = file->relative_path != NULL ?
+			                    g_utf8_casefold (file->relative_path, -1) : NULL;
+
+			if (file->relative_path != NULL && file->uri != NULL)
+				g_ptr_array_add (files, file);
+			else
+				quick_file_free (file);
+
+			g_free (basename);
+		}
+
+		g_free (full_path);
+	}
+
+	g_dir_close (dir);
+}
+
+static void
+quick_search_index_thread (GTask        *task,
+			   gpointer      source_object,
+			   gpointer      task_data,
+			   GCancellable *cancellable)
+{
+	QuickSearchTaskData *data = task_data;
+	GPtrArray *files;
+
+	files = g_ptr_array_new_with_free_func ((GDestroyNotify) quick_file_free);
+	quick_search_scan_directory (data->root_path, data->root_path, files, cancellable);
+
+	if (g_cancellable_is_cancelled (cancellable))
+	{
+		g_ptr_array_unref (files);
+		g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_CANCELLED, "Cancelled");
+		return;
+	}
+
+	g_task_return_pointer (task, files, (GDestroyNotify) g_ptr_array_unref);
+}
+
+static gint
+quick_search_score (const gchar *query,
+		    const gchar *text)
+{
+	const gchar *cursor = text;
+	const gchar *previous = NULL;
+	gint score = 0;
+
+	while (*query != '\0')
+	{
+		const gchar *found = strchr (cursor, *query);
+
+		if (found == NULL)
+			return -1;
+
+		score += (gint) (found - text);
+		if (previous != NULL && found == previous + 1)
+			score -= 3;
+
+		previous = found;
+		cursor = found + 1;
+		query++;
+	}
+
+	return score;
+}
+
+static gint
+quick_match_compare (gconstpointer a,
+		     gconstpointer b)
+{
+	const QuickMatch *ma = *(QuickMatch * const *) a;
+	const QuickMatch *mb = *(QuickMatch * const *) b;
+
+	if (ma->score != mb->score)
+		return ma->score - mb->score;
+
+	return g_utf8_collate (ma->file->relative_path, mb->file->relative_path);
+}
+
+static void
+quick_search_refilter (PlumaFileBrowserWidget *obj)
+{
+	const gchar *text;
+	gchar *query;
+	GPtrArray *matches;
+	guint i;
+	GtkTreeIter iter;
+	gchar *status;
+
+	gtk_list_store_clear (obj->priv->quick_search_store);
+	if (obj->priv->quick_files == NULL)
+		return;
+
+	text = gtk_entry_get_text (GTK_ENTRY (obj->priv->quick_search_entry));
+	query = g_utf8_casefold (text, -1);
+	matches = g_ptr_array_new_with_free_func (g_free);
+
+	for (i = 0; i < obj->priv->quick_files->len; i++)
+	{
+		QuickFile *file = g_ptr_array_index (obj->priv->quick_files, i);
+		gint score;
+
+		if (*query == '\0')
+			score = 0;
+		else
+		{
+			score = quick_search_score (query, file->name_folded);
+			if (score < 0)
+			{
+				score = quick_search_score (query, file->path_folded);
+				if (score >= 0)
+					score += 1000;
+			}
+		}
+
+		if (score >= 0)
+		{
+			QuickMatch *match = g_new (QuickMatch, 1);
+			match->file = file;
+			match->score = score;
+			g_ptr_array_add (matches, match);
+		}
+	}
+
+	g_ptr_array_sort (matches, quick_match_compare);
+
+	for (i = 0; i < MIN (matches->len, 200); i++)
+	{
+		QuickMatch *match = g_ptr_array_index (matches, i);
+
+		gtk_list_store_append (obj->priv->quick_search_store, &iter);
+		gtk_list_store_set (obj->priv->quick_search_store, &iter,
+		                    QUICK_SEARCH_COLUMN_ICON, "text-x-generic",
+		                    QUICK_SEARCH_COLUMN_PATH, match->file->relative_path,
+		                    QUICK_SEARCH_COLUMN_URI, match->file->uri,
+		                    -1);
+	}
+
+	status = g_strdup_printf (ngettext ("%u file found", "%u files found", matches->len),
+	                          matches->len);
+	gtk_label_set_text (GTK_LABEL (obj->priv->quick_search_status), status);
+	g_free (status);
+
+	if (gtk_tree_model_get_iter_first (GTK_TREE_MODEL (obj->priv->quick_search_store), &iter))
+		gtk_tree_selection_select_iter (gtk_tree_view_get_selection (GTK_TREE_VIEW (obj->priv->quick_search_view)),
+		                                &iter);
+
+	g_ptr_array_unref (matches);
+	g_free (query);
+}
+
+static void
+quick_search_index_ready (GObject      *source,
+			  GAsyncResult *result,
+			  gpointer      user_data)
+{
+	PlumaFileBrowserWidget *obj = PLUMA_FILE_BROWSER_WIDGET (source);
+	QuickSearchTaskData *data = g_task_get_task_data (G_TASK (result));
+	GError *error = NULL;
+	GPtrArray *files;
+
+	files = g_task_propagate_pointer (G_TASK (result), &error);
+	if (data->generation != obj->priv->quick_search_generation)
+	{
+		g_clear_error (&error);
+		if (files != NULL)
+			g_ptr_array_unref (files);
+		return;
+	}
+
+	g_clear_object (&obj->priv->quick_search_cancellable);
+
+	if (error != NULL)
+	{
+		g_error_free (error);
+		return;
+	}
+
+	g_clear_pointer (&obj->priv->quick_files, g_ptr_array_unref);
+	obj->priv->quick_files = files;
+	quick_search_refilter (obj);
+}
+
+static void
+quick_search_activate_selected (PlumaFileBrowserWidget *obj)
+{
+	GtkTreeSelection *selection;
+	GtkTreeModel *model;
+	GtkTreeIter iter;
+	gchar *uri;
+
+	selection = gtk_tree_view_get_selection (GTK_TREE_VIEW (obj->priv->quick_search_view));
+	if (!gtk_tree_selection_get_selected (selection, &model, &iter))
+		return;
+
+	gtk_tree_model_get (model, &iter, QUICK_SEARCH_COLUMN_URI, &uri, -1);
+	if (uri != NULL)
+	{
+		g_signal_emit (obj, signals[URI_ACTIVATED], 0, uri);
+		gtk_widget_hide (obj->priv->quick_search_box);
+		gtk_widget_show (obj->priv->tree_scrolled_window);
+		gtk_widget_show (obj->priv->filter_expander);
+	}
+	g_free (uri);
+}
+
+static void
+quick_search_row_activated (GtkTreeView            *view,
+			    GtkTreePath            *path,
+			    GtkTreeViewColumn      *column,
+			    PlumaFileBrowserWidget *obj)
+{
+	quick_search_activate_selected (obj);
+}
+
+static gboolean
+quick_search_entry_key_press (GtkWidget              *entry,
+			      GdkEventKey           *event,
+			      PlumaFileBrowserWidget *obj)
+{
+	GtkTreeView *view = GTK_TREE_VIEW (obj->priv->quick_search_view);
+
+	if (event->keyval == GDK_KEY_Escape)
+	{
+		gtk_widget_hide (obj->priv->quick_search_box);
+		gtk_widget_show (obj->priv->tree_scrolled_window);
+		gtk_widget_show (obj->priv->filter_expander);
+		gtk_widget_grab_focus (GTK_WIDGET (obj->priv->treeview));
+		return TRUE;
+	}
+	else if (event->keyval == GDK_KEY_Return || event->keyval == GDK_KEY_KP_Enter)
+	{
+		quick_search_activate_selected (obj);
+		return TRUE;
+	}
+	else if (event->keyval == GDK_KEY_Down || event->keyval == GDK_KEY_Up)
+	{
+		GtkTreeSelection *selection = gtk_tree_view_get_selection (view);
+		GtkTreeModel *model;
+		GtkTreeIter iter;
+
+		if (gtk_tree_selection_get_selected (selection, &model, &iter))
+		{
+			GtkTreePath *path = gtk_tree_model_get_path (model, &iter);
+			if (event->keyval == GDK_KEY_Down)
+				gtk_tree_path_next (path);
+			else if (!gtk_tree_path_prev (path))
+			{
+				gtk_tree_path_free (path);
+				return TRUE;
+			}
+
+			if (gtk_tree_model_get_iter (model, &iter, path))
+			{
+				gtk_tree_selection_select_iter (selection, &iter);
+				gtk_tree_view_scroll_to_cell (view, path, NULL, TRUE, 0.5, 0.0);
+			}
+			gtk_tree_path_free (path);
+		}
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+static void
+create_quick_search (PlumaFileBrowserWidget *obj)
+{
+	GtkWidget *box;
+	GtkWidget *entry;
+	GtkWidget *sw;
+	GtkWidget *view;
+	GtkCellRenderer *renderer;
+	GtkTreeViewColumn *column;
+	GtkWidget *status;
+
+	box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 3);
+	entry = gtk_search_entry_new ();
+	gtk_entry_set_placeholder_text (GTK_ENTRY (entry), _("Search files by name"));
+	gtk_box_pack_start (GTK_BOX (box), entry, FALSE, FALSE, 0);
+
+	obj->priv->quick_search_store = gtk_list_store_new (QUICK_SEARCH_N_COLUMNS,
+	                                                    G_TYPE_STRING,
+	                                                    G_TYPE_STRING,
+	                                                    G_TYPE_STRING);
+	view = gtk_tree_view_new_with_model (GTK_TREE_MODEL (obj->priv->quick_search_store));
+	gtk_tree_view_set_headers_visible (GTK_TREE_VIEW (view), FALSE);
+
+	column = gtk_tree_view_column_new ();
+	renderer = gtk_cell_renderer_pixbuf_new ();
+	gtk_tree_view_column_pack_start (column, renderer, FALSE);
+	gtk_tree_view_column_add_attribute (column, renderer, "icon-name", QUICK_SEARCH_COLUMN_ICON);
+	renderer = gtk_cell_renderer_text_new ();
+	g_object_set (renderer, "ellipsize", PANGO_ELLIPSIZE_MIDDLE, NULL);
+	gtk_tree_view_column_pack_start (column, renderer, TRUE);
+	gtk_tree_view_column_add_attribute (column, renderer, "text", QUICK_SEARCH_COLUMN_PATH);
+	gtk_tree_view_append_column (GTK_TREE_VIEW (view), column);
+
+	sw = gtk_scrolled_window_new (NULL, NULL);
+	gtk_container_add (GTK_CONTAINER (sw), view);
+	gtk_box_pack_start (GTK_BOX (box), sw, TRUE, TRUE, 0);
+
+	status = gtk_label_new ("");
+	gtk_widget_set_halign (status, GTK_ALIGN_START);
+	gtk_box_pack_start (GTK_BOX (box), status, FALSE, FALSE, 0);
+	gtk_box_pack_start (GTK_BOX (obj), box, TRUE, TRUE, 0);
+
+	obj->priv->quick_search_box = box;
+	obj->priv->quick_search_entry = entry;
+	obj->priv->quick_search_view = view;
+	obj->priv->quick_search_status = status;
+
+	g_signal_connect_swapped (entry, "search-changed", G_CALLBACK (quick_search_refilter), obj);
+	g_signal_connect (entry, "key-press-event", G_CALLBACK (quick_search_entry_key_press), obj);
+	g_signal_connect (view, "row-activated", G_CALLBACK (quick_search_row_activated), obj);
+
+	gtk_widget_show_all (box);
+	gtk_widget_hide (box);
+}
+
 static void
 create_tree (PlumaFileBrowserWidget * obj)
 {
@@ -1181,6 +1632,7 @@ create_tree (PlumaFileBrowserWidget * obj)
 	gtk_container_add (GTK_CONTAINER (sw),
 			   GTK_WIDGET (obj->priv->treeview));
 	gtk_box_pack_start (GTK_BOX (obj), sw, TRUE, TRUE, 0);
+	obj->priv->tree_scrolled_window = sw;
 
 	g_signal_connect (obj->priv->treeview, "notify::model",
 			  G_CALLBACK (on_model_set), obj);
@@ -1268,6 +1720,11 @@ pluma_file_browser_widget_init (PlumaFileBrowserWidget * obj)
 
 	display = gtk_widget_get_display (GTK_WIDGET (obj));
 	obj->priv->busy_cursor = gdk_cursor_new_for_display (display, GDK_WATCH);
+
+	g_signal_connect (obj,
+	                  "destroy",
+	                  G_CALLBACK (cancel_quick_search_on_destroy),
+	                  obj);
 }
 
 /* Private */
@@ -1897,11 +2354,81 @@ pluma_file_browser_widget_new (const gchar *data_dir)
 	create_toolbar (obj, data_dir);
 	create_combo (obj);
 	create_tree (obj);
+	create_quick_search (obj);
 	create_filter (obj);
 
 	pluma_file_browser_widget_show_bookmarks (obj);
 
 	return GTK_WIDGET (obj);
+}
+
+void
+pluma_file_browser_widget_show_quick_search (PlumaFileBrowserWidget *obj)
+{
+	gchar *root_uri;
+	GFile *root;
+	gchar *root_path;
+	QuickSearchTaskData *data;
+	GTask *task;
+
+	g_return_if_fail (PLUMA_IS_FILE_BROWSER_WIDGET (obj));
+
+	root_uri = pluma_file_browser_store_get_virtual_root (obj->priv->file_store);
+	if (root_uri == NULL)
+		return;
+
+	root = g_file_new_for_uri (root_uri);
+	root_path = g_file_get_path (root);
+	if (root_path == NULL)
+	{
+		g_object_unref (root);
+		g_free (root_uri);
+		return;
+	}
+
+	gtk_widget_hide (obj->priv->tree_scrolled_window);
+	gtk_widget_show (obj->priv->quick_search_box);
+	gtk_widget_hide (obj->priv->filter_expander);
+	gtk_entry_set_text (GTK_ENTRY (obj->priv->quick_search_entry), "");
+	gtk_widget_grab_focus (obj->priv->quick_search_entry);
+
+	if (g_strcmp0 (root_uri, obj->priv->quick_search_root_uri) == 0 &&
+	    obj->priv->quick_files != NULL)
+	{
+		quick_search_refilter (obj);
+		g_object_unref (root);
+		g_free (root_path);
+		g_free (root_uri);
+		return;
+	}
+
+	if (obj->priv->quick_search_cancellable != NULL)
+	{
+		g_cancellable_cancel (obj->priv->quick_search_cancellable);
+		g_clear_object (&obj->priv->quick_search_cancellable);
+	}
+
+	g_clear_pointer (&obj->priv->quick_files, g_ptr_array_unref);
+	g_free (obj->priv->quick_search_root_uri);
+	obj->priv->quick_search_root_uri = g_strdup (root_uri);
+	gtk_list_store_clear (obj->priv->quick_search_store);
+	gtk_label_set_text (GTK_LABEL (obj->priv->quick_search_status), _("Indexing files..."));
+
+	data = g_new0 (QuickSearchTaskData, 1);
+	data->root_path = g_strdup (root_path);
+	data->generation = ++obj->priv->quick_search_generation;
+	obj->priv->quick_search_cancellable = g_cancellable_new ();
+	task = g_task_new (obj,
+	                   obj->priv->quick_search_cancellable,
+	                   quick_search_index_ready,
+	                   NULL);
+	g_task_set_task_data (task, data, (GDestroyNotify) quick_search_task_data_free);
+	g_task_run_in_thread (task, quick_search_index_thread);
+	g_object_unref (task);
+
+	g_object_unref (root);
+	g_free (root_path);
+	g_free (root_uri);
 }
 
 void
@@ -3231,6 +3758,12 @@ on_action_directory_open (GtkAction * action, PlumaFileBrowserWidget * obj)
 	}
 
 	g_list_free (rows);
+}
+
+static void
+on_action_quick_search (GtkAction *action, PlumaFileBrowserWidget *obj)
+{
+	pluma_file_browser_widget_show_quick_search (obj);
 }
 
 static void

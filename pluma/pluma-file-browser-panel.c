@@ -32,6 +32,7 @@
 #include "pluma-commands.h"
 #include "pluma-debug.h"
 #include "pluma-window.h"
+#include "pluma-panel.h"
 #include "pluma-utils.h"
 
 #include "pluma-file-browser-enum-types.h"
@@ -58,6 +59,8 @@ typedef struct
 	gulong                   merge_id;
 	GtkActionGroup          *action_group;
 	GtkActionGroup          *single_selection_action_group;
+	GtkActionGroup          *quick_open_action_group;
+	guint                    quick_open_merge_id;
 	gboolean                 auto_root;
 	gulong                   end_loading_handle;
 	gboolean                 confirm_trash;
@@ -516,6 +519,75 @@ static GtkActionEntry extra_single_selection_actions[] = {
 };
 
 static void
+on_action_quick_open (GtkAction             *action,
+		      PlumaFileBrowserPanel *priv)
+{
+	PlumaPanel *side_panel;
+
+	side_panel = pluma_window_get_side_panel (priv->window);
+	gtk_widget_show (GTK_WIDGET (side_panel));
+	pluma_panel_activate_item (side_panel, GTK_WIDGET (priv->tree_widget));
+	pluma_file_browser_widget_show_quick_search (priv->tree_widget);
+}
+
+static const GtkActionEntry quick_open_actions[] =
+{
+	{"FileBrowserQuickOpen", "edit-find", N_("_Quick Open..."), "<control><alt>P",
+	 N_("Find a file by name in the current file browser folder"),
+	 G_CALLBACK (on_action_quick_open)}
+};
+
+#define QUICK_OPEN_UI ""                         \
+"<ui>"                                           \
+"  <menubar name=\"MenuBar\">"                  \
+"    <menu name=\"SearchMenu\" action=\"Search\">" \
+"      <placeholder name=\"SearchOps_1\">"     \
+"        <menuitem action=\"FileBrowserQuickOpen\"/>" \
+"      </placeholder>"                           \
+"    </menu>"                                    \
+"  </menubar>"                                   \
+"</ui>"
+
+static void
+add_quick_open_ui (PlumaFileBrowserPanel *priv)
+{
+	GtkUIManager *manager;
+	GError *error = NULL;
+
+	manager = pluma_window_get_ui_manager (priv->window);
+	priv->quick_open_action_group = gtk_action_group_new ("FileBrowserQuickOpenActions");
+	gtk_action_group_set_translation_domain (priv->quick_open_action_group, NULL);
+	gtk_action_group_add_actions (priv->quick_open_action_group,
+	                              quick_open_actions,
+	                              G_N_ELEMENTS (quick_open_actions),
+	                              priv);
+	gtk_ui_manager_insert_action_group (manager, priv->quick_open_action_group, 0);
+	priv->quick_open_merge_id = gtk_ui_manager_add_ui_from_string (manager,
+	                                                              QUICK_OPEN_UI,
+	                                                              -1,
+	                                                              &error);
+	if (error != NULL)
+	{
+		g_warning ("Unable to add Quick Open UI: %s", error->message);
+		g_error_free (error);
+	}
+}
+
+static void
+remove_quick_open_ui (PlumaFileBrowserPanel *priv)
+{
+	GtkUIManager *manager = pluma_window_get_ui_manager (priv->window);
+
+	if (priv->quick_open_merge_id != 0)
+		gtk_ui_manager_remove_ui (manager, priv->quick_open_merge_id);
+	if (priv->quick_open_action_group != NULL)
+	{
+		gtk_ui_manager_remove_action_group (manager, priv->quick_open_action_group);
+		g_clear_object (&priv->quick_open_action_group);
+	}
+}
+
+static void
 add_popup_ui (PlumaFileBrowserPanel *priv)
 {
 	GtkUIManager * manager;
@@ -620,6 +692,7 @@ on_panel_destroy_cb (GtkWidget             *widget,
 		g_object_unref (priv->caja_settings);
 
 	remove_popup_ui (priv);
+	remove_quick_open_ui (priv);
 
 	g_free (priv);
 }
@@ -678,6 +751,7 @@ pluma_file_browser_panel_new (PlumaWindow *window)
 	gtk_widget_show (GTK_WIDGET (priv->tree_widget));
 
 	add_popup_ui (priv);
+	add_quick_open_ui (priv);
 
 	/* Restore filter options */
 	restore_filter (priv);

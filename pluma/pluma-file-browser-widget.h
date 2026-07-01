@@ -110,6 +110,7 @@ void pluma_file_browser_widget_remove_filter        (PlumaFileBrowserWidget * ob
                                                      gulong id);
 void pluma_file_browser_widget_set_filter_pattern   (PlumaFileBrowserWidget * obj,
                                                      gchar const *pattern);
+void pluma_file_browser_widget_show_quick_search    (PlumaFileBrowserWidget * obj);
 
 void pluma_file_browser_widget_refresh		    (PlumaFileBrowserWidget * obj);
 void pluma_file_browser_widget_history_back	    (PlumaFileBrowserWidget * obj);
