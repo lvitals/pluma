@@ -1494,6 +1494,47 @@ tab_mount_operation_factory (PlumaDocument *doc,
 	return gtk_mount_operation_new (GTK_WINDOW (window));
 }
 
+static gboolean
+on_map_enter_notify (GtkWidget *widget, GdkEventCrossing *event, gpointer data)
+{
+	/* Ignore transitions between internal child windows of GtkTextView */
+	if (event->detail == GDK_NOTIFY_INFERIOR)
+		return FALSE;
+	gtk_style_context_add_class (gtk_widget_get_style_context (widget), "map-hovered");
+	gtk_widget_queue_draw (widget);
+	return FALSE;
+}
+
+static gboolean
+on_map_leave_notify (GtkWidget *widget, GdkEventCrossing *event, gpointer data)
+{
+	if (event->detail == GDK_NOTIFY_INFERIOR)
+		return FALSE;
+	/* While a button is held the implicit grab keeps the scrubber visible;
+	   on_map_button_release will clean up when released outside. */
+	if (event->state & (GDK_BUTTON1_MASK | GDK_BUTTON2_MASK | GDK_BUTTON3_MASK))
+		return FALSE;
+	gtk_style_context_remove_class (gtk_widget_get_style_context (widget), "map-hovered");
+	gtk_widget_queue_draw (widget);
+	return FALSE;
+}
+
+static gboolean
+on_map_button_release (GtkWidget *widget, GdkEventButton *event, gpointer data)
+{
+	GtkAllocation alloc;
+	gtk_widget_get_allocation (widget, &alloc);
+	/* During an implicit grab the release fires on this widget even when the
+	   pointer is outside; remove the highlight in that case. */
+	if (event->x < 0 || event->y < 0 ||
+	    event->x >= alloc.width || event->y >= alloc.height)
+	{
+		gtk_style_context_remove_class (gtk_widget_get_style_context (widget), "map-hovered");
+		gtk_widget_queue_draw (widget);
+	}
+	return FALSE;
+}
+
 static void
 pluma_tab_init (PlumaTab *tab)
 {
@@ -1570,18 +1611,22 @@ pluma_tab_init (PlumaTab *tab)
 	GtkCssProvider *provider = gtk_css_provider_new ();
 	gtk_css_provider_load_from_data (provider,
 					 "textview { font-family: Monospace; font-size: 1pt; }\n"
-					 ".minimap:not(:hover).slider, .minimap:not(:hover).overlay, .minimap:not(:hover).rubberband,\n"
-					 ".minimap:not(:hover) slider, .minimap:not(:hover) overlay, .minimap:not(:hover) rubberband,\n"
-					 ".minimap:not(:hover) .slider, .minimap:not(:hover) .overlay, .minimap:not(:hover) .rubberband {\n"
+					 "textview.minimap.scrubber:not(.map-hovered) {\n"
 					 "    background-color: transparent;\n"
-					 "    border-color: transparent;\n"
+					 "    border-top-color: transparent;\n"
+					 "    border-bottom-color: transparent;\n"
 					 "}",
 					 -1,
 					 NULL);
 	gtk_style_context_add_provider (gtk_widget_get_style_context (map),
 					GTK_STYLE_PROVIDER (provider),
-					GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+					GTK_STYLE_PROVIDER_PRIORITY_USER);
 	g_object_unref (provider);
+
+	gtk_widget_add_events (map, GDK_ENTER_NOTIFY_MASK | GDK_LEAVE_NOTIFY_MASK | GDK_BUTTON_RELEASE_MASK);
+	g_signal_connect (map, "enter-notify-event",   G_CALLBACK (on_map_enter_notify),   NULL);
+	g_signal_connect (map, "leave-notify-event",   G_CALLBACK (on_map_leave_notify),   NULL);
+	g_signal_connect (map, "button-release-event", G_CALLBACK (on_map_button_release), NULL);
 
 	gtk_source_map_set_view (GTK_SOURCE_MAP(map), GTK_SOURCE_VIEW(tab->priv->view));
 	gtk_container_add (GTK_CONTAINER(tab->priv->view_map_frame), map);
