@@ -578,13 +578,19 @@ remove_quick_open_ui (PlumaFileBrowserPanel *priv)
 {
 	GtkUIManager *manager = pluma_window_get_ui_manager (priv->window);
 
-	if (priv->quick_open_merge_id != 0)
-		gtk_ui_manager_remove_ui (manager, priv->quick_open_merge_id);
-	if (priv->quick_open_action_group != NULL)
+	/* The window UI manager can already be disposed when the side panel's
+	 * destroy signal runs. In that case it has removed its merged UI and
+	 * action groups itself; only release our reference below. */
+	if (GTK_IS_UI_MANAGER (manager))
 	{
-		gtk_ui_manager_remove_action_group (manager, priv->quick_open_action_group);
-		g_clear_object (&priv->quick_open_action_group);
+		if (priv->quick_open_merge_id != 0)
+			gtk_ui_manager_remove_ui (manager, priv->quick_open_merge_id);
+		if (priv->quick_open_action_group != NULL)
+			gtk_ui_manager_remove_action_group (manager, priv->quick_open_action_group);
 	}
+
+	priv->quick_open_merge_id = 0;
+	g_clear_object (&priv->quick_open_action_group);
 }
 
 static void
