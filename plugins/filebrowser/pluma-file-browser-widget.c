@@ -841,7 +841,7 @@ static const GtkActionEntry tree_actions_sensitive[] =
 
 static const GtkToggleActionEntry tree_actions_toggle[] =
 {
-	{"FilterHidden", "dialog-password",
+	{"FilterHidden", "view-conceal-symbolic",
 	 N_("Show _Hidden"), NULL,
 	 N_("Show hidden files and folders"),
 	 G_CALLBACK (on_action_filter_hidden), FALSE},
@@ -1707,12 +1707,26 @@ clear_next_locations (PlumaFileBrowserWidget * obj)
 }
 
 static void
+update_filter_hidden_icon (GtkAction *action, gboolean active)
+{
+	if (active) {
+		gtk_action_set_icon_name (action, "view-reveal-symbolic");
+	} else {
+		gtk_action_set_icon_name (action, "view-conceal-symbolic");
+	}
+}
+
+static void
 update_filter_mode (PlumaFileBrowserWidget * obj,
                     GtkAction * action,
                     PlumaFileBrowserStoreFilterMode mode)
 {
 	gboolean active =
 	    gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action));
+
+	if (strcmp (gtk_action_get_name (action), "FilterHidden") == 0) {
+		update_filter_hidden_icon (action, active);
+	}
 	GtkTreeModel *model =
 	    gtk_tree_view_get_model (GTK_TREE_VIEW (obj->priv->treeview));
 	gint now;
@@ -2952,6 +2966,7 @@ on_filter_mode_changed (PlumaFileBrowserStore * model,
 
 	if (active != gtk_toggle_action_get_active (action))
 		gtk_toggle_action_set_active (action, active);
+	update_filter_hidden_icon (GTK_ACTION (action), active);
 
 	action = GTK_TOGGLE_ACTION (gtk_action_group_get_action (obj->priv->action_group,
 	                                                         "FilterBinary"));

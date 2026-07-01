@@ -104,6 +104,54 @@ pluma_file_browser_utils_pixbuf_from_icon (GIcon * icon,
 }
 
 GdkPixbuf *
+pluma_file_browser_utils_pixbuf_from_icon_color (GIcon *icon,
+                                                 GtkIconSize size,
+                                                 guint32 color_rgba)
+{
+	GtkIconTheme *theme;
+	GtkIconInfo *info;
+	GdkPixbuf *pixbuf;
+	GdkRGBA color;
+	GError *error = NULL;
+	gboolean was_symbolic = FALSE;
+	gint width;
+
+	if (icon == NULL)
+		return NULL;
+	color.red = ((color_rgba >> 24) & 0xff) / 255.0;
+	color.green = ((color_rgba >> 16) & 0xff) / 255.0;
+	color.blue = ((color_rgba >> 8) & 0xff) / 255.0;
+	color.alpha = (color_rgba & 0xff) / 255.0;
+	theme = gtk_icon_theme_get_default ();
+	gtk_icon_size_lookup (size, &width, NULL);
+	info = gtk_icon_theme_lookup_by_gicon (theme, icon, width,
+	                                       GTK_ICON_LOOKUP_USE_BUILTIN |
+	                                       GTK_ICON_LOOKUP_FORCE_SYMBOLIC);
+	if (info == NULL)
+		return pluma_file_browser_utils_pixbuf_from_icon (icon, size);
+	pixbuf = gtk_icon_info_load_symbolic (info, &color, NULL, NULL, NULL,
+	                                     &was_symbolic, &error);
+	g_object_unref (info);
+	if (error != NULL)
+	{
+		g_clear_error (&error);
+		return pluma_file_browser_utils_pixbuf_from_icon (icon, size);
+	}
+	return pixbuf;
+}
+
+GdkPixbuf *
+pluma_file_browser_utils_pixbuf_from_theme_color (gchar const *name,
+                                                  GtkIconSize size,
+                                                  guint32 color_rgba)
+{
+	GIcon *icon = g_themed_icon_new_with_default_fallbacks (name);
+	GdkPixbuf *pixbuf = pluma_file_browser_utils_pixbuf_from_icon_color (icon, size, color_rgba);
+	g_object_unref (icon);
+	return pixbuf;
+}
+
+GdkPixbuf *
 pluma_file_browser_utils_pixbuf_from_file (GFile * file,
                                            GtkIconSize size)
 {
@@ -193,6 +241,41 @@ pluma_file_browser_utils_confirmation_dialog (PlumaWindow * window,
 	gtk_widget_destroy (dlg);
 
 	return (ret == GTK_RESPONSE_OK);
+}
+
+void
+colorize_pixbuf (GdkPixbuf *pixbuf, guint32 color_rgba)
+{
+	gint width, height, rowstride, n_channels;
+	guchar *pixels, *p;
+	gint x, y;
+	guchar r = (color_rgba >> 24) & 0xff;
+	guchar g = (color_rgba >> 16) & 0xff;
+	guchar b = (color_rgba >> 8) & 0xff;
+
+	if (!pixbuf)
+		return;
+
+	n_channels = gdk_pixbuf_get_n_channels (pixbuf);
+	if (n_channels < 4)
+		return; /* Needs alpha channel to colorize properly */
+
+	width = gdk_pixbuf_get_width (pixbuf);
+	height = gdk_pixbuf_get_height (pixbuf);
+	rowstride = gdk_pixbuf_get_rowstride (pixbuf);
+	pixels = gdk_pixbuf_get_pixels (pixbuf);
+
+	for (y = 0; y < height; y++)
+	{
+		p = pixels + y * rowstride;
+		for (x = 0; x < width; x++)
+		{
+			p[0] = r;
+			p[1] = g;
+			p[2] = b;
+			p += n_channels;
+		}
+	}
 }
 
 // ex:ts=8:noet:

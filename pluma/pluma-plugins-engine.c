@@ -120,6 +120,20 @@ pluma_plugins_engine_init (PlumaPluginsEngine *engine)
 	                             user_plugins_dir);
 	g_free (user_plugins_dir);
 
+	{
+		const gchar *plugin_path = g_getenv ("PLUMA_PLUGIN_PATH");
+		if (plugin_path != NULL && *plugin_path != '\0')
+		{
+			gchar **paths = g_strsplit (plugin_path, G_SEARCHPATH_SEPARATOR_S, -1);
+			for (guint i = 0; paths[i] != NULL; i++)
+			{
+				if (*paths[i] != '\0')
+					peas_engine_add_search_path (PEAS_ENGINE (engine), paths[i], paths[i]);
+			}
+			g_strfreev (paths);
+		}
+	}
+
 	peas_engine_add_search_path (PEAS_ENGINE (engine),
 	                             PLUMA_LIBDIR "/plugins",
 	                             PLUMA_DATADIR "/plugins");

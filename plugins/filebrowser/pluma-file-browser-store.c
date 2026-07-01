@@ -1580,6 +1580,24 @@ file_browser_node_unload (PlumaFileBrowserStore * model,
 	node->flags &= ~PLUMA_FILE_BROWSER_STORE_FLAG_LOADED;
 }
 
+static guint32
+get_color_for_file (GFileInfo *info, FileBrowserNode *node)
+{
+	if (node && NODE_IS_DIR (node))
+	{
+		/* Soft Blue for folders */
+		return 0x3498dbff;
+	}
+
+	if (info)
+	{
+		if (g_file_info_get_file_type (info) == G_FILE_TYPE_DIRECTORY)
+			return 0x3498dbff;
+	}
+
+	return 0;
+}
+
 static void
 model_recomposite_icon_real (PlumaFileBrowserStore * tree_model,
 			     FileBrowserNode * node,
@@ -1629,6 +1647,13 @@ model_recomposite_icon_real (PlumaFileBrowserStore * tree_model,
 				      1, 1, GDK_INTERP_NEAREST, 255);
 	} else {
 		node->icon = icon;
+	}
+
+	if (node->icon) {
+		guint32 color = get_color_for_file (info, node);
+		if (color != 0) {
+			colorize_pixbuf (node->icon, color);
+		}
 	}
 }
 
@@ -2094,7 +2119,7 @@ model_add_node_from_dir (PlumaFileBrowserStore * model,
 		}
 
 		if (node->icon == NULL) {
-			node->icon = pluma_file_browser_utils_pixbuf_from_theme ("folder", GTK_ICON_SIZE_MENU);
+			node->icon = pluma_file_browser_utils_pixbuf_from_theme_color ("folder-symbolic", GTK_ICON_SIZE_MENU, 0x3498dbff);
 		}
 
 		model_add_node (model, node, parent);

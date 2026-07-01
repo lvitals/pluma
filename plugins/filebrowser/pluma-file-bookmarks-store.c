@@ -278,7 +278,7 @@ get_fs_properties (gpointer    fs,
 
 	if (icon)
 	{
-		*pixbuf = pluma_file_browser_utils_pixbuf_from_icon (icon, GTK_ICON_SIZE_MENU);
+		*pixbuf = pluma_file_browser_utils_pixbuf_from_icon_color (icon, GTK_ICON_SIZE_MENU, 0x3498dbff);
 		g_object_unref (icon);
 	}
 }

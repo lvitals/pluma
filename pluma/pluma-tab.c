@@ -1565,10 +1565,17 @@ pluma_tab_init (PlumaTab *tab)
 	tab->priv->overlay = gtk_overlay_new ();
 	tab->priv->view_map_frame = gtk_frame_new (NULL);
 	map = gtk_source_map_new();
+	gtk_style_context_add_class (gtk_widget_get_style_context (map), "minimap");
 
 	GtkCssProvider *provider = gtk_css_provider_new ();
 	gtk_css_provider_load_from_data (provider,
-					 "textview { font-family: Monospace; font-size: 1pt; }",
+					 "textview { font-family: Monospace; font-size: 1pt; }\n"
+					 ".minimap:not(:hover).slider, .minimap:not(:hover).overlay, .minimap:not(:hover).rubberband,\n"
+					 ".minimap:not(:hover) slider, .minimap:not(:hover) overlay, .minimap:not(:hover) rubberband,\n"
+					 ".minimap:not(:hover) .slider, .minimap:not(:hover) .overlay, .minimap:not(:hover) .rubberband {\n"
+					 "    background-color: transparent;\n"
+					 "    border-color: transparent;\n"
+					 "}",
 					 -1,
 					 NULL);
 	gtk_style_context_add_provider (gtk_widget_get_style_context (map),
