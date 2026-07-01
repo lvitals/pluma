@@ -216,6 +216,10 @@ static void on_action_file_new                 (GtkAction * action,
 						PlumaFileBrowserWidget * obj);
 static void on_action_file_rename              (GtkAction * action,
 						PlumaFileBrowserWidget * obj);
+static void on_action_copy_path                (GtkAction * action,
+						PlumaFileBrowserWidget * obj);
+static void on_action_copy_relative_path       (GtkAction * action,
+						PlumaFileBrowserWidget * obj);
 static void on_action_file_delete              (GtkAction * action,
 						PlumaFileBrowserWidget * obj);
 static void on_action_file_move_to_trash       (GtkAction * action,
@@ -813,7 +817,13 @@ static const GtkActionEntry tree_actions_single_selection[] =
 {
 	{"FileRename", NULL, N_("_Rename"), NULL,
 	 N_("Rename selected file or folder"),
-	 G_CALLBACK (on_action_file_rename)}
+	 G_CALLBACK (on_action_file_rename)},
+	{"FileCopyPath", "edit-copy", N_("Copy _Path"), "<control><alt>C",
+	 N_("Copy the selected file or folder path"),
+	 G_CALLBACK (on_action_copy_path)},
+	{"FileCopyRelativePath", "edit-copy", N_("Copy _Relative Path"), "<control><shift><alt>C",
+	 N_("Copy the selected file or folder path relative to the current folder"),
+	 G_CALLBACK (on_action_copy_relative_path)}
 };
 
 static const GtkActionEntry tree_actions_sensitive[] =
@@ -1405,6 +1415,75 @@ rename_selected_file (PlumaFileBrowserWidget * obj)
 	if (pluma_file_browser_widget_get_first_selected (obj, &iter))
 		pluma_file_browser_view_start_rename (obj->priv->treeview,
 						      &iter);
+}
+
+static void
+copy_selected_path (PlumaFileBrowserWidget *obj,
+		    gboolean                relative)
+{
+	GtkTreeModel *model;
+	GtkTreeIter iter;
+	gchar *uri = NULL;
+	gchar *text = NULL;
+	GFile *file;
+
+	model = gtk_tree_view_get_model (GTK_TREE_VIEW (obj->priv->treeview));
+
+	if (!PLUMA_IS_FILE_BROWSER_STORE (model) ||
+	    !pluma_file_browser_widget_get_first_selected (obj, &iter))
+		return;
+
+	gtk_tree_model_get (model, &iter,
+	                    PLUMA_FILE_BROWSER_STORE_COLUMN_URI, &uri,
+	                    -1);
+	if (uri == NULL)
+		return;
+
+	file = g_file_new_for_uri (uri);
+
+	if (relative)
+	{
+		gchar *root_uri;
+		GFile *root;
+		gchar *relative_path = NULL;
+		gchar *root_name = NULL;
+
+		/* The virtual root is the directory currently displayed in the
+		 * file browser. Keep its basename in the copied relative path. */
+		root_uri = pluma_file_browser_store_get_virtual_root (PLUMA_FILE_BROWSER_STORE (model));
+		root = root_uri != NULL ? g_file_new_for_uri (root_uri) : NULL;
+
+		if (root != NULL)
+		{
+			root_name = g_file_get_basename (root);
+			relative_path = g_file_get_relative_path (root, file);
+
+			if (relative_path != NULL)
+				text = g_build_filename (root_name, relative_path, NULL);
+			else if (g_file_equal (root, file))
+				text = g_strdup (root_name);
+		}
+
+		g_free (root_name);
+		g_free (relative_path);
+		g_clear_object (&root);
+		g_free (root_uri);
+	}
+	else
+	{
+		text = g_file_get_path (file);
+		if (text == NULL)
+			text = g_file_get_uri (file);
+	}
+
+	if (text != NULL)
+		gtk_clipboard_set_text (gtk_clipboard_get (GDK_SELECTION_CLIPBOARD),
+		                        text,
+		                        -1);
+
+	g_free (text);
+	g_object_unref (file);
+	g_free (uri);
 }
 
 static GList *
@@ -2845,6 +2924,18 @@ on_treeview_key_press_event (PlumaFileBrowserView * treeview,
 		return TRUE;
 	}
 
+	if (event->keyval == GDK_KEY_c &&
+	    (event->state & modifiers) == (GDK_CONTROL_MASK | GDK_MOD1_MASK)) {
+		copy_selected_path (obj, FALSE);
+		return TRUE;
+	}
+
+	if (event->keyval == GDK_KEY_c &&
+	    (event->state & modifiers) == (GDK_CONTROL_MASK | GDK_SHIFT_MASK | GDK_MOD1_MASK)) {
+		copy_selected_path (obj, TRUE);
+		return TRUE;
+	}
+
 	return FALSE;
 }
 
@@ -3073,6 +3164,18 @@ static void
 on_action_file_rename (GtkAction * action, PlumaFileBrowserWidget * obj)
 {
 	rename_selected_file (obj);
+}
+
+static void
+on_action_copy_path (GtkAction *action, PlumaFileBrowserWidget *obj)
+{
+	copy_selected_path (obj, FALSE);
+}
+
+static void
+on_action_copy_relative_path (GtkAction *action, PlumaFileBrowserWidget *obj)
+{
+	copy_selected_path (obj, TRUE);
 }
 
 static void
