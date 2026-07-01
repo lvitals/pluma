@@ -69,6 +69,9 @@ configure_file(
 install_man('pluma.1')
 
 # GtkSourceView Styles
-install_data('styles/cupertino-dark.xml',
+install_data(
+  'styles/cupertino-dark.xml',
+  'styles/classic.xml',
+  'styles/tango.xml',
   install_dir: join_paths(get_option('datadir'), 'pluma/styles')
 )

@@ -69,16 +69,37 @@ static void
 add_pluma_styles_path (GtkSourceStyleSchemeManager *mgr)
 {
 	gchar *dir;
+	const gchar *styles_path;
 
+	/* Prepend installed pluma styles dir (overrides system gtksourceview styles) */
+	gtk_source_style_scheme_manager_prepend_search_path (mgr, PLUMA_DATADIR "/styles");
+
+	/* Prepend user config styles dir (overrides installed pluma styles) */
 	dir = get_pluma_styles_path();
-
 	if (dir != NULL)
 	{
-		gtk_source_style_scheme_manager_append_search_path (mgr, dir);
+		gtk_source_style_scheme_manager_prepend_search_path (mgr, dir);
 		g_free (dir);
 	}
 
-	gtk_source_style_scheme_manager_append_search_path (mgr, PLUMA_DATADIR "/styles");
+	/* Prepend local workspace data/styles dir (overrides user config styles) */
+	if (g_file_test ("data/styles", G_FILE_TEST_IS_DIR))
+	{
+		gtk_source_style_scheme_manager_prepend_search_path (mgr, "data/styles");
+	}
+
+	/* Prepend PLUMA_STYLES_PATH environment variable paths (highest priority) */
+	styles_path = g_getenv ("PLUMA_STYLES_PATH");
+	if (styles_path != NULL && *styles_path != '\0')
+	{
+		gchar **paths = g_strsplit (styles_path, G_SEARCHPATH_SEPARATOR_S, -1);
+		for (guint i = 0; paths[i] != NULL; i++)
+		{
+			if (*paths[i] != '\0')
+				gtk_source_style_scheme_manager_prepend_search_path (mgr, paths[i]);
+		}
+		g_strfreev (paths);
+	}
 }
 
 GtkSourceStyleSchemeManager *

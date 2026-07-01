@@ -24,7 +24,10 @@ bugreportdir = $(libexecdir)/pluma
 bugreport_SCRIPTS = pluma-bugreport.sh
 
 stylesdir = $(datadir)/pluma/styles
-styles_DATA = styles/cupertino-dark.xml
+styles_DATA = \
+	styles/cupertino-dark.xml \
+	styles/classic.xml \
+	styles/tango.xml
 
 EXTRA_DIST = 			\
 	$(appdata_in_in_files)	\
