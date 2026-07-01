@@ -1,6 +1,7 @@
 # List of source files containing translatable strings.
 # Please keep this file sorted alphabetically.
 data/org.mate.pluma.gschema.xml.in
+data/org.mate.pluma.plugins.filebrowser.gschema.xml.in
 data/pluma.appdata.xml.in.in
 data/pluma.desktop.in.in
 pluma/dialogs/pluma-close-confirmation-dialog.c
@@ -21,6 +22,12 @@ pluma/pluma-document-saver.c
 pluma/pluma-documents-panel.c
 pluma/pluma-encodings.c
 pluma/pluma-encodings-combo-box.c
+pluma/pluma-file-bookmarks-store.c
+pluma/pluma-file-browser-panel.c
+pluma/pluma-file-browser-store.c
+pluma/pluma-file-browser-utils.c
+pluma/pluma-file-browser-view.c
+pluma/pluma-file-browser-widget.c
 pluma/pluma-file-chooser-dialog.c
 pluma/pluma-git-panel.c
 pluma/pluma-help.c
@@ -59,14 +66,6 @@ plugins/externaltools/data/remove-trailing-spaces.desktop.in
 plugins/externaltools/data/run-command.desktop.in
 plugins/externaltools/data/search-recursive.desktop.in
 plugins/externaltools/data/switch-c.desktop.in
-plugins/filebrowser/filebrowser.plugin.desktop.in.in
-plugins/filebrowser/org.mate.pluma.plugins.filebrowser.gschema.xml.in
-plugins/filebrowser/pluma-file-bookmarks-store.c
-plugins/filebrowser/pluma-file-browser-plugin.c
-plugins/filebrowser/pluma-file-browser-store.c
-plugins/filebrowser/pluma-file-browser-utils.c
-plugins/filebrowser/pluma-file-browser-view.c
-plugins/filebrowser/pluma-file-browser-widget.c
 plugins/modelines/modelines.plugin.desktop.in.in
 plugins/pythonconsole/pythonconsole.plugin.desktop.in.in
 plugins/pythonconsole/pythonconsole/__init__.py

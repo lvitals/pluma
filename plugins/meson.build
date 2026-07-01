@@ -4,7 +4,6 @@ endif
 
 subdir('docinfo')
 subdir('externaltools')
-subdir('filebrowser')
 subdir('modelines')
 subdir('pythonconsole')
 subdir('quickopen')

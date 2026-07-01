@@ -12,7 +12,7 @@ appdata_in_in_files = $(appdata_in_files:.appdata.xml.in=.appdata.xml.in.in)
 $(appdata_DATA): $(appdata_in_files)
 	$(AM_V_GEN) GETTEXTDATADIRS=$(top_srcdir) $(MSGFMT) --xml --template $< -d $(top_srcdir)/po -o $@
 
-gsettings_SCHEMAS = org.mate.pluma.gschema.xml
+gsettings_SCHEMAS = org.mate.pluma.gschema.xml org.mate.pluma.plugins.filebrowser.gschema.xml
 @GSETTINGS_RULES@
 
 man_MANS = pluma.1

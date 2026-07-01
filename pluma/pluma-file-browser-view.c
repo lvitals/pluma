@@ -81,11 +81,9 @@ static const GtkTargetEntry drag_source_targets[] = {
 	{ "text/uri-list", 0, 0 }
 };
 
-G_DEFINE_DYNAMIC_TYPE_EXTENDED (PlumaFileBrowserView,
-                                pluma_file_browser_view,
-                                GTK_TYPE_TREE_VIEW,
-                                0,
-                                G_ADD_PRIVATE_DYNAMIC (PlumaFileBrowserView))
+G_DEFINE_TYPE_WITH_PRIVATE (PlumaFileBrowserView,
+                            pluma_file_browser_view,
+                            GTK_TYPE_TREE_VIEW)
 
 static void on_cell_edited 		(GtkCellRendererText 	* cell,
 				 	 gchar 			* path,
@@ -903,12 +901,6 @@ pluma_file_browser_view_class_init (PlumaFileBrowserViewClass * klass)
 }
 
 static void
-pluma_file_browser_view_class_finalize (PlumaFileBrowserViewClass *klass)
-{
-	/* dummy function - used by G_DEFINE_DYNAMIC_TYPE_EXTENDED */
-}
-
-static void
 cell_data_cb (GtkTreeViewColumn * tree_column, GtkCellRenderer * cell,
 	      GtkTreeModel * tree_model, GtkTreeIter * iter,
 	      PlumaFileBrowserView * obj)
@@ -1253,12 +1245,6 @@ on_row_inserted (PlumaFileBrowserStore * model,
 	}
 
 	gtk_tree_path_free (copy);
-}
-
-void
-_pluma_file_browser_view_register_type (GTypeModule *type_module)
-{
-	pluma_file_browser_view_register_type (type_module);
 }
 
 // ex:ts=8:noet:

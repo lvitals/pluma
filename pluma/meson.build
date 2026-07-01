@@ -39,6 +39,14 @@ noinst_h_files = [
   'pluma-document-output-stream.h',
   'pluma-document-saver.h',
   'pluma-documents-panel.h',
+  'pluma-file-bookmarks-store.h',
+  'pluma-file-browser-error.h',
+  'pluma-file-browser-messages.h',
+  'pluma-file-browser-panel.h',
+  'pluma-file-browser-store.h',
+  'pluma-file-browser-utils.h',
+  'pluma-file-browser-view.h',
+  'pluma-file-browser-widget.h',
   'pluma-file-chooser-dialog.h',
   'pluma-git-panel.h',
   'pluma-history-entry.h',
@@ -81,6 +89,13 @@ libpluma_c_files = [
   'pluma-documents-panel.c',
   'pluma-encodings.c',
   'pluma-encodings-combo-box.c',
+  'pluma-file-bookmarks-store.c',
+  'pluma-file-browser-messages.c',
+  'pluma-file-browser-panel.c',
+  'pluma-file-browser-store.c',
+  'pluma-file-browser-utils.c',
+  'pluma-file-browser-view.c',
+  'pluma-file-browser-widget.c',
   'pluma-file-chooser-dialog.c',
   'pluma-help.c',
   'pluma-history-entry.c',
@@ -134,6 +149,21 @@ pluma_enum_types = gnome.mkenums('pluma-enum-types',
   c_template: 'pluma-enum-types.c.template',
 )
 
+file_browser_enum_types = gnome.mkenums('pluma-file-browser-enum-types',
+  sources: [
+    'pluma-file-bookmarks-store.h',
+    'pluma-file-browser-store.h',
+    'pluma-file-browser-view.h',
+    'pluma-file-browser-widget.h',
+    'pluma-file-browser-error.h',
+    'pluma-file-browser-utils.h',
+    'pluma-file-browser-panel.h',
+    'pluma-file-browser-messages.h',
+  ],
+  h_template: 'pluma-file-browser-enum-types.h.template',
+  c_template: 'pluma-file-browser-enum-types.c.template',
+)
+
 pluma_c_args = [
   '-DDATADIR="@0@"'.format(join_paths(get_option('prefix'), get_option('datadir'))),
   '-DPLUMA_DATADIR="@0@/pluma"'.format(join_paths(get_option('prefix'), get_option('datadir'))),
@@ -149,7 +179,7 @@ pluma_include_dirs = [
 ]
 
 libpluma = shared_library('pluma',
-  sources: libpluma_c_files + noinst_h_files + inst_h_files + [pluma_enum_types],
+  sources: libpluma_c_files + noinst_h_files + inst_h_files + [pluma_enum_types, file_browser_enum_types],
   dependencies: pluma_deps,
   c_args: pluma_c_args,
   include_directories: pluma_include_dirs,
@@ -176,6 +206,7 @@ install_headers(inst_h_files, subdir: 'pluma')
 install_data([
     'pluma-ui.xml',
     'pluma-print-preferences.ui',
+    'pluma-file-browser-widget-ui.xml',
   ],
   install_dir: join_paths(get_option('datadir'), 'pluma/ui')
 )
@@ -188,7 +219,7 @@ install_data('pluma.about',
 if enable_introspection
   # Pluma-1.0.gir
   pluma_gir = gnome.generate_gir(libpluma,
-    sources: inst_h_files + libpluma_c_files + [pluma_enum_types],
+    sources: inst_h_files + libpluma_c_files + [pluma_enum_types, file_browser_enum_types],
     namespace: 'Pluma',
     nsversion: '1.0',
     includes: ['Gtk-3.0', 'GtkSource-4'],

@@ -250,6 +250,7 @@ data/pluma.desktop.in
 data/pluma-bugreport.sh
 data/pluma.pc
 data/org.mate.pluma.gschema.xml
+data/org.mate.pluma.plugins.filebrowser.gschema.xml
 data/Makefile
 docs/Makefile
 docs/reference/Makefile
@@ -267,9 +268,6 @@ plugins/externaltools/externaltools.plugin.desktop.in
 plugins/externaltools/data/Makefile
 plugins/externaltools/scripts/Makefile
 plugins/externaltools/tools/Makefile
-plugins/filebrowser/Makefile
-plugins/filebrowser/filebrowser.plugin.desktop.in
-plugins/filebrowser/org.mate.pluma.plugins.filebrowser.gschema.xml
 plugins/modelines/Makefile
 plugins/modelines/modelines.plugin.desktop.in
 plugins/pythonconsole/Makefile

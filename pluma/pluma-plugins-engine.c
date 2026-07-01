@@ -75,6 +75,45 @@ pluma_plugins_engine_init (PlumaPluginsEngine *engine)
 
 	engine->priv->plugin_settings = g_settings_new (PLUMA_SCHEMA_ID);
 
+	/* "filebrowser" used to be a loadable plugin; it is now built into
+	 * pluma core (see pluma-file-browser-panel.c) and always active.
+	 * Drop any leftover entry from previously saved settings so Peas
+	 * never tries to activate a module by that name again: if a stale
+	 * filebrowser.plugin/.so happens to still be installed (e.g. from
+	 * an older package or a leftover local install), loading it would
+	 * try to re-register GObject types that pluma core already owns
+	 * and abort with "cannot register existing type". */
+	{
+		gchar **active_plugins;
+		guint i, j;
+		gboolean changed = FALSE;
+
+		active_plugins = g_settings_get_strv (engine->priv->plugin_settings,
+		                                      PLUMA_SETTINGS_ACTIVE_PLUGINS);
+
+		for (i = 0, j = 0; active_plugins[i] != NULL; i++)
+		{
+			if (g_strcmp0 (active_plugins[i], "filebrowser") == 0)
+			{
+				g_free (active_plugins[i]);
+				changed = TRUE;
+				continue;
+			}
+
+			active_plugins[j++] = active_plugins[i];
+		}
+		active_plugins[j] = NULL;
+
+		if (changed)
+		{
+			g_settings_set_strv (engine->priv->plugin_settings,
+			                     PLUMA_SETTINGS_ACTIVE_PLUGINS,
+			                     (const gchar * const *) active_plugins);
+		}
+
+		g_strfreev (active_plugins);
+	}
+
 	/* This should be moved to libpeas */
 #ifdef HAVE_GIREPOSITORY_2
 	if (!gi_repository_require (gi_repository_dup_default (),

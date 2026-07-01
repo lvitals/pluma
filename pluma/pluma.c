@@ -37,6 +37,13 @@
 #include <locale.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__DragonFly__)
+#include <sys/sysctl.h>
+#include <sys/user.h>
+#endif
 
 #include <glib.h>
 #include <glib/gi18n.h>
@@ -72,6 +79,85 @@
 
 #include "bacon-message-connection.h"
 
+/* Returns TRUE if this process is already being ptrace()d (e.g. launched
+ * as "gdb ./pluma" + "run"). Forking away in that case would leave the
+ * debugger attached to the exiting parent instead of the real GUI process.
+ *
+ * There is no POSIX-portable way to ask "am I being traced?", so this is
+ * implemented per-OS below. Platforms without an implementation fall back
+ * to FALSE (i.e. behave as before, background detach still happens); use
+ * --foreground or PLUMA_DEBUG=1 to opt out explicitly on those. */
+#if defined(__linux__)
+static gboolean
+is_being_debugged (void)
+{
+	gchar *contents = NULL;
+	gboolean traced = FALSE;
+
+	if (g_file_get_contents ("/proc/self/status", &contents, NULL, NULL))
+	{
+		gchar *line = strstr (contents, "TracerPid:");
+
+		if (line != NULL)
+			traced = (atoi (line + strlen ("TracerPid:")) != 0);
+
+		g_free (contents);
+	}
+
+	return traced;
+}
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__DragonFly__)
+static gboolean
+is_being_debugged (void)
+{
+	int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, (int) getpid () };
+	struct kinfo_proc info;
+	size_t size = sizeof (info);
+
+	memset (&info, 0, sizeof (info));
+
+	if (sysctl (mib, 4, &info, &size, NULL, 0) != 0)
+		return FALSE;
+
+#if defined(__APPLE__)
+	return (info.kp_proc.p_flag & P_TRACED) != 0;
+#else
+	return (info.ki_flag & P_TRACED) != 0;
+#endif
+}
+#else
+static gboolean
+is_being_debugged (void)
+{
+	return FALSE;
+}
+#endif
+
+/* Marks the re-exec'd, already-detached instance so it knows not to fork
+ * again. Set with g_setenv()/cleared with g_unsetenv() around the re-exec
+ * in main(), never meant to be set by hand. */
+#define PLUMA_BACKGROUNDED_ENV "_PLUMA_BACKGROUNDED"
+
+/* Minimal, dependency-free scan for "--foreground" done *before* the real
+ * GOption parsing, since the background-detach decision has to be made
+ * before GLib/GIO has had a chance to lazily initialize anything. */
+static gboolean
+argv_has_foreground_flag (int argc, char **argv)
+{
+	int i;
+
+	for (i = 1; i < argc; i++)
+	{
+		if (g_strcmp0 (argv[i], "--") == 0)
+			break;
+
+		if (g_strcmp0 (argv[i], "--foreground") == 0)
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
 static guint32 startup_timestamp = 0;
 
 static BaconMessageConnection *connection;
@@ -81,6 +167,7 @@ static gint line_position = 0;
 static gchar *encoding_charset = NULL;
 static gboolean new_window_option = FALSE;
 static gboolean new_document_option = FALSE;
+static gboolean foreground_option = FALSE;
 static gchar **remaining_args = NULL;
 static GSList *file_list = NULL;
 
@@ -124,6 +211,10 @@ static const GOptionEntry options [] =
 
 	{ "new-document", '\0', 0, G_OPTION_ARG_NONE, &new_document_option,
 	  N_("Create a new document in an existing instance of pluma"), NULL },
+
+	{ "foreground", '\0', 0, G_OPTION_ARG_NONE, &foreground_option,
+	  N_("Run pluma in the foreground and do not detach from the controlling terminal "
+	     "(useful when running under a debugger or a session/process manager)"), NULL },
 
 	{ G_OPTION_REMAINING, '\0', 0, G_OPTION_ARG_FILENAME_ARRAY, &remaining_args,
 	  NULL, N_("[FILE...]") }, /* collects file arguments */
@@ -510,6 +601,65 @@ main (int argc, char *argv[])
 	PlumaApplication *application;
 	GError *error = NULL;
 	int status;
+
+	/* Detach from the controlling terminal so that launching pluma from a
+	 * shell (e.g. "pluma .") returns the prompt immediately, like any
+	 * other GUI application, instead of blocking until the window is
+	 * closed.
+	 *
+	 * This has to happen here, before anything else in main(), and via
+	 * re-exec rather than just forking and continuing: further down,
+	 * option parsing opens the GDK display (gtk_get_option_group(TRUE)
+	 * does this as a side effect), and neither an already-open X11/
+	 * Wayland connection nor any GLib worker thread GIO/GDBus may have
+	 * lazily spun up survive a fork() safely. Re-exec gives the detached
+	 * process a completely fresh, single-threaded start with nothing
+	 * inherited to get confused by.
+	 *
+	 * Skipped when explicitly disabled with --foreground, when
+	 * PLUMA_DEBUG is set, or when a debugger is already attached (e.g.
+	 * "gdb ./pluma" + "run"), since forking away would leave the
+	 * debugger attached to the wrong process. */
+	if (g_getenv (PLUMA_BACKGROUNDED_ENV) != NULL)
+	{
+		/* We are the re-exec'd, already-detached instance. Don't let the
+		 * marker leak into subprocesses pluma itself spawns later (git,
+		 * a terminal emulator, ...). */
+		g_unsetenv (PLUMA_BACKGROUNDED_ENV);
+	}
+	else if (!argv_has_foreground_flag (argc, argv) &&
+	         g_getenv ("PLUMA_DEBUG") == NULL &&
+	         !is_being_debugged ())
+	{
+		pid_t pid = fork ();
+
+		if (pid < 0)
+		{
+			g_warning ("Could not fork to background: %s", g_strerror (errno));
+		}
+		else if (pid > 0)
+		{
+			/* Parent: hand off to the child and free the terminal now. */
+			_exit (EXIT_SUCCESS);
+		}
+		else
+		{
+			if (setsid () < 0)
+				g_warning ("Could not detach from controlling terminal: %s", g_strerror (errno));
+
+			g_setenv (PLUMA_BACKGROUNDED_ENV, "1", TRUE);
+
+#if defined(__linux__)
+			execv ("/proc/self/exe", argv);
+#else
+			execvp (argv[0], argv);
+#endif
+			/* Only reached if the re-exec itself failed; keep going in
+			 * this process rather than losing the window entirely. */
+			g_warning ("Could not re-exec after detaching: %s", g_strerror (errno));
+			g_unsetenv (PLUMA_BACKGROUNDED_ENV);
+		}
+	}
 
 	/* Setup debugging */
 	pluma_debug_init ();

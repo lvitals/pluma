@@ -174,6 +174,11 @@ GFile		*_pluma_window_get_default_location 	(PlumaWindow         *window);
 void		 _pluma_window_set_default_location 	(PlumaWindow         *window,
 							 GFile               *location);
 
+/* Refreshes the Source Control panel (if built with git support) so it
+ * reflects whatever repository the window's default location is currently
+ * in. Safe to call unconditionally; a no-op when git support is disabled. */
+void		 _pluma_window_refresh_git_panel	(PlumaWindow         *window);
+
 void		 _pluma_window_set_saving_session_state	(PlumaWindow         *window,
 							 gboolean             saving_session);
 

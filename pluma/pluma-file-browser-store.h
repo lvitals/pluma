@@ -117,7 +117,6 @@ struct _PlumaFileBrowserStoreClass {
 };
 
 GType pluma_file_browser_store_get_type               (void) G_GNUC_CONST;
-void _pluma_file_browser_store_register_type          (GTypeModule * module);
 
 PlumaFileBrowserStore *pluma_file_browser_store_new   (gchar const *root);
 

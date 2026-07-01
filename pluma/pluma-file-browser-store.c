@@ -192,14 +192,13 @@ static void next_files_async 				    (GFileEnumerator * enumerator,
 
 static void delete_files                                    (AsyncData              *data);
 
-G_DEFINE_DYNAMIC_TYPE_EXTENDED (PlumaFileBrowserStore, pluma_file_browser_store,
-                                G_TYPE_OBJECT,
-                                0,
-                                G_ADD_PRIVATE_DYNAMIC (PlumaFileBrowserStore)
-                                G_IMPLEMENT_INTERFACE_DYNAMIC (GTK_TYPE_TREE_MODEL,
-                                                               pluma_file_browser_store_iface_init)
-                                G_IMPLEMENT_INTERFACE_DYNAMIC (GTK_TYPE_TREE_DRAG_SOURCE,
-                                                               pluma_file_browser_store_drag_source_init))
+G_DEFINE_TYPE_WITH_CODE (PlumaFileBrowserStore, pluma_file_browser_store,
+                         G_TYPE_OBJECT,
+                         G_ADD_PRIVATE (PlumaFileBrowserStore)
+                         G_IMPLEMENT_INTERFACE (GTK_TYPE_TREE_MODEL,
+                                                pluma_file_browser_store_iface_init)
+                         G_IMPLEMENT_INTERFACE (GTK_TYPE_TREE_DRAG_SOURCE,
+                                                pluma_file_browser_store_drag_source_init))
 
 /* Properties */
 enum {
@@ -410,12 +409,6 @@ pluma_file_browser_store_class_init (PlumaFileBrowserStoreClass * klass)
 			  NULL, NULL, NULL,
 			  G_TYPE_NONE, 1,
 			  G_TYPE_STRING);
-}
-
-static void
-pluma_file_browser_store_class_finalize (PlumaFileBrowserStoreClass *klass)
-{
-	/* dummy function - used by G_DEFINE_DYNAMIC_TYPE_EXTENDED */
 }
 
 static void
@@ -3567,12 +3560,6 @@ pluma_file_browser_store_new_directory (PlumaFileBrowserStore * model,
 
 	g_object_unref (file);
 	return result;
-}
-
-void
-_pluma_file_browser_store_register_type (GTypeModule *type_module)
-{
-	pluma_file_browser_store_register_type (type_module);
 }
 
 // ex:ts=8:noet:

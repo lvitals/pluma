@@ -72,7 +72,6 @@ struct _PlumaFileBrowserWidgetClass
 };
 
 GType pluma_file_browser_widget_get_type            (void) G_GNUC_CONST;
-void _pluma_file_browser_widget_register_type       (GTypeModule * module);
 
 GtkWidget *pluma_file_browser_widget_new            (const gchar *data_dir);
 

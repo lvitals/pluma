@@ -7,6 +7,16 @@ configure_file(
   install_dir: join_paths(get_option('datadir'), 'glib-2.0/schemas'),
 )
 
+# File Browser is built into the core (not a plugin), but keeps its historic
+# schema id so existing users don't lose their saved bookmarks/root folder.
+configure_file(
+  input: 'org.mate.pluma.plugins.filebrowser.gschema.xml.in',
+  output: 'org.mate.pluma.plugins.filebrowser.gschema.xml',
+  configuration: conf_data_xml,
+  install: true,
+  install_dir: join_paths(get_option('datadir'), 'glib-2.0/schemas'),
+)
+
 # Desktop file
 desktop_in = configure_file(
   input: 'pluma.desktop.in.in',

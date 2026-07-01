@@ -48,6 +48,8 @@
 #include "pluma-window.h"
 #include "pluma-window-private.h"
 #include "pluma-project-search-panel.h"
+#include "pluma-file-browser-panel.h"
+#include "pluma-file-browser-messages.h"
 #ifdef ENABLE_GIT
 #include "pluma-git-panel.h"
 #endif
@@ -255,6 +257,13 @@ pluma_window_dispose (GObject *object)
         g_object_unref (window->priv->extensions);
 
         peas_engine_garbage_collect (PEAS_ENGINE (pluma_plugins_engine_get_default ()));
+
+        /* Must happen before the message bus is unreffed below: the File
+         * Browser panel's own "destroy" (triggered later, as a side
+         * effect of chaining up to the parent dispose at the end of this
+         * function) runs too late to safely unregister from the bus. */
+        if (window->priv->file_browser_panel != NULL)
+            pluma_file_browser_messages_unregister (window);
 
         window->priv->dispose_has_run = TRUE;
     }
@@ -3772,6 +3781,12 @@ create_side_panel (PlumaWindow *window)
                                     _("Search"),
                                     "edit-find");
 
+    window->priv->file_browser_panel = pluma_file_browser_panel_new (window);
+    pluma_panel_add_item_with_icon (PLUMA_PANEL (window->priv->side_panel),
+                                    window->priv->file_browser_panel,
+                                    _("File Browser"),
+                                    "folder-symbolic");
+
 #ifdef ENABLE_GIT
     window->priv->git_panel = pluma_git_panel_new (window);
     pluma_panel_add_item_with_icon (PLUMA_PANEL (window->priv->side_panel),
@@ -4791,6 +4806,17 @@ _pluma_window_set_default_location (PlumaWindow *window,
         g_object_unref (window->priv->default_location);
 
     window->priv->default_location = dir;
+}
+
+void
+_pluma_window_refresh_git_panel (PlumaWindow *window)
+{
+    g_return_if_fail (PLUMA_IS_WINDOW (window));
+
+#ifdef ENABLE_GIT
+    if (window->priv->git_panel != NULL)
+        pluma_git_panel_refresh (PLUMA_GIT_PANEL (window->priv->git_panel));
+#endif
 }
 
 /**

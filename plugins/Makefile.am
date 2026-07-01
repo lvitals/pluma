@@ -1,7 +1,6 @@
 DIST_SUBDIRS =		\
 	docinfo 	\
 	externaltools	\
-	filebrowser 	\
 	modelines	\
 	pythonconsole	\
 	quickopen	\
@@ -15,7 +14,6 @@ DIST_SUBDIRS =		\
 SUBDIRS = 		\
 	docinfo		\
 	externaltools	\
-	filebrowser	\
 	modelines	\
 	pythonconsole	\
 	quickopen	\

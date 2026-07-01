@@ -52,11 +52,9 @@ static gboolean find_with_flags       (GtkTreeModel * model,
                                        guint flags,
                                        guint notflags);
 
-G_DEFINE_DYNAMIC_TYPE_EXTENDED (PlumaFileBookmarksStore,
-                                pluma_file_bookmarks_store,
-                                GTK_TYPE_TREE_STORE,
-                                0,
-                                G_ADD_PRIVATE_DYNAMIC (PlumaFileBookmarksStore))
+G_DEFINE_TYPE_WITH_PRIVATE (PlumaFileBookmarksStore,
+                            pluma_file_bookmarks_store,
+                            GTK_TYPE_TREE_STORE)
 
 static void
 pluma_file_bookmarks_store_dispose (GObject * object)
@@ -93,12 +91,6 @@ pluma_file_bookmarks_store_class_init (PlumaFileBookmarksStoreClass *klass)
 
 	object_class->dispose = pluma_file_bookmarks_store_dispose;
 	object_class->finalize = pluma_file_bookmarks_store_finalize;
-}
-
-static void
-pluma_file_bookmarks_store_class_finalize (PlumaFileBookmarksStoreClass *klass)
-{
-	/* dummy function - used by G_DEFINE_DYNAMIC_TYPE_EXTENDED */
 }
 
 static void
@@ -909,12 +901,6 @@ on_bookmarks_file_changed (GFileMonitor * monitor,
 	default:
 		break;
 	}
-}
-
-void
-_pluma_file_bookmarks_store_register_type (GTypeModule *type_module)
-{
-	pluma_file_bookmarks_store_register_type (type_module);
 }
 
 // ex:ts=8:noet:

@@ -231,11 +231,9 @@ static void on_action_filter_binary            (GtkAction * action,
 static void on_action_bookmark_open            (GtkAction * action,
 						PlumaFileBrowserWidget * obj);
 
-G_DEFINE_DYNAMIC_TYPE_EXTENDED (PlumaFileBrowserWidget,
-                                pluma_file_browser_widget,
-                                GTK_TYPE_BOX,
-                                0,
-                                G_ADD_PRIVATE_DYNAMIC (PlumaFileBrowserWidget))
+G_DEFINE_TYPE_WITH_PRIVATE (PlumaFileBrowserWidget,
+                            pluma_file_browser_widget,
+                            GTK_TYPE_BOX)
 
 static void
 free_name_icon (gpointer data)
@@ -464,12 +462,6 @@ pluma_file_browser_widget_class_init (PlumaFileBrowserWidgetClass * klass)
 	                  G_TYPE_BOOLEAN,
 	                  1,
 	                  G_TYPE_POINTER);
-}
-
-static void
-pluma_file_browser_widget_class_finalize (PlumaFileBrowserWidgetClass *klass)
-{
-	/* dummy function - used by G_DEFINE_DYNAMIC_TYPE_EXTENDED */
 }
 
 static void
@@ -3169,12 +3161,6 @@ on_action_bookmark_open (GtkAction * action, PlumaFileBrowserWidget * obj)
 
 	if (gtk_tree_selection_get_selected (selection, NULL, &iter))
 		bookmark_open (obj, model, &iter);
-}
-
-void
-_pluma_file_browser_widget_register_type (GTypeModule *type_module)
-{
-	pluma_file_browser_widget_register_type (type_module);
 }
 
 // ex:ts=8:noet:
