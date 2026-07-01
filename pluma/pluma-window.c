@@ -274,6 +274,12 @@ pluma_window_dispose (GObject *object)
         window->priv->fullscreen_animation_timeout_id = 0;
     }
 
+    if (window->priv->file_chord_timeout_id != 0)
+    {
+        g_source_remove (window->priv->file_chord_timeout_id);
+        window->priv->file_chord_timeout_id = 0;
+    }
+
     if (window->priv->fullscreen_controls != NULL)
     {
         gtk_widget_destroy (window->priv->fullscreen_controls);
@@ -371,6 +377,21 @@ pluma_window_configure_event (GtkWidget         *widget,
  * parent handler, skipping gtk_window_key_press_event.
  */
 static gboolean
+file_chord_timeout_cb (gpointer user_data)
+{
+    PlumaWindow *window = PLUMA_WINDOW (user_data);
+    GtkAction *action;
+
+    window->priv->file_chord_timeout_id = 0;
+    action = gtk_action_group_get_action (window->priv->action_group,
+                                          "SearchIncrementalSearch");
+    if (action != NULL)
+        gtk_action_activate (action);
+
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean
 pluma_window_key_press_event (GtkWidget   *widget,
                               GdkEventKey *event)
 {
@@ -379,6 +400,33 @@ pluma_window_key_press_event (GtkWidget   *widget,
     gboolean handled = FALSE;
     /* FIXME: avoid making a new gsettings variable here */
     GSettings *settings = g_settings_new (PLUMA_SCHEMA_ID);
+    GdkModifierType modifiers = event->state & gtk_accelerator_get_default_mod_mask ();
+
+    if (PLUMA_WINDOW (window)->priv->file_chord_timeout_id != 0)
+    {
+        g_source_remove (PLUMA_WINDOW (window)->priv->file_chord_timeout_id);
+        PLUMA_WINDOW (window)->priv->file_chord_timeout_id = 0;
+
+        if (modifiers == GDK_CONTROL_MASK &&
+            (event->keyval == GDK_KEY_o || event->keyval == GDK_KEY_O))
+        {
+            GtkAction *action = gtk_action_group_get_action (PLUMA_WINDOW (window)->priv->always_sensitive_action_group,
+                                                              "FileOpenFolder");
+            if (action != NULL)
+                gtk_action_activate (action);
+            g_object_unref (settings);
+            return TRUE;
+        }
+    }
+
+    if (modifiers == GDK_CONTROL_MASK &&
+        (event->keyval == GDK_KEY_k || event->keyval == GDK_KEY_K))
+    {
+        PLUMA_WINDOW (window)->priv->file_chord_timeout_id =
+            g_timeout_add (1500, file_chord_timeout_cb, window);
+        g_object_unref (settings);
+        return TRUE;
+    }
 
     if (event->state & GDK_CONTROL_MASK)
     {
@@ -1563,6 +1611,63 @@ setup_toolbar_open_button (PlumaWindow *window,
     return toolbar_recent_menu;
 }
 
+typedef struct
+{
+    GtkLabel parent_instance;
+} PlumaChordAccelLabel;
+
+typedef struct
+{
+    GtkLabelClass parent_class;
+} PlumaChordAccelLabelClass;
+
+G_DEFINE_TYPE (PlumaChordAccelLabel, pluma_chord_accel_label, GTK_TYPE_LABEL)
+
+static void
+pluma_chord_accel_label_class_init (PlumaChordAccelLabelClass *klass)
+{
+    gtk_widget_class_set_css_name (GTK_WIDGET_CLASS (klass), "accelerator");
+}
+
+static void
+pluma_chord_accel_label_init (PlumaChordAccelLabel *label)
+{
+}
+
+static void
+set_chord_menu_label (GtkUIManager *manager)
+{
+    GtkWidget *item;
+    GtkWidget *box;
+    GtkWidget *label;
+    GtkWidget *shortcut;
+    GtkWidget *child;
+
+    item = gtk_ui_manager_get_widget (manager,
+                                      "/MenuBar/FileMenu/FileOpenFolderMenu");
+    if (item == NULL)
+        return;
+
+    child = gtk_bin_get_child (GTK_BIN (item));
+    if (child != NULL)
+        gtk_container_remove (GTK_CONTAINER (item), child);
+
+    box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 24);
+    label = gtk_label_new_with_mnemonic (_("Open _Folder..."));
+    gtk_label_set_mnemonic_widget (GTK_LABEL (label), item);
+    gtk_widget_set_hexpand (label, TRUE);
+    gtk_widget_set_halign (label, GTK_ALIGN_START);
+    shortcut = g_object_new (pluma_chord_accel_label_get_type (),
+                             "label", "Ctrl+K, Ctrl+O",
+                             NULL);
+    gtk_widget_set_halign (shortcut, GTK_ALIGN_END);
+
+    gtk_box_pack_start (GTK_BOX (box), label, TRUE, TRUE, 0);
+    gtk_box_pack_end (GTK_BOX (box), shortcut, FALSE, FALSE, 0);
+    gtk_container_add (GTK_CONTAINER (item), box);
+    gtk_widget_show_all (box);
+}
+
 static void
 create_menu_bar_and_toolbar (PlumaWindow *window,
                              GtkWidget   *main_box)
@@ -1707,6 +1812,7 @@ create_menu_bar_and_toolbar (PlumaWindow *window,
     g_object_unref (action_group);
 
     window->priv->menubar = gtk_ui_manager_get_widget (manager, "/MenuBar");
+    set_chord_menu_label (manager);
     gtk_box_pack_start (GTK_BOX (main_box),
                         window->priv->menubar,
                         FALSE,

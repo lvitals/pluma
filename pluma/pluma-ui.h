@@ -58,6 +58,8 @@ static const GtkActionEntry pluma_always_sensitive_menu_entries[] =
 	  N_("Create a new document"), G_CALLBACK (_pluma_cmd_file_new) },
 	{ "FileOpen", "document-open", N_("_Open..."), "<control>O",
 	  N_("Open a file"), G_CALLBACK (_pluma_cmd_file_open) },
+	{ "FileOpenFolder", "folder-open", N_("Open _Folder..."), NULL,
+	  N_("Open a folder"), G_CALLBACK (_pluma_cmd_file_open_folder) },
 
 	/* Edit menu */
 	{ "EditPreferences", "preferences-desktop", N_("Pr_eferences"), NULL,

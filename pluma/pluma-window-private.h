@@ -121,6 +121,7 @@ struct _PlumaWindowPrivate
 	GtkWindowGroup *window_group;
 
 	GFile          *default_location;
+	guint           file_chord_timeout_id;
 
 	gboolean        removing_tabs : 1;
 	gboolean        dispose_has_run : 1;

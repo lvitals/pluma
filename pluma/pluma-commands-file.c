@@ -44,6 +44,7 @@
 #include "pluma-commands.h"
 #include "pluma-window.h"
 #include "pluma-window-private.h"
+#include "pluma-panel.h"
 #include "pluma-statusbar.h"
 #include "pluma-debug.h"
 #include "pluma-utils.h"
@@ -53,6 +54,7 @@
 
 /* Defined constants */
 #define PLUMA_OPEN_DIALOG_KEY 		"pluma-open-dialog-key"
+#define PLUMA_OPEN_FOLDER_DIALOG_KEY 	"pluma-open-folder-dialog-key"
 #define PLUMA_TAB_TO_SAVE_AS  		"pluma-tab-to-save-as"
 #define PLUMA_LIST_OF_TABS_TO_SAVE_AS   "pluma-list-of-tabs-to-save-as"
 #define PLUMA_IS_CLOSING_ALL            "pluma-is-closing-all"
@@ -546,6 +548,81 @@ _pluma_cmd_file_open (GtkAction   *action,
 			  window);
 
 	gtk_widget_show (open_dialog);
+}
+
+static void
+open_folder_dialog_destroyed (PlumaWindow *window,
+                              GtkWidget   *dialog)
+{
+	g_object_set_data (G_OBJECT (window), PLUMA_OPEN_FOLDER_DIALOG_KEY, NULL);
+}
+
+static void
+open_folder_dialog_response_cb (GtkFileChooser *dialog,
+                                gint            response_id,
+                                PlumaWindow    *window)
+{
+	if (response_id == GTK_RESPONSE_OK)
+	{
+		GFile *folder = gtk_file_chooser_get_file (dialog);
+
+		if (folder != NULL)
+		{
+			gchar *uri = g_file_get_uri (folder);
+			PlumaPanel *side_panel = pluma_window_get_side_panel (window);
+
+			_pluma_window_set_default_location (window, folder);
+			pluma_message_bus_send (pluma_window_get_message_bus (window),
+			                        "/plugins/filebrowser", "set_root",
+			                        "uri", uri, NULL);
+			_pluma_panel_set_active_item_by_id (side_panel,
+			                                    g_str_hash (_("File Browser")));
+			gtk_widget_show (GTK_WIDGET (side_panel));
+
+			g_free (uri);
+			g_object_unref (folder);
+		}
+	}
+
+	gtk_widget_destroy (GTK_WIDGET (dialog));
+}
+
+void
+_pluma_cmd_file_open_folder (GtkAction   *action,
+                             PlumaWindow *window)
+{
+	GtkWidget *dialog;
+	GFile *default_path;
+
+	dialog = g_object_get_data (G_OBJECT (window), PLUMA_OPEN_FOLDER_DIALOG_KEY);
+	if (dialog != NULL)
+	{
+		gtk_window_present (GTK_WINDOW (dialog));
+		return;
+	}
+
+	dialog = gtk_file_chooser_dialog_new (_("Open Folder"),
+	                                      GTK_WINDOW (window),
+	                                      GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER,
+	                                      _("_Cancel"), GTK_RESPONSE_CANCEL,
+	                                      _("_Open"), GTK_RESPONSE_OK,
+	                                      NULL);
+	gtk_dialog_set_default_response (GTK_DIALOG (dialog), GTK_RESPONSE_OK);
+
+	default_path = _pluma_window_get_default_location (window);
+	if (default_path != NULL)
+	{
+		gtk_file_chooser_set_file (GTK_FILE_CHOOSER (dialog), default_path, NULL);
+		g_object_unref (default_path);
+	}
+
+	g_object_set_data (G_OBJECT (window), PLUMA_OPEN_FOLDER_DIALOG_KEY, dialog);
+	g_object_weak_ref (G_OBJECT (dialog),
+	                   (GWeakNotify) open_folder_dialog_destroyed,
+	                   window);
+	g_signal_connect (dialog, "response",
+	                  G_CALLBACK (open_folder_dialog_response_cb), window);
+	gtk_widget_show (dialog);
 }
 
 /* File saving */

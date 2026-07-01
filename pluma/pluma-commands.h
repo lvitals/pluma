@@ -71,6 +71,8 @@ void		_pluma_cmd_file_new			(GtkAction   *action,
 							 PlumaWindow *window);
 void		_pluma_cmd_file_open			(GtkAction   *action,
 							 PlumaWindow *window);
+void		_pluma_cmd_file_open_folder		(GtkAction   *action,
+							 PlumaWindow *window);
 void		_pluma_cmd_file_save			(GtkAction   *action,
 							 PlumaWindow *window);
 void		_pluma_cmd_file_save_as			(GtkAction   *action,
