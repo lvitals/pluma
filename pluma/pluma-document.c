@@ -822,6 +822,16 @@ get_default_style_scheme (GSettings *editor_settings)
 }
 
 static void
+on_color_scheme_changed (GSettings     *settings,
+                         const gchar   *key,
+                         PlumaDocument *doc)
+{
+	GtkSourceStyleScheme *scheme = get_default_style_scheme (settings);
+	if (scheme != NULL)
+		gtk_source_buffer_set_style_scheme (GTK_SOURCE_BUFFER (doc), scheme);
+}
+
+static void
 on_uri_changed (PlumaDocument *doc,
 		GParamSpec    *pspec,
 		gpointer       useless)
@@ -1002,6 +1012,11 @@ pluma_document_init (PlumaDocument *doc)
 	if (style_scheme != NULL)
 		gtk_source_buffer_set_style_scheme (GTK_SOURCE_BUFFER (doc),
 						    style_scheme);
+
+	g_signal_connect (doc->priv->editor_settings,
+			  "changed::" PLUMA_SETTINGS_COLOR_SCHEME,
+			  G_CALLBACK (on_color_scheme_changed),
+			  doc);
 
 	g_signal_connect_after (doc,
 			  	"insert-text",

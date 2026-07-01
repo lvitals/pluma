@@ -27,6 +27,11 @@ stylesdir = $(datadir)/pluma/styles
 styles_DATA = \
 	styles/cupertino-dark.xml \
 	styles/classic.xml \
+	styles/cobalt.xml \
+	styles/kate.xml \
+	styles/oblivion.xml \
+	styles/solarized-dark.xml \
+	styles/solarized-light.xml \
 	styles/tango.xml
 
 EXTRA_DIST = 			\

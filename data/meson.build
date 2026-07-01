@@ -72,6 +72,11 @@ install_man('pluma.1')
 install_data(
   'styles/cupertino-dark.xml',
   'styles/classic.xml',
+  'styles/cobalt.xml',
+  'styles/kate.xml',
+  'styles/oblivion.xml',
+  'styles/solarized-dark.xml',
+  'styles/solarized-light.xml',
   'styles/tango.xml',
   install_dir: join_paths(get_option('datadir'), 'pluma/styles')
 )

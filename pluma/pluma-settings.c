@@ -292,7 +292,8 @@ on_scheme_changed (GSettings     *settings,
     docs = pluma_app_get_documents (pluma_app_get_default ());
     for (l = docs; l != NULL; l = g_list_next (l))
     {
-        g_return_if_fail (GTK_SOURCE_IS_BUFFER (l->data));
+        if (!GTK_SOURCE_IS_BUFFER (l->data))
+            continue;
 
         gtk_source_buffer_set_style_scheme (GTK_SOURCE_BUFFER (l->data), style);
     }
