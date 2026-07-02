@@ -593,18 +593,27 @@ on_syntax_highlighting_changed (GSettings     *settings,
 
     g_list_free (docs);
 
-    /* update the sensitivity of the Higlight Mode menu item */
+    /* update the sensitivity of the Highlight Mode menu item. The legacy
+     * GtkAction is mirrored into the modern win.highlight-mode action for
+     * accelerators/state, but its own enabled flag is native and does not
+     * come from that mirror, so both need to be updated here. */
     windows = pluma_app_get_windows (pluma_app_get_default ());
     while (windows != NULL)
     {
+        PlumaWindow *window = PLUMA_WINDOW (windows->data);
         GtkUIManager *ui;
         GtkAction *a;
+        GAction *modern_action;
 
-        ui = pluma_window_get_ui_manager (PLUMA_WINDOW (windows->data));
+        ui = pluma_window_get_ui_manager (window);
 
         a = gtk_ui_manager_get_action (ui, "/MenuBar/ViewMenu/ViewHighlightModeMenu");
 
         gtk_action_set_sensitive (a, enable);
+
+        modern_action = g_action_map_lookup_action (G_ACTION_MAP (window), "highlight-mode");
+        if (modern_action != NULL)
+            g_simple_action_set_enabled (G_SIMPLE_ACTION (modern_action), enable);
 
         windows = g_list_next (windows);
     }

@@ -41,6 +41,7 @@
 #include "pluma-file-browser-error.h"
 #include "pluma-file-browser-widget.h"
 #include "pluma-file-browser-messages.h"
+#include "pluma-action-migration.h"
 
 #define FILE_BROWSER_SCHEMA 		"org.mate.pluma.plugins.filebrowser"
 #define FILE_BROWSER_ONLOAD_SCHEMA 	"org.mate.pluma.plugins.filebrowser.on-load"
@@ -629,6 +630,44 @@ add_popup_ui (PlumaFileBrowserPanel *priv)
 		g_warning("Unable to merge UI: %s", error->message);
 		g_error_free(error);
 	}
+
+	{
+		GSimpleActionGroup *modern_group;
+		GMenu *file_opt1, *file_opt4, *bookmark_opt1;
+
+		modern_group = pluma_file_browser_widget_get_modern_action_group (priv->tree_widget);
+		file_opt1 = pluma_file_browser_widget_get_modern_menu_section (priv->tree_widget, "file-opt1");
+		file_opt4 = pluma_file_browser_widget_get_modern_menu_section (priv->tree_widget, "file-opt4");
+		bookmark_opt1 = pluma_file_browser_widget_get_modern_menu_section (priv->tree_widget, "bookmark-opt1");
+
+		if (modern_group != NULL) {
+			GtkApplication *application = gtk_window_get_application (GTK_WINDOW (priv->window));
+
+			if (application != NULL) {
+				static const PlumaLegacyActionMapping root_mappings[] = {
+					{ "SetActiveRoot", "set-active-root", NULL }
+				};
+				static const PlumaLegacyActionMapping terminal_mappings[] = {
+					{ "OpenTerminal", "open-terminal", NULL }
+				};
+
+				pluma_action_migration_mirror_group (application, G_ACTION_MAP (modern_group),
+				                                     priv->action_group, root_mappings,
+				                                     G_N_ELEMENTS (root_mappings));
+				pluma_action_migration_mirror_group (application, G_ACTION_MAP (modern_group),
+				                                     priv->single_selection_action_group,
+				                                     terminal_mappings,
+				                                     G_N_ELEMENTS (terminal_mappings));
+			}
+		}
+
+		if (file_opt1 != NULL)
+			g_menu_append (file_opt1, _("_Set root to active document"), "filebrowser.set-active-root");
+		if (bookmark_opt1 != NULL)
+			g_menu_append (bookmark_opt1, _("_Set root to active document"), "filebrowser.set-active-root");
+		if (file_opt4 != NULL)
+			g_menu_append (file_opt4, _("_Open terminal here"), "filebrowser.open-terminal");
+	}
 }
 
 static void
@@ -717,6 +756,12 @@ pluma_file_browser_panel_new (PlumaWindow *window)
 	priv->window = window;
 
 	priv->tree_widget = PLUMA_FILE_BROWSER_WIDGET (pluma_file_browser_widget_new (PLUMA_DATADIR "/ui"));
+
+	{
+		GtkApplication *application = gtk_window_get_application (GTK_WINDOW (window));
+		if (application != NULL)
+			pluma_file_browser_widget_install_modern_actions (priv->tree_widget, application);
+	}
 
 	priv->settings = g_settings_new (FILE_BROWSER_SCHEMA);
 	priv->onload_settings = g_settings_new (FILE_BROWSER_ONLOAD_SCHEMA);

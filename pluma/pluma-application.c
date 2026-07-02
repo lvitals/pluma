@@ -61,6 +61,17 @@ G_DEFINE_TYPE_WITH_PRIVATE (PlumaApplication, pluma_application, GTK_TYPE_APPLIC
 static void pluma_application_free_command_line_data (PlumaApplication *app);
 
 static void
+quit_action_activated (GSimpleAction *action,
+	                   GVariant      *parameter,
+	                   gpointer       user_data)
+{
+	GtkWindow *window = gtk_application_get_active_window (GTK_APPLICATION (user_data));
+
+	if (window != NULL && PLUMA_IS_WINDOW (window))
+		_pluma_cmd_file_quit (NULL, PLUMA_WINDOW (window));
+}
+
+static void
 pluma_application_activate (GApplication *application)
 {
 	PlumaApp *app;
@@ -120,10 +131,20 @@ pluma_application_activate (GApplication *application)
 static void
 pluma_application_startup (GApplication *application)
 {
+	static const GActionEntry application_actions[] = {
+		{ "quit", quit_action_activated, NULL, NULL, NULL, { 0, 0, 0 } }
+	};
+	static const gchar * const quit_accels[] = { "<Control>q", NULL };
 	pluma_debug_message (DEBUG_APP, "PlumaApplication startup");
 
 	/* Chain up to parent first */
 	G_APPLICATION_CLASS (pluma_application_parent_class)->startup (application);
+	g_action_map_add_action_entries (G_ACTION_MAP (application),
+	                                 application_actions,
+	                                 G_N_ELEMENTS (application_actions),
+	                                 application);
+	gtk_application_set_accels_for_action (GTK_APPLICATION (application),
+	                                       "app.quit", quit_accels);
 
 	/* Most initialization is done in main() before GtkApplication starts */
 	/* Only do the minimal setup here that needs to happen in the GtkApplication context */

@@ -39,6 +39,7 @@
 #include <pluma/pluma-debug.h>
 #include <pluma/pluma-statusbar.h>
 #include <pluma/pluma-utils.h>
+#include <pluma/pluma-action-migration.h>
 
 #include "pluma-spell-checker.h"
 #include "pluma-spell-checker-dialog.h"
@@ -67,6 +68,7 @@ struct _PlumaSpellPluginPrivate
 	PlumaWindow *window;
 
 	GtkActionGroup *action_group;
+	GSimpleActionGroup *modern_action_group;
 	guint           ui_id;
 	guint           message_cid;
 	gulong          tab_added_id;
@@ -185,6 +187,8 @@ pluma_spell_plugin_dispose (GObject *object)
 		g_object_unref (plugin->priv->action_group);
 		plugin->priv->action_group = NULL;
 	}
+
+	g_clear_object (&plugin->priv->modern_action_group);
 
 	g_object_unref (G_OBJECT (plugin->priv->settings));
 
@@ -1322,6 +1326,57 @@ pluma_spell_plugin_activate (PlumaWindowActivatable *activatable)
 			       GTK_UI_MANAGER_MENUITEM,
 			       FALSE);
 
+	{
+		GtkApplication *application = gtk_window_get_application (GTK_WINDOW (window));
+
+		/* AutoSpell is a GtkToggleAction, so mirror_group is used instead of
+		 * the plain GActionEntry wrapper other plugins use: it already keeps
+		 * a stateful boolean GAction in sync with the legacy toggle in both
+		 * directions, which is what makes the mirrored action follow the
+		 * per-document autospell state set up by update_ui() below. */
+		if (application != NULL)
+		{
+			static const gchar * const check_spell_accels[] = { "<shift>F7", NULL };
+			static const gchar * const auto_spell_accels[] = { "<control>F7", NULL };
+			static const PlumaLegacyActionMapping spell_mappings[] = {
+				{ "CheckSpell", "check-spelling", NULL },
+				{ "ConfigSpell", "set-language", NULL },
+				{ "AutoSpell", "auto-spell", NULL }
+			};
+			GMenuItem *item;
+
+			data->modern_action_group = g_simple_action_group_new ();
+			pluma_action_migration_mirror_group (application,
+			                                     G_ACTION_MAP (data->modern_action_group),
+			                                     data->action_group, spell_mappings,
+			                                     G_N_ELEMENTS (spell_mappings));
+			gtk_widget_insert_action_group (GTK_WIDGET (window), "plugin-spell",
+			                                G_ACTION_GROUP (data->modern_action_group));
+
+			/* mirror_group always sets accelerators under the "win." prefix,
+			 * which does not apply to this "plugin-spell." group, so set
+			 * them here with the correct detailed action names instead. */
+			gtk_application_set_accels_for_action (application,
+			                                       "plugin-spell.check-spelling",
+			                                       check_spell_accels);
+			gtk_application_set_accels_for_action (application,
+			                                       "plugin-spell.auto-spell",
+			                                       auto_spell_accels);
+
+			item = g_menu_item_new (_("_Check Spelling..."), "plugin-spell.check-spelling");
+			pluma_window_add_menu_item (window, "plugin-tools-section", item);
+			g_object_unref (item);
+
+			item = g_menu_item_new (_("_Autocheck Spelling"), "plugin-spell.auto-spell");
+			pluma_window_add_menu_item (window, "plugin-tools-section", item);
+			g_object_unref (item);
+
+			item = g_menu_item_new (_("Set _Language..."), "plugin-spell.set-language");
+			pluma_window_add_menu_item (window, "plugin-tools-section", item);
+			g_object_unref (item);
+		}
+	}
+
 	update_ui (plugin);
 
 	docs = pluma_window_get_documents (window);
@@ -1365,6 +1420,11 @@ pluma_spell_plugin_deactivate (PlumaWindowActivatable *activatable)
 
 	gtk_ui_manager_remove_ui (manager, data->ui_id);
 	gtk_ui_manager_remove_action_group (manager, data->action_group);
+
+	gtk_widget_insert_action_group (GTK_WIDGET (window), "plugin-spell", NULL);
+	pluma_window_remove_menu_items (window, "plugin-tools-section", "plugin-spell.check-spelling");
+	pluma_window_remove_menu_items (window, "plugin-tools-section", "plugin-spell.auto-spell");
+	pluma_window_remove_menu_items (window, "plugin-tools-section", "plugin-spell.set-language");
 
 	g_signal_handler_disconnect (window, data->tab_added_id);
 	g_signal_handler_disconnect (window, data->tab_removed_id);

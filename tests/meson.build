@@ -1,4 +1,5 @@
 test_progs = [
+  'action-migration',
   'smart-converter',
   'document-input-stream',
   'document-output-stream',

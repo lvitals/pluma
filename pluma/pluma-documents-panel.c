@@ -491,10 +491,32 @@ show_popup_menu (PlumaDocumentsPanel *panel,
 		 GdkEventButton      *event)
 {
 	GtkWidget *menu;
+	GMenu *model = g_menu_new ();
+	GMenu *section = g_menu_new ();
 
-	menu = gtk_ui_manager_get_widget (pluma_window_get_ui_manager (panel->priv->window),
-					 "/NotebookPopup");
-	g_return_val_if_fail (menu != NULL, FALSE);
+	g_menu_append (section, _("_Move to New Window"), "win.move-to-new-window");
+	g_menu_append_section (model, NULL, G_MENU_MODEL (section));
+	g_object_unref (section);
+	section = g_menu_new ();
+	g_menu_append (section, _("_Save"), "win.save");
+	g_menu_append (section, _("Save _As…"), "win.save-as");
+	g_menu_append (section, _("_Print…"), "win.print");
+	g_menu_append_section (model, NULL, G_MENU_MODEL (section));
+	g_object_unref (section);
+	section = g_menu_new ();
+	g_menu_append (section, _("Close Tabs to the _Left"), "win.close-tabs-left");
+	g_menu_append (section, _("Close Tabs to the _Right"), "win.close-tabs-right");
+	g_menu_append (section, _("Close _Other Tabs"), "win.close-other-tabs");
+	g_menu_append_section (model, NULL, G_MENU_MODEL (section));
+	g_object_unref (section);
+	section = g_menu_new ();
+	g_menu_append (section, _("_Close"), "win.close");
+	g_menu_append_section (model, NULL, G_MENU_MODEL (section));
+	g_object_unref (section);
+
+	menu = gtk_menu_new_from_model (G_MENU_MODEL (model));
+	g_object_unref (model);
+	gtk_menu_attach_to_widget (GTK_MENU (menu), GTK_WIDGET (panel), NULL);
 
 	if (event != NULL)
 	{
@@ -505,6 +527,7 @@ show_popup_menu (PlumaDocumentsPanel *panel,
 		menu_popup_at_treeview_selection (menu, panel->priv->treeview);
 		gtk_menu_shell_select_first (GTK_MENU_SHELL (menu), FALSE);
 	}
+	g_signal_connect_swapped (menu, "selection-done", G_CALLBACK (gtk_widget_destroy), menu);
 
 	return TRUE;
 }

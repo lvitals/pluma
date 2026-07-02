@@ -94,6 +94,9 @@ struct _PlumaWindowPrivate
 	GtkWidget      *toolbar;
 	GtkWidget      *toolbar_recent_menu;
 	GtkWidget      *menubar;
+	GtkBuilder     *modern_menu_builder;
+	GMenu          *modern_recent_section;    /* owned by modern_menu_builder */
+	GMenu          *modern_documents_section; /* owned by modern_menu_builder */
 	PlumaToolbarSetting toolbar_style;
 
 	/* recent files */

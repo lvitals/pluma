@@ -32,6 +32,7 @@ if not enable_gvfs_metadata
 endif
 
 noinst_h_files = [
+  'pluma-action-migration.h',
   'pluma-close-button.h',
   'pluma-dirs.h',
   'pluma-document-input-stream.h',
@@ -68,6 +69,7 @@ noinst_h_files = [
 ]
 
 libpluma_c_files = [
+  'pluma-action-migration.c',
   'pluma-app.c',
   'pluma-app-activatable.c',
   'pluma-application.c',
@@ -205,6 +207,7 @@ install_headers(inst_h_files, subdir: 'pluma')
 # UI and metadata files
 install_data([
     'pluma-ui.xml',
+    'pluma-menus.ui',
     'pluma-print-preferences.ui',
     'pluma-file-browser-widget-ui.xml',
   ],

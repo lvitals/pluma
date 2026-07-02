@@ -7,6 +7,10 @@ TEST_PROGS			= smart-converter
 smart_converter_SOURCES		= smart-converter.c
 smart_converter_LDADD		= $(progs_ldadd)
 
+TEST_PROGS			+= action-migration
+action_migration_SOURCES	= action-migration.c
+action_migration_LDADD		= $(progs_ldadd)
+
 TEST_PROGS			+= document-input-stream
 document_input_stream_SOURCES	= document-input-stream.c
 document_input_stream_LDADD	= $(progs_ldadd)

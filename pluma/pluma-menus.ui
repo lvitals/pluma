@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <!-- Built in parallel with pluma-ui.xml.  It becomes the visible menubar
+       only after every dynamic section and plugin has reached parity. -->
+  <menu id="pluma-menubar">
+    <submenu>
+      <attribute name="label" translatable="yes">_File</attribute>
+      <section>
+        <item>
+          <attribute name="label" translatable="yes">_New</attribute>
+          <attribute name="action">win.new</attribute>
+          <attribute name="icon">document-new</attribute>
+          <attribute name="accel">&lt;Control&gt;n</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">_Open…</attribute>
+          <attribute name="action">win.open</attribute>
+          <attribute name="icon">document-open</attribute>
+          <attribute name="accel">&lt;Control&gt;o</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">Open _Folder…</attribute>
+          <attribute name="action">win.open-folder</attribute>
+          <attribute name="icon">folder-open</attribute>
+        </item>
+      </section>
+      <section>
+        <item>
+          <attribute name="label" translatable="yes">_Save</attribute>
+          <attribute name="action">win.save</attribute>
+          <attribute name="icon">document-save</attribute>
+          <attribute name="accel">&lt;Control&gt;s</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">Save _As…</attribute>
+          <attribute name="action">win.save-as</attribute>
+          <attribute name="icon">document-save-as</attribute>
+          <attribute name="accel">&lt;Control&gt;&lt;Shift&gt;s</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">_Save All</attribute>
+          <attribute name="action">win.save-all</attribute>
+          <attribute name="accel">&lt;Control&gt;&lt;Shift&gt;l</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">_Revert</attribute>
+          <attribute name="action">win.revert</attribute>
+          <attribute name="icon">document-revert</attribute>
+        </item>
+      </section>
+      <section>
+        <item>
+          <attribute name="label" translatable="yes">Print Previe_w</attribute>
+          <attribute name="action">win.print-preview</attribute>
+          <attribute name="icon">document-print-preview</attribute>
+          <attribute name="accel">&lt;Control&gt;&lt;Shift&gt;p</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">_Print…</attribute>
+          <attribute name="action">win.print</attribute>
+          <attribute name="icon">document-print</attribute>
+          <attribute name="accel">&lt;Control&gt;p</attribute>
+        </item>
+      </section>
+      <section id="recent-files-section"/>
+      <section>
+        <item>
+          <attribute name="label" translatable="yes">_Close</attribute>
+          <attribute name="action">win.close</attribute>
+          <attribute name="icon">window-close</attribute>
+          <attribute name="accel">&lt;Control&gt;w</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">Close _All</attribute>
+          <attribute name="action">win.close-all</attribute>
+          <attribute name="accel">&lt;Control&gt;&lt;Shift&gt;w</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">_Quit</attribute>
+          <attribute name="action">app.quit</attribute>
+          <attribute name="icon">application-exit</attribute>
+          <attribute name="accel">&lt;Control&gt;q</attribute>
+        </item>
+      </section>
+    </submenu>
+    <submenu>
+      <attribute name="label" translatable="yes">_Edit</attribute>
+      <section>
+        <item><attribute name="label" translatable="yes">_Undo</attribute><attribute name="action">win.undo</attribute><attribute name="accel">&lt;Control&gt;z</attribute></item>
+        <item><attribute name="label" translatable="yes">_Redo</attribute><attribute name="action">win.redo</attribute><attribute name="accel">&lt;Control&gt;&lt;Shift&gt;z</attribute></item>
+      </section>
+      <section>
+        <item><attribute name="label" translatable="yes">Cu_t</attribute><attribute name="action">win.cut</attribute><attribute name="accel">&lt;Control&gt;x</attribute></item>
+        <item><attribute name="label" translatable="yes">_Copy</attribute><attribute name="action">win.copy</attribute><attribute name="accel">&lt;Control&gt;c</attribute></item>
+        <item><attribute name="label" translatable="yes">_Paste</attribute><attribute name="action">win.paste</attribute><attribute name="accel">&lt;Control&gt;v</attribute></item>
+        <item><attribute name="label" translatable="yes">_Delete</attribute><attribute name="action">win.delete</attribute></item>
+        <item><attribute name="label" translatable="yes">Select _All</attribute><attribute name="action">win.select-all</attribute><attribute name="accel">&lt;Control&gt;a</attribute></item>
+      </section>
+      <section>
+        <item><attribute name="label" translatable="yes">Zoom _In</attribute><attribute name="action">win.zoom-in</attribute><attribute name="accel">&lt;Control&gt;plus</attribute></item>
+        <item><attribute name="label" translatable="yes">Zoom _Out</attribute><attribute name="action">win.zoom-out</attribute><attribute name="accel">&lt;Control&gt;minus</attribute></item>
+        <item><attribute name="label" translatable="yes">_Reset Zoom</attribute><attribute name="action">win.zoom-reset</attribute><attribute name="accel">&lt;Control&gt;equal</attribute></item>
+      </section>
+      <section>
+        <submenu>
+          <attribute name="label" translatable="yes">C_hange Case</attribute>
+          <section>
+            <item><attribute name="label" translatable="yes">All _Upper Case</attribute><attribute name="action">win.uppercase</attribute></item>
+            <item><attribute name="label" translatable="yes">All _Lower Case</attribute><attribute name="action">win.lowercase</attribute></item>
+            <item><attribute name="label" translatable="yes">_Invert Case</attribute><attribute name="action">win.invert-case</attribute></item>
+            <item><attribute name="label" translatable="yes">_Title Case</attribute><attribute name="action">win.title-case</attribute></item>
+          </section>
+        </submenu>
+      </section>
+      <section id="plugin-edit-section"/>
+      <section>
+        <item><attribute name="label" translatable="yes">Pr_eferences</attribute><attribute name="action">win.preferences</attribute></item>
+      </section>
+    </submenu>
+    <submenu>
+      <attribute name="label" translatable="yes">_View</attribute>
+      <section>
+        <item><attribute name="label" translatable="yes">_Toolbar</attribute><attribute name="action">win.show-toolbar</attribute></item>
+        <item><attribute name="label" translatable="yes">_Statusbar</attribute><attribute name="action">win.show-statusbar</attribute></item>
+        <item><attribute name="label" translatable="yes">Side _Pane</attribute><attribute name="action">win.show-side-pane</attribute><attribute name="accel">F9</attribute></item>
+        <item><attribute name="label" translatable="yes">_Bottom Pane</attribute><attribute name="action">win.show-bottom-pane</attribute><attribute name="accel">&lt;Control&gt;F9</attribute></item>
+        <item><attribute name="label" translatable="yes">_Right Pane</attribute><attribute name="action">win.show-right-pane</attribute><attribute name="accel">&lt;Shift&gt;F9</attribute></item>
+      </section>
+      <section>
+        <item><attribute name="label" translatable="yes">_Fullscreen</attribute><attribute name="action">win.fullscreen</attribute><attribute name="accel">F11</attribute></item>
+      </section>
+      <submenu>
+        <attribute name="label" translatable="yes">_Highlight Mode</attribute>
+        <section id="highlight-language-section"/>
+      </submenu>
+    </submenu>
+    <submenu>
+      <attribute name="label" translatable="yes">_Search</attribute>
+      <section>
+        <item><attribute name="label" translatable="yes">_Find…</attribute><attribute name="action">win.find</attribute><attribute name="accel">&lt;Control&gt;f</attribute></item>
+        <item><attribute name="label" translatable="yes">Find in Fi_les</attribute><attribute name="action">win.find-in-files</attribute><attribute name="accel">&lt;Control&gt;&lt;Shift&gt;f</attribute></item>
+        <item><attribute name="label" translatable="yes">Find Ne_xt</attribute><attribute name="action">win.find-next</attribute><attribute name="accel">&lt;Control&gt;g</attribute></item>
+        <item><attribute name="label" translatable="yes">Find Pre_vious</attribute><attribute name="action">win.find-previous</attribute><attribute name="accel">&lt;Control&gt;&lt;Shift&gt;g</attribute></item>
+        <item><attribute name="label" translatable="yes">_Incremental Search…</attribute><attribute name="action">win.incremental-search</attribute><attribute name="accel">&lt;Control&gt;k</attribute></item>
+      </section>
+      <section>
+        <item><attribute name="label" translatable="yes">_Replace…</attribute><attribute name="action">win.replace</attribute><attribute name="accel">&lt;Control&gt;h</attribute></item>
+        <item><attribute name="label" translatable="yes">_Clear Highlight</attribute><attribute name="action">win.clear-highlight</attribute><attribute name="accel">&lt;Control&gt;&lt;Shift&gt;k</attribute></item>
+        <item><attribute name="label" translatable="yes">Go to _Line…</attribute><attribute name="action">win.goto-line</attribute><attribute name="accel">&lt;Control&gt;i</attribute></item>
+      </section>
+      <section id="plugin-search-section"/>
+    </submenu>
+    <submenu>
+      <attribute name="label" translatable="yes">_Tools</attribute>
+      <section id="plugin-tools-section"/>
+    </submenu>
+    <submenu>
+      <attribute name="label" translatable="yes">_Documents</attribute>
+      <section>
+        <item>
+          <attribute name="label" translatable="yes">_Save All</attribute>
+          <attribute name="action">win.save-all</attribute>
+          <attribute name="accel">&lt;Control&gt;&lt;Shift&gt;l</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">_Close All</attribute>
+          <attribute name="action">win.close-all</attribute>
+          <attribute name="accel">&lt;Control&gt;&lt;Shift&gt;w</attribute>
+        </item>
+      </section>
+      <section>
+        <item>
+          <attribute name="label" translatable="yes">_Previous Document</attribute>
+          <attribute name="action">win.previous-document</attribute>
+          <attribute name="accel">&lt;Control&gt;&lt;Alt&gt;Page_Up</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">_Next Document</attribute>
+          <attribute name="action">win.next-document</attribute>
+          <attribute name="accel">&lt;Control&gt;&lt;Alt&gt;Page_Down</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="yes">_Move to New Window</attribute>
+          <attribute name="action">win.move-to-new-window</attribute>
+        </item>
+      </section>
+      <section id="documents-list-section"/>
+    </submenu>
+    <submenu>
+      <attribute name="label" translatable="yes">_Help</attribute>
+      <section>
+        <item><attribute name="label" translatable="yes">_Contents</attribute><attribute name="action">win.help</attribute><attribute name="accel">F1</attribute></item>
+        <item><attribute name="label" translatable="yes">_About</attribute><attribute name="action">win.about</attribute></item>
+      </section>
+    </submenu>
+  </menu>
+</interface>

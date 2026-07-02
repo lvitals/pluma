@@ -197,21 +197,23 @@ GOBJECT_INTROSPECTION_CHECK([0.9.3])
 if test "$found_introspection" = "yes"; then
 	have_introspection=yes
 	AC_DEFINE([HAVE_INTROSPECTION], [1], [Define to enable GObject Introspection])
-
-	# Check for girepository-2.0 API (moved to glib in version 1.80+)
-	# We can only use girepository-2.0 if libpeas also uses it, otherwise we get conflicts
-	PKG_CHECK_EXISTS([girepository-2.0], [
-		# Check if libpeas requires girepository-2.0
-		if pkg-config --print-requires libpeas-1.0 | grep -q "girepository-2.0"; then
-			AC_DEFINE([HAVE_GIREPOSITORY_2], [1], [Using girepository-2.0 API])
-			have_girepository_2=yes
-		else
-			have_girepository_2=no
-		fi
-	], [have_girepository_2=no])
 else
 	have_introspection=no
 fi
+
+# The plugin engine requires GIRepository at runtime even when GIR generation
+# is disabled. Match the API generation used by libpeas to avoid mixing the
+# incompatible 1.0 and 2.0 repositories in one process.
+AS_IF([pkg-config --print-requires libpeas-1.0 | grep -q "girepository-2.0"], [
+	PKG_CHECK_MODULES([GIREPOSITORY], [girepository-2.0])
+	AC_DEFINE([HAVE_GIREPOSITORY_2], [1], [Using girepository-2.0 API])
+	have_girepository_2=yes
+], [
+	PKG_CHECK_MODULES([GIREPOSITORY], [gobject-introspection-1.0])
+	have_girepository_2=no
+])
+PLUMA_CFLAGS="$PLUMA_CFLAGS $GIREPOSITORY_CFLAGS"
+PLUMA_LIBS="$PLUMA_LIBS $GIREPOSITORY_LIBS"
 
 AM_PATH_PYTHON([3.0])
 
@@ -259,6 +261,15 @@ AC_SUBST(PLUMA_PLUGINS_DATA_DIR)
 
 PLUMA_PLUGINS_LIBS_DIR="$libdir/pluma/plugins"
 AC_SUBST(PLUMA_PLUGINS_LIBS_DIR)
+
+# Built-in source-control panel (kept in parity with Meson's git option).
+AC_ARG_ENABLE([git],
+	AS_HELP_STRING([--disable-git], [do not build the built-in Git panel]),
+	[], [enable_git=yes])
+AS_IF([test "x$enable_git" = "xyes"], [
+	AC_DEFINE([ENABLE_GIT], [1], [Build the built-in Git panel])
+])
+AM_CONDITIONAL([ENABLE_GIT], [test "x$enable_git" = "xyes"])
 
 YELP_HELP_INIT
 

@@ -102,6 +102,25 @@ pluma_file_browser_widget_get_filter_entry          (PlumaFileBrowserWidget * ob
 GtkUIManager *
 pluma_file_browser_widget_get_ui_manager            (PlumaFileBrowserWidget * obj);
 
+/* Mirrors every legacy GtkActionGroup into a "filebrowser"-prefixed
+ * GSimpleActionGroup and builds the GMenu equivalents of the FilePopup and
+ * BookmarkPopup context menus. application must be non-NULL (the caller,
+ * pluma-file-browser-panel.c, already knows the window is attached to one
+ * by the time it constructs this widget). */
+void pluma_file_browser_widget_install_modern_actions (PlumaFileBrowserWidget *obj,
+                                                        GtkApplication         *application);
+
+/* Lets pluma-file-browser-panel.c add its own extra actions/menu items
+ * (SetActiveRoot, OpenTerminal) into the same modern action group and the
+ * same context menus. section_id is one of "file-opt1", "file-opt4" or
+ * "bookmark-opt1"; returns NULL if install_modern_actions was never called
+ * or the id is unknown. */
+GSimpleActionGroup *
+pluma_file_browser_widget_get_modern_action_group   (PlumaFileBrowserWidget * obj);
+GMenu *
+pluma_file_browser_widget_get_modern_menu_section   (PlumaFileBrowserWidget * obj,
+                                                     const gchar             *section_id);
+
 gulong pluma_file_browser_widget_add_filter         (PlumaFileBrowserWidget * obj,
                                                      PlumaFileBrowserWidgetFilterFunc func,
                                                      gpointer user_data,

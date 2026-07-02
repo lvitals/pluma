@@ -265,7 +265,9 @@ peas_plugin_loader_python_initialize (PeasPluginLoader *loader)
 
   /* Initialize support for threads */
   pyg_enable_threads ();
+#if PY_VERSION_HEX < 0x03090000
   PyEval_InitThreads ();
+#endif
 
   /* Only redirect warnings when python was not already initialized */
   if (!priv->must_finalize_python)

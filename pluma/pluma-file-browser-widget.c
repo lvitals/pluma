@@ -33,6 +33,7 @@
 #include <gdk/gdkkeysyms.h>
 
 #include <pluma/pluma-utils.h>
+#include "pluma-action-migration.h"
 
 #include "pluma-file-browser-utils.h"
 #include "pluma-file-browser-error.h"
@@ -159,6 +160,13 @@ struct _PlumaFileBrowserWidgetPrivate
 	GtkActionGroup *action_group_single_most_selection;
 	GtkActionGroup *action_group_sensitive;
 	GtkActionGroup *bookmark_action_group;
+
+	GSimpleActionGroup *modern_action_group;
+	GMenu *modern_file_popup;
+	GMenu *modern_file_popup_opt1;
+	GMenu *modern_file_popup_opt4;
+	GMenu *modern_bookmark_popup;
+	GMenu *modern_bookmark_popup_opt1;
 
 	GSList *signal_pool;
 
@@ -392,6 +400,12 @@ pluma_file_browser_widget_finalize (GObject * object)
 						  NULL, NULL);
 
 	g_object_unref (obj->priv->manager);
+	g_clear_object (&obj->priv->modern_action_group);
+	g_clear_object (&obj->priv->modern_file_popup_opt1);
+	g_clear_object (&obj->priv->modern_file_popup_opt4);
+	g_clear_object (&obj->priv->modern_bookmark_popup_opt1);
+	g_clear_object (&obj->priv->modern_file_popup);
+	g_clear_object (&obj->priv->modern_bookmark_popup);
 	g_object_unref (obj->priv->file_store);
 	g_object_unref (obj->priv->bookmarks_store);
 	g_object_unref (obj->priv->combo_model);
@@ -1794,13 +1808,28 @@ static gboolean
 popup_menu (PlumaFileBrowserWidget * obj, GdkEventButton * event, GtkTreeModel * model)
 {
 	GtkWidget *menu;
+	GMenuModel *modern_model = NULL;
 
 	if (PLUMA_IS_FILE_BROWSER_STORE (model))
-		menu = gtk_ui_manager_get_widget (obj->priv->manager, "/FilePopup");
+		modern_model = obj->priv->modern_file_popup != NULL
+		               ? G_MENU_MODEL (obj->priv->modern_file_popup) : NULL;
 	else if (PLUMA_IS_FILE_BOOKMARKS_STORE (model))
-		menu = gtk_ui_manager_get_widget (obj->priv->manager, "/BookmarkPopup");
+		modern_model = obj->priv->modern_bookmark_popup != NULL
+		               ? G_MENU_MODEL (obj->priv->modern_bookmark_popup) : NULL;
 	else
 		return FALSE;
+
+	if (modern_model != NULL)
+	{
+		menu = gtk_menu_new_from_model (modern_model);
+		gtk_menu_attach_to_widget (GTK_MENU (menu), GTK_WIDGET (obj), NULL);
+		g_signal_connect_swapped (menu, "selection-done",
+		                          G_CALLBACK (gtk_widget_destroy), menu);
+	}
+	else if (PLUMA_IS_FILE_BROWSER_STORE (model))
+		menu = gtk_ui_manager_get_widget (obj->priv->manager, "/FilePopup");
+	else
+		menu = gtk_ui_manager_get_widget (obj->priv->manager, "/BookmarkPopup");
 
 	g_return_val_if_fail (menu != NULL, FALSE);
 
@@ -1850,7 +1879,7 @@ filter_glob (PlumaFileBrowserWidget * obj, PlumaFileBrowserStore * store,
 		result = TRUE;
 	else
 		result =
-		    g_pattern_match_string (obj->priv->filter_pattern,
+		    g_pattern_spec_match_string (obj->priv->filter_pattern,
 					    name);
 
 	g_free (name);
@@ -2540,6 +2569,174 @@ GtkUIManager *
 pluma_file_browser_widget_get_ui_manager (PlumaFileBrowserWidget * obj)
 {
 	return obj->priv->manager;
+}
+
+static void
+mirror_accel (GtkApplication *application, const gchar *action_name, const gchar *accel)
+{
+	gchar *detailed_name = g_strconcat ("filebrowser.", action_name, NULL);
+	const gchar *accels[] = { accel, NULL };
+
+	/* pluma_action_migration_mirror_group always sets accelerators under
+	 * the "win." prefix, which does not apply to "filebrowser" actions,
+	 * so the handful that need one are set here instead. */
+	gtk_application_set_accels_for_action (application, detailed_name, accels);
+	g_free (detailed_name);
+}
+
+void
+pluma_file_browser_widget_install_modern_actions (PlumaFileBrowserWidget *obj, GtkApplication *application)
+{
+	static const PlumaLegacyActionMapping toplevel_mappings[] = {
+		{ "DirectoryUp", "directory-up", NULL },
+		{ "QuickSearch", "quick-search", NULL },
+		{ "FilterHidden", "filter-hidden", NULL },
+		{ "FilterBinary", "filter-binary", NULL }
+	};
+	static const PlumaLegacyActionMapping selection_mappings[] = {
+		{ "FileMoveToTrash", "file-move-to-trash", NULL },
+		{ "FileDelete", "file-delete", NULL }
+	};
+	static const PlumaLegacyActionMapping file_selection_mappings[] = {
+		{ "FileOpen", "file-open", NULL }
+	};
+	static const PlumaLegacyActionMapping single_most_selection_mappings[] = {
+		{ "DirectoryNew", "directory-new", NULL },
+		{ "FileNew", "file-new", NULL }
+	};
+	static const PlumaLegacyActionMapping single_selection_mappings[] = {
+		{ "FileRename", "file-rename", NULL },
+		{ "FileCopyPath", "file-copy-path", NULL },
+		{ "FileCopyRelativePath", "file-copy-relative-path", NULL }
+	};
+	static const PlumaLegacyActionMapping sensitive_mappings[] = {
+		{ "DirectoryPrevious", "directory-previous", NULL },
+		{ "DirectoryNext", "directory-next", NULL },
+		{ "DirectoryRefresh", "directory-refresh", NULL },
+		{ "DirectoryOpen", "directory-open", NULL }
+	};
+	static const PlumaLegacyActionMapping bookmark_mappings[] = {
+		{ "BookmarkOpen", "bookmark-open", NULL }
+	};
+	GMenu *section;
+	GMenu *filter_menu;
+	GMenuItem *filter_item;
+
+	g_return_if_fail (GTK_IS_APPLICATION (application));
+
+	if (obj->priv->modern_action_group != NULL)
+		return;
+
+	obj->priv->modern_action_group = g_simple_action_group_new ();
+
+	pluma_action_migration_mirror_group (application, G_ACTION_MAP (obj->priv->modern_action_group),
+	                                     obj->priv->action_group, toplevel_mappings,
+	                                     G_N_ELEMENTS (toplevel_mappings));
+	pluma_action_migration_mirror_group (application, G_ACTION_MAP (obj->priv->modern_action_group),
+	                                     obj->priv->action_group_selection, selection_mappings,
+	                                     G_N_ELEMENTS (selection_mappings));
+	pluma_action_migration_mirror_group (application, G_ACTION_MAP (obj->priv->modern_action_group),
+	                                     obj->priv->action_group_file_selection, file_selection_mappings,
+	                                     G_N_ELEMENTS (file_selection_mappings));
+	pluma_action_migration_mirror_group (application, G_ACTION_MAP (obj->priv->modern_action_group),
+	                                     obj->priv->action_group_single_most_selection,
+	                                     single_most_selection_mappings,
+	                                     G_N_ELEMENTS (single_most_selection_mappings));
+	pluma_action_migration_mirror_group (application, G_ACTION_MAP (obj->priv->modern_action_group),
+	                                     obj->priv->action_group_single_selection, single_selection_mappings,
+	                                     G_N_ELEMENTS (single_selection_mappings));
+	pluma_action_migration_mirror_group (application, G_ACTION_MAP (obj->priv->modern_action_group),
+	                                     obj->priv->action_group_sensitive, sensitive_mappings,
+	                                     G_N_ELEMENTS (sensitive_mappings));
+	pluma_action_migration_mirror_group (application, G_ACTION_MAP (obj->priv->modern_action_group),
+	                                     obj->priv->bookmark_action_group, bookmark_mappings,
+	                                     G_N_ELEMENTS (bookmark_mappings));
+
+	mirror_accel (application, "file-copy-path", "<control><alt>C");
+	mirror_accel (application, "file-copy-relative-path", "<control><shift><alt>C");
+
+	gtk_widget_insert_action_group (GTK_WIDGET (obj), "filebrowser",
+	                                G_ACTION_GROUP (obj->priv->modern_action_group));
+
+	/* FilePopup */
+	obj->priv->modern_file_popup = g_menu_new ();
+
+	section = g_menu_new ();
+	g_menu_append (section, _("_Open"), "filebrowser.file-open");
+	g_menu_append_section (obj->priv->modern_file_popup, NULL, G_MENU_MODEL (section));
+	g_object_unref (section);
+
+	obj->priv->modern_file_popup_opt1 = g_menu_new ();
+	g_menu_append_section (obj->priv->modern_file_popup, NULL, G_MENU_MODEL (obj->priv->modern_file_popup_opt1));
+
+	section = g_menu_new ();
+	g_menu_append (section, _("Copy _Path"), "filebrowser.file-copy-path");
+	g_menu_append (section, _("Copy _Relative Path"), "filebrowser.file-copy-relative-path");
+	g_menu_append_section (obj->priv->modern_file_popup, NULL, G_MENU_MODEL (section));
+	g_object_unref (section);
+
+	section = g_menu_new ();
+	g_menu_append (section, _("_New Folder"), "filebrowser.directory-new");
+	g_menu_append (section, _("New F_ile"), "filebrowser.file-new");
+	g_menu_append_section (obj->priv->modern_file_popup, NULL, G_MENU_MODEL (section));
+	g_object_unref (section);
+
+	section = g_menu_new ();
+	g_menu_append (section, _("_Rename"), "filebrowser.file-rename");
+	g_menu_append (section, _("_Move to Trash"), "filebrowser.file-move-to-trash");
+	g_menu_append (section, _("_Delete"), "filebrowser.file-delete");
+	g_menu_append_section (obj->priv->modern_file_popup, NULL, G_MENU_MODEL (section));
+	g_object_unref (section);
+
+	section = g_menu_new ();
+	g_menu_append (section, _("Re_fresh View"), "filebrowser.directory-refresh");
+	g_menu_append (section, _("_View Folder"), "filebrowser.directory-open");
+	g_menu_append_section (obj->priv->modern_file_popup, NULL, G_MENU_MODEL (section));
+	g_object_unref (section);
+
+	obj->priv->modern_file_popup_opt4 = g_menu_new ();
+	g_menu_append_section (obj->priv->modern_file_popup, NULL, G_MENU_MODEL (obj->priv->modern_file_popup_opt4));
+
+	filter_menu = g_menu_new ();
+	g_menu_append (filter_menu, _("Show _Hidden"), "filebrowser.filter-hidden");
+	g_menu_append (filter_menu, _("Show _Binary"), "filebrowser.filter-binary");
+	filter_item = g_menu_item_new_submenu (_("_Filter"), G_MENU_MODEL (filter_menu));
+	g_object_unref (filter_menu);
+	section = g_menu_new ();
+	g_menu_append_item (section, filter_item);
+	g_object_unref (filter_item);
+	g_menu_append_section (obj->priv->modern_file_popup, NULL, G_MENU_MODEL (section));
+	g_object_unref (section);
+
+	/* BookmarkPopup */
+	obj->priv->modern_bookmark_popup = g_menu_new ();
+
+	obj->priv->modern_bookmark_popup_opt1 = g_menu_new ();
+	g_menu_append_section (obj->priv->modern_bookmark_popup, NULL,
+	                       G_MENU_MODEL (obj->priv->modern_bookmark_popup_opt1));
+
+	section = g_menu_new ();
+	g_menu_append (section, _("_View Folder"), "filebrowser.bookmark-open");
+	g_menu_append_section (obj->priv->modern_bookmark_popup, NULL, G_MENU_MODEL (section));
+	g_object_unref (section);
+}
+
+GSimpleActionGroup *
+pluma_file_browser_widget_get_modern_action_group (PlumaFileBrowserWidget * obj)
+{
+	return obj->priv->modern_action_group;
+}
+
+GMenu *
+pluma_file_browser_widget_get_modern_menu_section (PlumaFileBrowserWidget * obj, const gchar *section_id)
+{
+	if (g_strcmp0 (section_id, "file-opt1") == 0)
+		return obj->priv->modern_file_popup_opt1;
+	if (g_strcmp0 (section_id, "file-opt4") == 0)
+		return obj->priv->modern_file_popup_opt4;
+	if (g_strcmp0 (section_id, "bookmark-opt1") == 0)
+		return obj->priv->modern_bookmark_popup_opt1;
+	return NULL;
 }
 
 GtkWidget *

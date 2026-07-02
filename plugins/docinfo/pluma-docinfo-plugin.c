@@ -64,6 +64,7 @@ struct _PlumaDocInfoPluginPrivate
 	PlumaWindow *window;
 
 	GtkActionGroup *ui_action_group;
+	GSimpleActionGroup *modern_action_group;
 	guint ui_id;
 
 	DocInfoDialog *dialog;
@@ -445,6 +446,17 @@ static const GtkActionEntry action_entries[] =
 };
 
 static void
+docinfo_action_activated (GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+	docinfo_cb (NULL, PLUMA_DOCINFO_PLUGIN (user_data));
+}
+
+static const GActionEntry modern_action_entries[] =
+{
+	{ "statistics", docinfo_action_activated, NULL, NULL, NULL, { 0, 0, 0 } }
+};
+
+static void
 update_ui (PlumaDocInfoPluginPrivate *data)
 {
 	PlumaWindow *window;
@@ -457,6 +469,11 @@ update_ui (PlumaDocInfoPluginPrivate *data)
 
 	gtk_action_group_set_sensitive (data->ui_action_group,
 					(view != NULL));
+	if (data->modern_action_group != NULL)
+	{
+		GAction *action = g_action_map_lookup_action (G_ACTION_MAP (data->modern_action_group), "statistics");
+		g_simple_action_set_enabled (G_SIMPLE_ACTION (action), view != NULL);
+	}
 
 	if (data->dialog != NULL)
 	{
@@ -492,6 +509,7 @@ pluma_docinfo_plugin_dispose (GObject *object)
 		g_object_unref (plugin->priv->ui_action_group);
 		plugin->priv->ui_action_group = NULL;
 	}
+	g_clear_object (&plugin->priv->modern_action_group);
 
 	G_OBJECT_CLASS (pluma_docinfo_plugin_parent_class)->dispose (object);
 }
@@ -575,6 +593,19 @@ pluma_docinfo_plugin_activate (PlumaWindowActivatable *activatable)
 			       GTK_UI_MANAGER_MENUITEM,
 			       FALSE);
 
+	data->modern_action_group = g_simple_action_group_new ();
+	g_action_map_add_action_entries (G_ACTION_MAP (data->modern_action_group),
+	                                 modern_action_entries,
+	                                 G_N_ELEMENTS (modern_action_entries), plugin);
+	gtk_widget_insert_action_group (GTK_WIDGET (window), "plugin-docinfo",
+	                                G_ACTION_GROUP (data->modern_action_group));
+	{
+		GMenuItem *item = g_menu_item_new (_("_Document Statistics"),
+		                                      "plugin-docinfo.statistics");
+		pluma_window_add_menu_item (window, "plugin-tools-section", item);
+		g_object_unref (item);
+	}
+
 	update_ui (data);
 }
 
@@ -595,7 +626,11 @@ pluma_docinfo_plugin_deactivate (PlumaWindowActivatable *activatable)
 	gtk_ui_manager_remove_ui (manager,
 				  data->ui_id);
 	gtk_ui_manager_remove_action_group (manager,
-					    data->ui_action_group);
+				    data->ui_action_group);
+	gtk_widget_insert_action_group (GTK_WIDGET (window), "plugin-docinfo", NULL);
+	pluma_window_remove_menu_items (window, "plugin-tools-section",
+	                                "plugin-docinfo.statistics");
+	g_clear_object (&data->modern_action_group);
 }
 
 static void

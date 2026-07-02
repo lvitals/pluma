@@ -47,8 +47,6 @@
 #include <pluma/pluma-debug.h>
 #include <pluma/pluma-utils.h>
 
-#define MENU_PATH "/MenuBar/EditMenu/EditOps_4"
-
 /* GSettings keys */
 #define TIME_SCHEMA			"org.mate.pluma.plugins.time"
 #define PROMPT_TYPE_KEY		"prompt-type"
@@ -152,8 +150,7 @@ struct _PlumaTimePluginPrivate
 
 	GSettings *settings;
 
-	GtkActionGroup *action_group;
-	guint           ui_id;
+	GSimpleActionGroup *modern_action_group;
 };
 
 enum {
@@ -174,18 +171,17 @@ G_DEFINE_DYNAMIC_TYPE_EXTENDED (PlumaTimePlugin,
                                 G_IMPLEMENT_INTERFACE_DYNAMIC (PEAS_GTK_TYPE_CONFIGURABLE,
                                                                peas_gtk_configurable_iface_init))
 
-static void time_cb (GtkAction *action, PlumaTimePlugin *plugin);
+static void time_cb (PlumaTimePlugin *plugin);
 
-static const GtkActionEntry action_entries[] =
+static void
+time_action_activated (GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
-	{
-		"InsertDateAndTime",
-		NULL,
-		N_("In_sert Date and Time..."),
-		NULL,
-		N_("Insert current date and time at the cursor position"),
-		G_CALLBACK (time_cb)
-	},
+	time_cb (PLUMA_TIME_PLUGIN (user_data));
+}
+
+static const GActionEntry modern_action_entries[] =
+{
+	{ "insert-date-time", time_action_activated, NULL, NULL, NULL, { 0, 0, 0 } }
 };
 
 static void
@@ -223,11 +219,7 @@ pluma_time_plugin_dispose (GObject *object)
 		plugin->priv->window = NULL;
 	}
 
-	if (plugin->priv->action_group)
-	{
-		g_object_unref (plugin->priv->action_group);
-		plugin->priv->action_group = NULL;
-	}
+	g_clear_object (&plugin->priv->modern_action_group);
 
 	G_OBJECT_CLASS (pluma_time_plugin_parent_class)->dispose (object);
 }
@@ -237,7 +229,6 @@ update_ui (PlumaTimePluginPrivate *data)
 {
 	PlumaWindow *window;
 	PlumaView *view;
-	GtkAction *action;
 
 	pluma_debug (DEBUG_PLUGINS);
 
@@ -246,11 +237,14 @@ update_ui (PlumaTimePluginPrivate *data)
 
 	pluma_debug_message (DEBUG_PLUGINS, "View: %p", view);
 
-	action = gtk_action_group_get_action (data->action_group,
-					      "InsertDateAndTime");
-	gtk_action_set_sensitive (action,
-				  (view != NULL) &&
-				  gtk_text_view_get_editable (GTK_TEXT_VIEW (view)));
+	if (data->modern_action_group != NULL)
+	{
+		GAction *modern_action = g_action_map_lookup_action (
+			G_ACTION_MAP (data->modern_action_group), "insert-date-time");
+		g_simple_action_set_enabled (G_SIMPLE_ACTION (modern_action),
+		                             (view != NULL) &&
+		                             gtk_text_view_get_editable (GTK_TEXT_VIEW (view)));
+	}
 }
 
 static void
@@ -259,7 +253,6 @@ pluma_time_plugin_activate (PlumaWindowActivatable *activatable)
 	PlumaTimePlugin *plugin;
 	PlumaTimePluginPrivate *data;
 	PlumaWindow *window;
-	GtkUIManager *manager;
 
 	pluma_debug (DEBUG_PLUGINS);
 
@@ -267,27 +260,19 @@ pluma_time_plugin_activate (PlumaWindowActivatable *activatable)
 	data = plugin->priv;
 	window = PLUMA_WINDOW (data->window);
 
-	manager = pluma_window_get_ui_manager (window);
-
-	data->action_group = gtk_action_group_new ("PlumaTimePluginActions");
-	gtk_action_group_set_translation_domain (data->action_group,
-						 GETTEXT_PACKAGE);
-	gtk_action_group_add_actions (data->action_group,
-				      	   action_entries,
-				      	   G_N_ELEMENTS (action_entries),
-				           plugin);
-
-	gtk_ui_manager_insert_action_group (manager, data->action_group, -1);
-
-	data->ui_id = gtk_ui_manager_new_merge_id (manager);
-
-	gtk_ui_manager_add_ui (manager,
-			       data->ui_id,
-			       MENU_PATH,
-			       "InsertDateAndTime",
-			       "InsertDateAndTime",
-			       GTK_UI_MANAGER_MENUITEM,
-			       FALSE);
+	data->modern_action_group = g_simple_action_group_new ();
+	g_action_map_add_action_entries (G_ACTION_MAP (data->modern_action_group),
+	                                 modern_action_entries,
+	                                 G_N_ELEMENTS (modern_action_entries),
+	                                 plugin);
+	gtk_widget_insert_action_group (GTK_WIDGET (window), "plugin-time",
+	                                G_ACTION_GROUP (data->modern_action_group));
+	{
+		GMenuItem *item = g_menu_item_new (_("In_sert Date and Time…"),
+		                                      "plugin-time.insert-date-time");
+		pluma_window_add_menu_item (window, "plugin-edit-section", item);
+		g_object_unref (item);
+	}
 
 	update_ui (data);
 }
@@ -297,17 +282,16 @@ pluma_time_plugin_deactivate (PlumaWindowActivatable *activatable)
 {
 	PlumaTimePluginPrivate *data;
 	PlumaWindow *window;
-	GtkUIManager *manager;
 
 	pluma_debug (DEBUG_PLUGINS);
 
 	data = PLUMA_TIME_PLUGIN (activatable)->priv;
 	window = PLUMA_WINDOW (data->window);
 
-	manager = pluma_window_get_ui_manager (window);
-
-	gtk_ui_manager_remove_ui (manager, data->ui_id);
-	gtk_ui_manager_remove_action_group (manager, data->action_group);
+	gtk_widget_insert_action_group (GTK_WIDGET (window), "plugin-time", NULL);
+	pluma_window_remove_menu_items (window, "plugin-edit-section",
+	                                "plugin-time.insert-date-time");
+	g_clear_object (&data->modern_action_group);
 }
 
 static void
@@ -1033,8 +1017,7 @@ choose_format_dialog_response_cb (GtkWidget          *widget,
 }
 
 static void
-time_cb (GtkAction  *action,
-	 PlumaTimePlugin *plugin)
+time_cb (PlumaTimePlugin *plugin)
 {
 	PlumaWindow *window;
 	GtkTextBuffer *buffer;

@@ -94,6 +94,38 @@ maybe_finish (PlumaToolCapture *capture)
         capture->on_end_execute (capture, capture->exit_code, capture->user_data);
 }
 
+/* Tool output is arbitrary bytes, not guaranteed UTF-8 (and a multibyte
+ * sequence can be split across a read boundary). GtkTextBuffer asserts on
+ * invalid UTF-8, so make sure whatever we hand to callbacks is always
+ * valid: try as-is, then the locale encoding, then replace bad bytes. */
+static gchar *
+sanitize_utf8 (const gchar *text)
+{
+    gchar *converted;
+    GString *out;
+    const gchar *p, *end;
+
+    if (g_utf8_validate (text, -1, NULL))
+        return g_strdup (text);
+
+    converted = g_locale_to_utf8 (text, -1, NULL, NULL, NULL);
+    if (converted != NULL) {
+        if (g_utf8_validate (converted, -1, NULL))
+            return converted;
+        g_free (converted);
+    }
+
+    out = g_string_new (NULL);
+    p = text;
+    while (!g_utf8_validate (p, -1, &end)) {
+        g_string_append_len (out, p, end - p);
+        g_string_append (out, "\xef\xbf\xbd"); /* U+FFFD replacement character */
+        p = end + 1;
+    }
+    g_string_append (out, p);
+    return g_string_free (out, FALSE);
+}
+
 static void
 on_line_read (GObject *source, GAsyncResult *result, gpointer user_data)
 {
@@ -108,13 +140,15 @@ on_line_read (GObject *source, GAsyncResult *result, gpointer user_data)
         g_error_free (error);
 
     if (line != NULL) {
-        gchar *with_nl = g_strconcat (line, "\n", NULL);
+        gchar *safe_line = sanitize_utf8 (line);
+        gchar *with_nl = g_strconcat (safe_line, "\n", NULL);
         PlumaToolCaptureLineFunc func = is_stdout ? capture->on_stdout_line : capture->on_stderr_line;
 
         if (func != NULL)
             func (capture, with_nl, capture->user_data);
 
         g_free (with_nl);
+        g_free (safe_line);
         g_free (line);
         g_data_input_stream_read_line_async (stream, G_PRIORITY_DEFAULT, capture->cancellable, on_line_read, capture);
     } else {

@@ -36,9 +36,12 @@ libpluma_la_LIBADD += $(PLUMA_LIBS) -lICE
 
 BUILT_SOURCES = 			\
 	pluma-enum-types.c		\
-	pluma-enum-types.h
+	pluma-enum-types.h		\
+	pluma-file-browser-enum-types.c	\
+	pluma-file-browser-enum-types.h
 
 NOINST_H_FILES =			\
+	pluma-action-migration.h	\
 	pluma-close-button.h		\
 	pluma-dirs.h			\
 	pluma-document-input-stream.h	\
@@ -46,7 +49,19 @@ NOINST_H_FILES =			\
 	pluma-document-output-stream.h	\
 	pluma-document-saver.h		\
 	pluma-documents-panel.h		\
+	pluma-file-bookmarks-store.h	\
+	pluma-file-browser-error.h	\
+	pluma-file-browser-messages.h	\
+	pluma-file-browser-panel.h	\
+	pluma-file-browser-store.h	\
+	pluma-file-browser-utils.h	\
+	pluma-file-browser-view.h	\
+	pluma-file-browser-widget.h	\
 	pluma-file-chooser-dialog.h	\
+	pluma-git-commit.h		\
+	pluma-git-diff.h		\
+	pluma-git-panel.h		\
+	pluma-git-status-parser.h	\
 	pluma-history-entry.h		\
 	pluma-io-error-message-area.h	\
 	pluma-language-manager.h	\
@@ -54,6 +69,7 @@ NOINST_H_FILES =			\
 	pluma-plugins-engine.h		\
 	pluma-print-job.h		\
 	pluma-print-preview.h		\
+	pluma-project-search-panel.h	\
 	pluma-session.h			\
 	pluma-settings.h		\
 	pluma-smart-charset-converter.h	\
@@ -98,6 +114,7 @@ header_DATA = 				\
 	$(INST_H_FILES)
 
 libpluma_c_files = 			\
+	pluma-action-migration.c	\
 	pluma-app.c			\
 	pluma-app-activatable.c 	\
 	pluma-application.c		\
@@ -119,6 +136,13 @@ libpluma_c_files = 			\
 	pluma-documents-panel.c		\
 	pluma-encodings.c		\
 	pluma-encodings-combo-box.c	\
+	pluma-file-bookmarks-store.c	\
+	pluma-file-browser-messages.c	\
+	pluma-file-browser-panel.c	\
+	pluma-file-browser-store.c	\
+	pluma-file-browser-utils.c	\
+	pluma-file-browser-view.c	\
+	pluma-file-browser-widget.c	\
 	pluma-file-chooser-dialog.c	\
 	pluma-help.c			\
 	pluma-history-entry.c		\
@@ -134,6 +158,7 @@ libpluma_c_files = 			\
 	pluma-print-job.c		\
 	pluma-print-preview.c		\
 	pluma-progress-message-area.c	\
+	pluma-project-search-panel.c	\
 	pluma-session.c			\
 	pluma-settings.c		\
 	pluma-smart-charset-converter.c	\
@@ -163,11 +188,35 @@ if !ENABLE_GVFS_METADATA
 libpluma_la_SOURCES += pluma-metadata-manager.c
 endif
 
+if ENABLE_GIT
+libpluma_la_SOURCES += 			\
+	pluma-git-panel.c		\
+	pluma-git-commit.c		\
+	pluma-git-diff.c		\
+	pluma-git-status-parser.c
+endif
+
 pluma-enum-types.h: pluma-enum-types.h.template $(INST_H_FILES) $(GLIB_MKENUMS)
 	$(AM_V_GEN) (cd $(srcdir) && $(GLIB_MKENUMS) --template pluma-enum-types.h.template $(INST_H_FILES)) > $@
 
 pluma-enum-types.c: pluma-enum-types.c.template $(INST_H_FILES) $(GLIB_MKENUMS)
 	$(AM_V_GEN) (cd $(srcdir) && $(GLIB_MKENUMS) --template pluma-enum-types.c.template $(INST_H_FILES)) > $@
+
+file_browser_enum_headers = 		\
+	pluma-file-bookmarks-store.h	\
+	pluma-file-browser-store.h	\
+	pluma-file-browser-view.h	\
+	pluma-file-browser-widget.h	\
+	pluma-file-browser-error.h	\
+	pluma-file-browser-utils.h	\
+	pluma-file-browser-panel.h	\
+	pluma-file-browser-messages.h
+
+pluma-file-browser-enum-types.h: pluma-file-browser-enum-types.h.template $(file_browser_enum_headers) $(GLIB_MKENUMS)
+	$(AM_V_GEN) (cd $(srcdir) && $(GLIB_MKENUMS) --template pluma-file-browser-enum-types.h.template $(file_browser_enum_headers)) > $@
+
+pluma-file-browser-enum-types.c: pluma-file-browser-enum-types.c.template $(file_browser_enum_headers) $(GLIB_MKENUMS)
+	$(AM_V_GEN) (cd $(srcdir) && $(GLIB_MKENUMS) --template pluma-file-browser-enum-types.c.template $(file_browser_enum_headers)) > $@
 
 aboutdir = $(datadir)/pluma/
 about_DATA =				\
@@ -179,6 +228,8 @@ ui_files = pluma-print-preferences.ui
 include $(top_srcdir)/gla11y.mk
 ui_DATA = 				\
 	pluma-ui.xml			\
+	pluma-menus.ui			\
+	pluma-file-browser-widget-ui.xml	\
 	$(ui_files)
 
 EXTRA_DIST = 				\
@@ -186,6 +237,8 @@ EXTRA_DIST = 				\
 	$(about_DATA)			\
 	pluma-enum-types.h.template	\
 	pluma-enum-types.c.template	\
+	pluma-file-browser-enum-types.h.template \
+	pluma-file-browser-enum-types.c.template \
 	pluma.rc			\
 	ui-a11y.suppr
 

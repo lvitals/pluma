@@ -51,6 +51,7 @@ struct _PlumaSortPluginPrivate
 	PlumaWindow *window;
 
 	GtkActionGroup *ui_action_group;
+	GSimpleActionGroup *modern_action_group;
 	guint ui_id;
 
 	GtkWidget *dialog;
@@ -71,6 +72,17 @@ G_DEFINE_DYNAMIC_TYPE_EXTENDED (PlumaSortPlugin,
                                                                peas_activatable_iface_init))
 
 static void sort_cb (GtkAction *action, PlumaSortPlugin *plugin);
+
+static void
+sort_action_activated (GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+	sort_cb (NULL, PLUMA_SORT_PLUGIN (user_data));
+}
+
+static const GActionEntry modern_action_entries[] =
+{
+	{ "sort", sort_action_activated, NULL, NULL, NULL, { 0, 0, 0 } }
+};
 
 static const GtkActionEntry action_entries[] =
 {
@@ -305,6 +317,13 @@ update_ui (PlumaSortPlugin *plugin)
 	gtk_action_group_set_sensitive (plugin->priv->ui_action_group,
 					(view != NULL) &&
 					gtk_text_view_get_editable (GTK_TEXT_VIEW (view)));
+	if (plugin->priv->modern_action_group != NULL)
+	{
+		GAction *action = g_action_map_lookup_action (G_ACTION_MAP (plugin->priv->modern_action_group), "sort");
+		g_simple_action_set_enabled (G_SIMPLE_ACTION (action),
+		                             (view != NULL) &&
+		                             gtk_text_view_get_editable (GTK_TEXT_VIEW (view)));
+	}
 }
 
 static void
@@ -341,6 +360,18 @@ pluma_sort_plugin_activate (PlumaWindowActivatable *activatable)
 			       GTK_UI_MANAGER_MENUITEM,
 			       FALSE);
 
+	priv->modern_action_group = g_simple_action_group_new ();
+	g_action_map_add_action_entries (G_ACTION_MAP (priv->modern_action_group),
+	                                 modern_action_entries,
+	                                 G_N_ELEMENTS (modern_action_entries), activatable);
+	gtk_widget_insert_action_group (GTK_WIDGET (priv->window), "plugin-sort",
+	                                G_ACTION_GROUP (priv->modern_action_group));
+	{
+		GMenuItem *item = g_menu_item_new (_("S_ort…"), "plugin-sort.sort");
+		pluma_window_add_menu_item (priv->window, "plugin-edit-section", item);
+		g_object_unref (item);
+	}
+
 	update_ui (PLUMA_SORT_PLUGIN (activatable));
 }
 
@@ -359,7 +390,10 @@ pluma_sort_plugin_deactivate (PlumaWindowActivatable *activatable)
 	gtk_ui_manager_remove_ui (manager,
 				  priv->ui_id);
 	gtk_ui_manager_remove_action_group (manager,
-					    priv->ui_action_group);
+				    priv->ui_action_group);
+	gtk_widget_insert_action_group (GTK_WIDGET (priv->window), "plugin-sort", NULL);
+	pluma_window_remove_menu_items (priv->window, "plugin-edit-section", "plugin-sort.sort");
+	g_clear_object (&priv->modern_action_group);
 }
 
 static void
@@ -387,6 +421,7 @@ pluma_sort_plugin_dispose (GObject *object)
 
 	g_clear_object (&plugin->priv->window);
 	g_clear_object (&plugin->priv->ui_action_group);
+	g_clear_object (&plugin->priv->modern_action_group);
 
 	G_OBJECT_CLASS (pluma_sort_plugin_parent_class)->dispose (object);
 }
