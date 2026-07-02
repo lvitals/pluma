@@ -697,6 +697,58 @@ apply_toolbar_style (PlumaWindow *window,
     }
 }
 
+/* Toolbar, statusbar and the three side panels are fully native GActions
+ * (see create_modern_document_action_mirrors()); these helpers keep their
+ * state/enabled flag in sync with the actual widget visibility. The action
+ * may not exist yet when these run during window construction (mirroring
+ * is deferred until the window is attached to the GtkApplication), so a
+ * missing action is a silent no-op: the action is seeded with the correct
+ * state from the widget when it is created. */
+static void
+sync_view_toggle_action_state (PlumaWindow *window,
+                               const gchar *action_name,
+                               gboolean     active)
+{
+    GAction *action = g_action_map_lookup_action (G_ACTION_MAP (window), action_name);
+    GVariant *state;
+
+    if (action == NULL)
+        return;
+
+    state = g_action_get_state (G_ACTION (action));
+    if (g_variant_get_boolean (state) != active)
+        g_simple_action_set_state (G_SIMPLE_ACTION (action), g_variant_new_boolean (active));
+    g_variant_unref (state);
+}
+
+static void
+sync_view_toggle_action_enabled (PlumaWindow *window,
+                                 const gchar *action_name,
+                                 gboolean     enabled)
+{
+    GAction *action = g_action_map_lookup_action (G_ACTION_MAP (window), action_name);
+
+    if (action != NULL)
+        g_simple_action_set_enabled (G_SIMPLE_ACTION (action), enabled);
+}
+
+static gboolean
+get_view_toggle_action_state (PlumaWindow *window,
+                              const gchar *action_name)
+{
+    GAction *action = g_action_map_lookup_action (G_ACTION_MAP (window), action_name);
+    GVariant *state;
+    gboolean active;
+
+    if (action == NULL)
+        return FALSE;
+
+    state = g_action_get_state (G_ACTION (action));
+    active = g_variant_get_boolean (state);
+    g_variant_unref (state);
+    return active;
+}
+
 /* Returns TRUE if toolbar is visible */
 static gboolean
 set_toolbar_style (PlumaWindow *window,
@@ -704,7 +756,6 @@ set_toolbar_style (PlumaWindow *window,
 {
     gboolean visible;
     PlumaToolbarSetting style;
-    GtkAction *action;
 
     if (origin == NULL)
         visible = g_settings_get_boolean (window->priv->editor_settings,
@@ -718,11 +769,7 @@ set_toolbar_style (PlumaWindow *window,
     else
         gtk_widget_hide (window->priv->toolbar);
 
-    action = gtk_action_group_get_action (window->priv->always_sensitive_action_group,
-                                          "ViewToolbar");
-
-    if (gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action)) != visible)
-        gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action), visible);
+    sync_view_toggle_action_state (window, "show-toolbar", visible);
 
     /* Set style */
     if (origin == NULL)
@@ -1597,18 +1644,13 @@ toolbar_visibility_changed (GtkWidget   *toolbar,
                             PlumaWindow *window)
 {
     gboolean visible;
-    GtkAction *action;
 
     visible = gtk_widget_get_visible (toolbar);
 
     g_settings_set_boolean (window->priv->editor_settings,
                             PLUMA_SETTINGS_TOOLBAR_VISIBLE, visible);
 
-    action = gtk_action_group_get_action (window->priv->always_sensitive_action_group,
-                                          "ViewToolbar");
-
-    if (gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action)) != visible)
-        gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action), visible);
+    sync_view_toggle_action_state (window, "show-toolbar", visible);
 }
 
 static GtkWidget *
@@ -1869,17 +1911,11 @@ create_modern_document_action_mirrors (PlumaWindow *window)
 		{ "SearchIncrementalSearch", "incremental-search", incremental_accels }
 	};
 	static const PlumaLegacyActionMapping view_mappings[] = {
-		{ "ViewToolbar", "show-toolbar", NULL },
-		{ "ViewStatusbar", "show-statusbar", NULL },
 		{ "ViewFullscreen", "fullscreen", fullscreen_accels }
-	};
-	static const PlumaLegacyActionMapping pane_mappings[] = {
-		{ "ViewSidePane", "show-side-pane", side_pane_accels },
-		{ "ViewBottomPane", "show-bottom-pane", bottom_pane_accels },
-		{ "ViewRightPane", "show-right-pane", right_pane_accels }
 	};
 	GtkApplication *application = gtk_window_get_application (GTK_WINDOW (window));
 	GSimpleAction *parameterized_action;
+	GSimpleAction *toggle_action;
 
 	if (application == NULL)
 		return;
@@ -1899,9 +1935,54 @@ create_modern_document_action_mirrors (PlumaWindow *window)
 	pluma_action_migration_mirror_group (application, G_ACTION_MAP (window),
 	                                     window->priv->always_sensitive_action_group,
 	                                     view_mappings, G_N_ELEMENTS (view_mappings));
-	pluma_action_migration_mirror_group (application, G_ACTION_MAP (window),
-	                                     window->priv->panes_action_group,
-	                                     pane_mappings, G_N_ELEMENTS (pane_mappings));
+
+	/* Toolbar/statusbar/side/bottom/right-pane visibility: native stateful
+	 * GActions, not mirrored from any legacy GtkToggleAction. Initial state
+	 * is read straight from the widgets, since by the time this runs
+	 * (deferred to notify::application) construction has already set their
+	 * real visibility from GSettings; sync_view_toggle_action_state() and
+	 * friends (pluma-window.c) keep them in sync afterwards, and
+	 * _pluma_cmd_view_show_* (pluma-commands-view.c) implement the actions
+	 * themselves via the "change-state" signal. */
+	toggle_action = g_simple_action_new_stateful ("show-toolbar", NULL,
+		g_variant_new_boolean (gtk_widget_get_visible (window->priv->toolbar)));
+	g_signal_connect (toggle_action, "change-state",
+	                  G_CALLBACK (_pluma_cmd_view_show_toolbar), window);
+	g_action_map_add_action (G_ACTION_MAP (window), G_ACTION (toggle_action));
+	g_object_unref (toggle_action);
+
+	toggle_action = g_simple_action_new_stateful ("show-statusbar", NULL,
+		g_variant_new_boolean (gtk_widget_get_visible (window->priv->statusbar)));
+	g_signal_connect (toggle_action, "change-state",
+	                  G_CALLBACK (_pluma_cmd_view_show_statusbar), window);
+	g_action_map_add_action (G_ACTION_MAP (window), G_ACTION (toggle_action));
+	g_object_unref (toggle_action);
+
+	toggle_action = g_simple_action_new_stateful ("show-side-pane", NULL,
+		g_variant_new_boolean (gtk_widget_get_visible (window->priv->side_panel)));
+	g_signal_connect (toggle_action, "change-state",
+	                  G_CALLBACK (_pluma_cmd_view_show_side_pane), window);
+	g_action_map_add_action (G_ACTION_MAP (window), G_ACTION (toggle_action));
+	g_object_unref (toggle_action);
+	gtk_application_set_accels_for_action (application, "win.show-side-pane", side_pane_accels);
+
+	toggle_action = g_simple_action_new_stateful ("show-bottom-pane", NULL,
+		g_variant_new_boolean (gtk_widget_get_visible (window->priv->bottom_panel)));
+	g_simple_action_set_enabled (toggle_action,
+		pluma_panel_get_n_items (PLUMA_PANEL (window->priv->bottom_panel)) > 0);
+	g_signal_connect (toggle_action, "change-state",
+	                  G_CALLBACK (_pluma_cmd_view_show_bottom_pane), window);
+	g_action_map_add_action (G_ACTION_MAP (window), G_ACTION (toggle_action));
+	g_object_unref (toggle_action);
+	gtk_application_set_accels_for_action (application, "win.show-bottom-pane", bottom_pane_accels);
+
+	toggle_action = g_simple_action_new_stateful ("show-right-pane", NULL,
+		g_variant_new_boolean (gtk_widget_get_visible (window->priv->right_panel)));
+	g_signal_connect (toggle_action, "change-state",
+	                  G_CALLBACK (_pluma_cmd_view_show_right_pane), window);
+	g_action_map_add_action (G_ACTION_MAP (window), G_ACTION (toggle_action));
+	g_object_unref (toggle_action);
+	gtk_application_set_accels_for_action (application, "win.show-right-pane", right_pane_accels);
 
 	parameterized_action = g_simple_action_new ("open-recent", G_VARIANT_TYPE_STRING);
 	g_signal_connect (parameterized_action, "activate",
@@ -2005,16 +2086,10 @@ create_menu_bar_and_toolbar (PlumaWindow *window,
     g_object_unref (action_group);
     window->priv->close_action_group = action_group;
 
-    action_group = gtk_action_group_new ("PlumaWindowPanesActions");
-    gtk_action_group_set_translation_domain (action_group, NULL);
-    gtk_action_group_add_toggle_actions (action_group,
-                                         pluma_panes_toggle_menu_entries,
-                                         G_N_ELEMENTS (pluma_panes_toggle_menu_entries),
-                                         window);
-
-    gtk_ui_manager_insert_action_group (manager, action_group, 0);
-    g_object_unref (action_group);
-    window->priv->panes_action_group = action_group;
+    /* Side/bottom/right pane visibility are native GActions, created below
+     * in create_modern_document_action_mirrors() — there is no legacy
+     * GtkActionGroup/GtkToggleAction backing them (see
+     * sync_view_toggle_action_state() and friends). */
 
     /* Transitional GActions for the document wave.  The visible legacy UI
      * remains in place until its GMenuModel counterpart reaches parity.
@@ -2311,7 +2386,6 @@ static gboolean
 set_statusbar_style (PlumaWindow *window,
                      PlumaWindow *origin)
 {
-    GtkAction *action;
     gboolean visible;
 
     if (origin == NULL)
@@ -2325,11 +2399,7 @@ set_statusbar_style (PlumaWindow *window,
     else
         gtk_widget_hide (window->priv->statusbar);
 
-    action = gtk_action_group_get_action (window->priv->always_sensitive_action_group,
-                                          "ViewStatusbar");
-
-    if (gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action)) != visible)
-        gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action), visible);
+    sync_view_toggle_action_state (window, "show-statusbar", visible);
 
     return visible;
 }
@@ -2339,18 +2409,13 @@ statusbar_visibility_changed (GtkWidget   *statusbar,
                               PlumaWindow *window)
 {
     gboolean visible;
-    GtkAction *action;
 
     visible = gtk_widget_get_visible (statusbar);
 
     g_settings_set_boolean (window->priv->editor_settings,
                             PLUMA_SETTINGS_STATUSBAR_VISIBLE, visible);
 
-    action = gtk_action_group_get_action (window->priv->always_sensitive_action_group,
-                                          "ViewStatusbar");
-
-    if (gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action)) != visible)
-        gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action), visible);
+    sync_view_toggle_action_state (window, "show-statusbar", visible);
 }
 
 static void
@@ -4200,7 +4265,6 @@ side_panel_visibility_changed (GtkWidget   *side_panel,
                                PlumaWindow *window)
 {
     gboolean   visible;
-    GtkAction *action;
 
     visible = gtk_widget_get_visible (side_panel);
 
@@ -4222,11 +4286,7 @@ side_panel_visibility_changed (GtkWidget   *side_panel,
                             PLUMA_SETTINGS_SIDE_PANE_VISIBLE,
                             visible);
 
-    action = gtk_action_group_get_action (window->priv->panes_action_group,
-                                          "ViewSidePane");
-
-    if (gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action)) != visible)
-        gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action), visible);
+    sync_view_toggle_action_state (window, "show-side-pane", visible);
 
     /* focus the document */
     if (!visible && window->priv->active_tab != NULL)
@@ -4289,7 +4349,6 @@ bottom_panel_visibility_changed (PlumaPanel  *bottom_panel,
                                  PlumaWindow *window)
 {
     gboolean visible;
-    GtkAction *action;
 
     visible = gtk_widget_get_visible (GTK_WIDGET (bottom_panel));
 
@@ -4297,11 +4356,7 @@ bottom_panel_visibility_changed (PlumaPanel  *bottom_panel,
                             PLUMA_SETTINGS_BOTTOM_PANE_VISIBLE,
                             visible);
 
-    action = gtk_action_group_get_action (window->priv->panes_action_group,
-                                          "ViewBottomPane");
-
-    if (gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action)) != visible)
-        gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action), visible);
+    sync_view_toggle_action_state (window, "show-bottom-pane", visible);
 
     /* focus the document */
     if (!visible && window->priv->active_tab != NULL)
@@ -4315,13 +4370,9 @@ bottom_panel_item_removed (PlumaPanel  *panel,
 {
     if (pluma_panel_get_n_items (panel) == 0)
     {
-        GtkAction *action;
-
         gtk_widget_hide (GTK_WIDGET (panel));
 
-        action = gtk_action_group_get_action (window->priv->panes_action_group,
-                                              "ViewBottomPane");
-        gtk_action_set_sensitive (action, FALSE);
+        sync_view_toggle_action_enabled (window, "show-bottom-pane", FALSE);
     }
 }
 
@@ -4334,14 +4385,11 @@ bottom_panel_item_added (PlumaPanel  *panel,
      * sensitive and if needed show the panel */
     if (pluma_panel_get_n_items (panel) == 1)
     {
-        GtkAction *action;
         gboolean show;
 
-        action = gtk_action_group_get_action (window->priv->panes_action_group,
-                                              "ViewBottomPane");
-        gtk_action_set_sensitive (action, TRUE);
+        sync_view_toggle_action_enabled (window, "show-bottom-pane", TRUE);
 
-        show = gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action));
+        show = get_view_toggle_action_state (window, "show-bottom-pane");
         if (show)
             gtk_widget_show (GTK_WIDGET (panel));
     }
@@ -4375,7 +4423,6 @@ right_panel_visibility_changed (PlumaPanel  *right_panel,
                                  PlumaWindow *window)
 {
     gboolean visible;
-    GtkAction *action;
 
     visible = gtk_widget_get_visible (GTK_WIDGET (right_panel));
 
@@ -4383,11 +4430,7 @@ right_panel_visibility_changed (PlumaPanel  *right_panel,
                                        PLUMA_SETTINGS_RIGHT_PANE_VISIBLE,
                                        visible);
 
-    action = gtk_action_group_get_action (window->priv->panes_action_group,
-                                          "ViewRightPane");
-
-    if (gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action)) != visible)
-        gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action), visible);
+    sync_view_toggle_action_state (window, "show-right-pane", visible);
 
     /* focus the document */
     if (!visible && window->priv->active_tab != NULL)
@@ -4462,10 +4505,7 @@ init_panels_visibility (PlumaWindow *window)
     }
     else
     {
-        GtkAction *action;
-        action = gtk_action_group_get_action (window->priv->panes_action_group,
-                                              "ViewBottomPane");
-        gtk_action_set_sensitive (action, FALSE);
+        sync_view_toggle_action_enabled (window, "show-bottom-pane", FALSE);
     }
 
     /* right pane */
@@ -5465,9 +5505,6 @@ _pluma_window_fullscreen (PlumaWindow *window)
 void
 _pluma_window_unfullscreen (PlumaWindow *window)
 {
-    gboolean visible;
-    GtkAction *action;
-
     g_return_if_fail (PLUMA_IS_WINDOW (window));
 
     if (!_pluma_window_is_fullscreen (window))
@@ -5481,19 +5518,13 @@ _pluma_window_unfullscreen (PlumaWindow *window)
     gtk_notebook_set_show_tabs (GTK_NOTEBOOK (window->priv->notebook), TRUE);
     gtk_widget_show (window->priv->menubar);
 
-    action = gtk_action_group_get_action (window->priv->always_sensitive_action_group,
-                                          "ViewToolbar");
-    visible = gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action));
-    if (visible)
+    if (get_view_toggle_action_state (window, "show-toolbar"))
         gtk_widget_show (window->priv->toolbar);
     g_signal_handlers_unblock_by_func (window->priv->toolbar,
                                        toolbar_visibility_changed,
                                        window);
 
-    action = gtk_action_group_get_action (window->priv->always_sensitive_action_group,
-                                          "ViewStatusbar");
-    visible = gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action));
-    if (visible)
+    if (get_view_toggle_action_state (window, "show-statusbar"))
         gtk_widget_show (window->priv->statusbar);
     g_signal_handlers_unblock_by_func (window->priv->statusbar,
                                        statusbar_visibility_changed,

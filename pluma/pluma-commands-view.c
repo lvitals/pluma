@@ -44,47 +44,54 @@
 
 
 void
-_pluma_cmd_view_show_toolbar (GtkAction   *action,
-			     PlumaWindow *window)
+_pluma_cmd_view_show_toolbar (GSimpleAction *action,
+			      GVariant      *state,
+			      PlumaWindow   *window)
 {
 	gboolean visible;
 
 	pluma_debug (DEBUG_COMMANDS);
 
-	visible = gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action));
+	visible = g_variant_get_boolean (state);
 
 	if (visible)
 		gtk_widget_show (window->priv->toolbar);
 	else
 		gtk_widget_hide (window->priv->toolbar);
+
+	g_simple_action_set_state (action, state);
 }
 
 void
-_pluma_cmd_view_show_statusbar (GtkAction   *action,
-			       PlumaWindow *window)
+_pluma_cmd_view_show_statusbar (GSimpleAction *action,
+				GVariant      *state,
+				PlumaWindow   *window)
 {
 	gboolean visible;
 
 	pluma_debug (DEBUG_COMMANDS);
 
-	visible = gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action));
+	visible = g_variant_get_boolean (state);
 
 	if (visible)
 		gtk_widget_show (window->priv->statusbar);
 	else
 		gtk_widget_hide (window->priv->statusbar);
+
+	g_simple_action_set_state (action, state);
 }
 
 void
-_pluma_cmd_view_show_side_pane (GtkAction   *action,
-			       PlumaWindow *window)
+_pluma_cmd_view_show_side_pane (GSimpleAction *action,
+				GVariant      *state,
+				PlumaWindow   *window)
 {
 	gboolean visible;
 	PlumaPanel *panel;
 
 	pluma_debug (DEBUG_COMMANDS);
 
-	visible = gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action));
+	visible = g_variant_get_boolean (state);
 
 	panel = pluma_window_get_side_panel (window);
 
@@ -97,18 +104,21 @@ _pluma_cmd_view_show_side_pane (GtkAction   *action,
 	{
 		gtk_widget_hide (GTK_WIDGET (panel));
 	}
+
+	g_simple_action_set_state (action, state);
 }
 
 void
-_pluma_cmd_view_show_bottom_pane (GtkAction   *action,
-				 PlumaWindow *window)
+_pluma_cmd_view_show_bottom_pane (GSimpleAction *action,
+				  GVariant      *state,
+				  PlumaWindow   *window)
 {
 	gboolean visible;
 	PlumaPanel *panel;
 
 	pluma_debug (DEBUG_COMMANDS);
 
-	visible = gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action));
+	visible = g_variant_get_boolean (state);
 
 	panel = pluma_window_get_bottom_panel (window);
 
@@ -121,18 +131,21 @@ _pluma_cmd_view_show_bottom_pane (GtkAction   *action,
 	{
 		gtk_widget_hide (GTK_WIDGET (panel));
 	}
+
+	g_simple_action_set_state (action, state);
 }
 
 void
-_pluma_cmd_view_show_right_pane (GtkAction   *action,
-				 PlumaWindow *window)
+_pluma_cmd_view_show_right_pane (GSimpleAction *action,
+				 GVariant      *state,
+				 PlumaWindow   *window)
 {
 	gboolean visible;
 	PlumaPanel *panel;
 
 	pluma_debug (DEBUG_COMMANDS);
 
-	visible = gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action));
+	visible = g_variant_get_boolean (state);
 
 	panel = pluma_window_get_right_panel (window);
 
@@ -145,6 +158,8 @@ _pluma_cmd_view_show_right_pane (GtkAction   *action,
 	{
 		gtk_widget_hide (GTK_WIDGET (panel));
 	}
+
+	g_simple_action_set_state (action, state);
 }
 
 void

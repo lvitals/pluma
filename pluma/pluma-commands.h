@@ -131,16 +131,24 @@ void		_pluma_cmd_edit_zoom_reset		(GtkAction   *action,
 void		_pluma_cmd_edit_preferences		(GtkAction   *action,
 							 PlumaWindow *window);
 
-void		_pluma_cmd_view_show_toolbar		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_view_show_statusbar		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_view_show_side_pane		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_view_show_bottom_pane	(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_view_show_right_pane		(GtkAction   *action,
-							 PlumaWindow *window);
+/* Native stateful GActions (win.show-toolbar/show-statusbar/show-side-pane/
+ * show-bottom-pane/show-right-pane) — wired via the "change-state" signal,
+ * not a legacy GtkToggleActionEntry callback. */
+void		_pluma_cmd_view_show_toolbar		(GSimpleAction *action,
+							 GVariant      *state,
+							 PlumaWindow   *window);
+void		_pluma_cmd_view_show_statusbar		(GSimpleAction *action,
+							 GVariant      *state,
+							 PlumaWindow   *window);
+void		_pluma_cmd_view_show_side_pane		(GSimpleAction *action,
+							 GVariant      *state,
+							 PlumaWindow   *window);
+void		_pluma_cmd_view_show_bottom_pane	(GSimpleAction *action,
+							 GVariant      *state,
+							 PlumaWindow   *window);
+void		_pluma_cmd_view_show_right_pane		(GSimpleAction *action,
+							 GVariant      *state,
+							 PlumaWindow   *window);
 void		_pluma_cmd_view_toggle_fullscreen_mode	(GtkAction   *action,
 							 PlumaWindow *window);
 void		_pluma_cmd_view_leave_fullscreen_mode	(GtkAction   *action,

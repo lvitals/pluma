@@ -177,31 +177,18 @@ static const GtkActionEntry pluma_quit_menu_entries[] =
 	  N_("Quit the program"), G_CALLBACK (_pluma_cmd_file_quit) }
 };
 
+/* Toolbar/statusbar/side/bottom/right-pane visibility are native stateful
+ * GActions (win.show-toolbar, win.show-statusbar, win.show-side-pane,
+ * win.show-bottom-pane, win.show-right-pane) created directly in
+ * create_modern_document_action_mirrors() (pluma-window.c) — there is no
+ * legacy GtkToggleAction/GtkActionGroup backing them any more. Only
+ * Fullscreen remains legacy, since leaving fullscreen also swaps in the
+ * FullscreenToolBar, which is still GtkUIManager-based. */
 static const GtkToggleActionEntry pluma_always_sensitive_toggle_menu_entries[] =
 {
-	{ "ViewToolbar", NULL, N_("_Toolbar"), NULL,
-	  N_("Show or hide the toolbar in the current window"),
-	  G_CALLBACK (_pluma_cmd_view_show_toolbar), TRUE },
-	{ "ViewStatusbar", NULL, N_("_Statusbar"), NULL,
-	  N_("Show or hide the statusbar in the current window"),
-	  G_CALLBACK (_pluma_cmd_view_show_statusbar), TRUE },
 	{ "ViewFullscreen", "view-fullscreen", N_("_Fullscreen"), "F11",
 	  N_("Edit text in fullscreen"),
 	  G_CALLBACK (_pluma_cmd_view_toggle_fullscreen_mode), FALSE }
-};
-
-/* separate group, should be always sensitive except when there are no panes */
-static const GtkToggleActionEntry pluma_panes_toggle_menu_entries[] =
-{
-	{ "ViewSidePane", NULL, N_("Side _Pane"), "F9",
-	  N_("Show or hide the side pane in the current window"),
-	  G_CALLBACK (_pluma_cmd_view_show_side_pane), FALSE },
-	{ "ViewBottomPane", NULL, N_("_Bottom Pane"), "<control>F9",
-	  N_("Show or hide the bottom pane in the current window"),
-	  G_CALLBACK (_pluma_cmd_view_show_bottom_pane), FALSE },
-	{ "ViewRightPane", NULL, N_("_Right Pane"), "<shift>F9",
-	  N_("Show or hide the right pane in the current window"),
-	  G_CALLBACK (_pluma_cmd_view_show_right_pane), FALSE }
 };
 
 G_END_DECLS

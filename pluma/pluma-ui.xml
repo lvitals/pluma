@@ -88,12 +88,10 @@
     </menu>
 
     <menu name="ViewMenu" action="View">
-      <menuitem name="ViewToolbarMenu" action="ViewToolbar"/>
-      <menuitem name="ViewStatusbarMenu" action="ViewStatusbar"/>
-      <menuitem name="ViewSidePaneMenu" action="ViewSidePane"/>
-      <menuitem name="ViewBottomPaneMenu" action="ViewBottomPane"/>
-      <menuitem name="ViewRightPaneMenu" action="ViewRightPane"/>
-      <separator/>
+      <!-- Toolbar/Statusbar/SidePane/BottomPane/RightPane are native
+           win.show-* GActions now (see create_modern_document_action_mirrors
+           in pluma-window.c); this legacy XML only backs the fallback
+           /MenuBar widget and the toolbar/popup definitions below. -->
       <menuitem name="ViewFullscreenMenu" action="ViewFullscreen"/>
       <separator/>
       <menu name="ViewHighlightModeMenu" action="ViewHighlightMode">
