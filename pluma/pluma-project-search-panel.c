@@ -4,6 +4,7 @@
 #endif
 
 #include <glib/gi18n.h>
+#include <gdk/gdkkeysyms.h>
 #include "pluma-project-search-panel.h"
 #include "pluma-window-private.h"
 #include "pluma-document.h"
@@ -25,6 +26,7 @@ struct _PlumaProjectSearchPanel
 	GSettings *settings;
 	guint serial;
 	gboolean destroyed;
+	gint return_page_id;
 };
 
 G_DEFINE_TYPE (PlumaProjectSearchPanel, pluma_project_search_panel, GTK_TYPE_BOX)
@@ -396,6 +398,58 @@ row_activated (GtkTreeView *view, GtkTreePath *tree_path, GtkTreeViewColumn *col
 	g_free (path);
 }
 
+/* Remembers which side-panel tab (Documents/File Browser/Source Control)
+ * was active before find-in-files switched to Search, so Escape can restore
+ * it. page_id is the same g_str_hash()-of-label id used throughout
+ * pluma-panel.c (see _pluma_panel_get/set_active_item_by_id()); 0 means
+ * "nothing to restore". */
+void
+pluma_project_search_panel_remember_return_page (PlumaProjectSearchPanel *panel,
+                                                  gint                     page_id)
+{
+	panel->return_page_id = page_id;
+}
+
+/* Escape dismisses the search -- it must not hide the side panel, since
+ * that panel is shared with Documents/File Browser/Source Control and
+ * closing it over an Escape typed while searching would take those away
+ * too. The search entry's own unconsumed Escape would otherwise bubble up
+ * to PlumaPanel's Escape->"close" keybinding and hide the whole panel, and
+ * a GtkTreeView with focus (e.g. a result row selected with the keyboard)
+ * has no reason to let Escape propagate that far either. Stop it here in
+ * both cases: switch back to whatever tab (typically File Browser) was
+ * active before the search was opened, or fall back to focusing the active
+ * document if there was nothing to return to. */
+static gboolean
+search_panel_escape_key_press (GtkWidget *widget, GdkEventKey *event, gpointer data)
+{
+	PlumaProjectSearchPanel *panel = data;
+
+	if (event->keyval != GDK_KEY_Escape)
+		return GDK_EVENT_PROPAGATE;
+
+	if (panel->return_page_id != 0)
+	{
+		GtkWidget *side_panel = gtk_widget_get_ancestor (GTK_WIDGET (panel), PLUMA_TYPE_PANEL);
+
+		if (side_panel != NULL)
+		{
+			_pluma_panel_set_active_item_by_id (PLUMA_PANEL (side_panel), panel->return_page_id);
+			gtk_widget_grab_focus (side_panel);
+			return GDK_EVENT_STOP;
+		}
+	}
+
+	{
+		PlumaView *view = pluma_window_get_active_view (panel->window);
+
+		if (view != NULL)
+			gtk_widget_grab_focus (GTK_WIDGET (view));
+	}
+
+	return GDK_EVENT_STOP;
+}
+
 static GtkWidget *toggle (const gchar *label, const gchar *tip)
 {
 	GtkWidget *button = gtk_toggle_button_new_with_label (label);
@@ -428,6 +482,7 @@ pluma_project_search_panel_init (PlumaProjectSearchPanel *panel)
 	GtkWidget *row, *button, *replace_button, *expand_button, *collapse_button, *scroll; GtkTreeViewColumn *column; GtkCellRenderer *renderer;
 	gtk_orientable_set_orientation (GTK_ORIENTABLE (panel), GTK_ORIENTATION_VERTICAL);
 	g_signal_connect (panel, "destroy", G_CALLBACK (panel_destroyed), panel);
+	g_signal_connect (panel, "key-press-event", G_CALLBACK (search_panel_escape_key_press), panel);
 	gtk_box_set_spacing (GTK_BOX (panel), 4); gtk_container_set_border_width (GTK_CONTAINER (panel), 6);
 	row = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 3);
 	panel->search_entry = gtk_search_entry_new (); gtk_entry_set_placeholder_text (GTK_ENTRY (panel->search_entry), _("Search in files"));
@@ -473,6 +528,7 @@ pluma_project_search_panel_init (PlumaProjectSearchPanel *panel)
 	panel->tree=gtk_tree_view_new_with_model(GTK_TREE_MODEL(panel->store)); gtk_tree_view_set_headers_visible(GTK_TREE_VIEW(panel->tree),FALSE);
 	renderer=gtk_cell_renderer_text_new(); column=gtk_tree_view_column_new_with_attributes(_("Results"),renderer,"text",COL_TEXT,NULL); gtk_tree_view_append_column(GTK_TREE_VIEW(panel->tree),column);
 	g_signal_connect(panel->tree,"row-activated",G_CALLBACK(row_activated),panel);
+	g_signal_connect(panel->tree,"key-press-event",G_CALLBACK(search_panel_escape_key_press),panel);
 	scroll=gtk_scrolled_window_new(NULL,NULL); gtk_container_add(GTK_CONTAINER(scroll),panel->tree); gtk_box_pack_start(GTK_BOX(panel),scroll,TRUE,TRUE,0);
 	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,3); panel->status=gtk_label_new(""); gtk_label_set_xalign(GTK_LABEL(panel->status),0);
 	expand_button=gtk_button_new_from_icon_name("list-add",GTK_ICON_SIZE_MENU); gtk_widget_set_tooltip_text(expand_button,_("Expand all")); g_signal_connect(expand_button,"clicked",G_CALLBACK(expand_clicked),panel);

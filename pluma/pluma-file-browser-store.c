@@ -1992,6 +1992,29 @@ node_list_contains_file (GSList *children, GFile * file)
 	return NULL;
 }
 
+/* Unlike node_list_contains_file(), this checks a plain list of GFile
+ * (each holding its own reference) rather than FileBrowserNode pointers.
+ * Used for the async->original_children snapshot in model_add_nodes_from_files():
+ * that snapshot can outlive the nodes it was taken from (e.g. a directory
+ * change event can free one of the original children mid-enumeration, see
+ * on_directory_monitor_event()'s G_FILE_MONITOR_EVENT_DELETED case, which
+ * does not touch dir->cancellable and so does not cancel the in-flight
+ * listing). Comparing against independently-refed GFiles instead of
+ * dereferencing node->file on a FileBrowserNode that may already have been
+ * freed avoids a use-after-free crash in g_file_equal(). */
+static gboolean
+file_list_contains_file (GSList *files, GFile * file)
+{
+	GSList *item;
+
+	for (item = files; item; item = item->next) {
+		if (g_file_equal (G_FILE (item->data), file))
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
 static FileBrowserNode *
 model_add_node_from_file (PlumaFileBrowserStore * model,
 			  FileBrowserNode * parent,
@@ -2034,9 +2057,11 @@ model_add_node_from_file (PlumaFileBrowserStore * model,
 	return node;
 }
 
-/* We pass in a copy of the list of parent->children so that we do
- * not have to check if a file already exists among the ones we just
- * added */
+/* original_children is a snapshot of the GFiles of parent->children taken
+ * when the (possibly multi-batch, async) directory listing started, so we
+ * do not have to check if a file already exists among the ones we just
+ * added. It holds independently-refed GFile pointers rather than
+ * FileBrowserNode pointers -- see file_list_contains_file() for why. */
 static void
 model_add_nodes_from_files (PlumaFileBrowserStore * model,
 			    FileBrowserNode * parent,
@@ -2074,7 +2099,7 @@ model_add_nodes_from_files (PlumaFileBrowserStore * model,
 
 		file = g_file_get_child (parent->file, name);
 
-		if ((node = node_list_contains_file (original_children, file)) == NULL) {
+		if (!file_list_contains_file (original_children, file)) {
 
 			if (g_file_info_get_file_type (info) == G_FILE_TYPE_DIRECTORY) {
 				node = file_browser_node_dir_new (model, file, parent);
@@ -2154,7 +2179,7 @@ static void
 async_node_free (AsyncNode *async)
 {
 	g_object_unref (async->cancellable);
-	g_slist_free (async->original_children);
+	g_slist_free_full (async->original_children, g_object_unref);
 	g_free (async);
 }
 
@@ -2298,7 +2323,25 @@ model_load_directory (PlumaFileBrowserStore * model,
 	async = g_new (AsyncNode, 1);
 	async->dir = dir;
 	async->cancellable = g_object_ref (dir->cancellable);
-	async->original_children = g_slist_copy (dir->children);
+
+	/* Snapshot the GFiles, not the FileBrowserNode pointers: a directory
+	 * change event can remove (and free) one of these children mid-listing
+	 * without cancelling dir->cancellable (see on_directory_monitor_event()'s
+	 * G_FILE_MONITOR_EVENT_DELETED case), which would otherwise leave this
+	 * list holding a dangling pointer for model_add_nodes_from_files() to
+	 * dereference on the next async batch. */
+	{
+		GSList *item;
+
+		async->original_children = NULL;
+		for (item = dir->children; item; item = item->next) {
+			FileBrowserNode *child = item->data;
+
+			if (child->file != NULL)
+				async->original_children = g_slist_prepend (async->original_children,
+									     g_object_ref (child->file));
+		}
+	}
 
 	/* Start loading async */
 	g_file_enumerate_children_async (node->file,

@@ -55,10 +55,21 @@
 void
 _pluma_cmd_search_find_in_files (GtkAction *action, PlumaWindow *window)
 {
+	gint previous_id;
+	/* Matches the label passed to pluma_panel_add_item_with_icon() for the
+	 * Search item in create_side_panel() -- see _pluma_panel_get_active_item_id()
+	 * for why a hash of the (translated) label is used as the id. */
+	gint search_id = g_str_hash (_("Search"));
+
 	g_return_if_fail (PLUMA_IS_WINDOW (window));
+
+	previous_id = _pluma_panel_get_active_item_id (PLUMA_PANEL (window->priv->side_panel));
 	gtk_widget_show (window->priv->side_panel);
 	pluma_panel_activate_item (PLUMA_PANEL (window->priv->side_panel),
 	                           window->priv->project_search_panel);
+	if (previous_id != search_id)
+		pluma_project_search_panel_remember_return_page (
+			PLUMA_PROJECT_SEARCH_PANEL (window->priv->project_search_panel), previous_id);
 	pluma_project_search_panel_focus (PLUMA_PROJECT_SEARCH_PANEL (window->priv->project_search_panel));
 }
 

@@ -407,6 +407,32 @@ pluma_window_key_press_event (GtkWidget   *widget,
     GSettings *settings = g_settings_new (PLUMA_SCHEMA_ID);
     GdkModifierType modifiers = event->state & gtk_accelerator_get_default_mod_mask ();
 
+    /* F9/<Control>F9/<Shift>F9 are handled explicitly with a direct modifier
+     * comparison rather than via gtk_application_set_accels_for_action():
+     * GDK's "consumed modifiers" detection for function keys is unreliable
+     * across keyboard layouts, and was causing <Shift>F9 to activate the
+     * same action as plain F9 while <Control>F9 did nothing. Comparing
+     * "modifiers" (already masked the same way as the rest of this
+     * function) against an exact value sidesteps that entirely. */
+    if (event->keyval == GDK_KEY_F9)
+    {
+        const gchar *action_name = NULL;
+
+        if (modifiers == GDK_SHIFT_MASK)
+            action_name = "show-right-pane";
+        else if (modifiers == GDK_CONTROL_MASK)
+            action_name = "show-bottom-pane";
+        else if (modifiers == 0)
+            action_name = "show-side-pane";
+
+        if (action_name != NULL)
+        {
+            g_action_group_activate_action (G_ACTION_GROUP (window), action_name, NULL);
+            g_object_unref (settings);
+            return TRUE;
+        }
+    }
+
     if (PLUMA_WINDOW (window)->priv->file_chord_timeout_id != 0)
     {
         g_source_remove (PLUMA_WINDOW (window)->priv->file_chord_timeout_id);
@@ -747,6 +773,25 @@ get_view_toggle_action_state (PlumaWindow *window,
     active = g_variant_get_boolean (state);
     g_variant_unref (state);
     return active;
+}
+
+/* GSimpleAction does not toggle its own boolean state automatically on
+ * activation (that only happens for specialized action implementations
+ * such as GSettings-backed actions) -- it requires an explicit "activate"
+ * handler to flip the state. Without this, activating the action from an
+ * accelerator (e.g. F9) does nothing, even though clicking the menu item
+ * still works because GTK toggles GMenu check-items via change-state
+ * directly. Shared by show-toolbar/show-statusbar/show-side-pane/
+ * show-bottom-pane/show-right-pane. */
+static void
+toggle_action_activated (GSimpleAction *action,
+                         GVariant      *parameter,
+                         gpointer       user_data)
+{
+    GVariant *state = g_action_get_state (G_ACTION (action));
+
+    g_action_change_state (G_ACTION (action), g_variant_new_boolean (!g_variant_get_boolean (state)));
+    g_variant_unref (state);
 }
 
 /* Returns TRUE if toolbar is visible */
@@ -1857,9 +1902,6 @@ create_modern_document_action_mirrors (PlumaWindow *window)
 	static const gchar * const find_files_accels[] = { "<Control><Shift>f", NULL };
 	static const gchar * const incremental_accels[] = { "<Control>k", NULL };
 	static const gchar * const fullscreen_accels[] = { "F11", NULL };
-	static const gchar * const side_pane_accels[] = { "F9", NULL };
-	static const gchar * const bottom_pane_accels[] = { "<Control>F9", NULL };
-	static const gchar * const right_pane_accels[] = { "<Shift>F9", NULL };
 	static const PlumaLegacyActionMapping always_mappings[] = {
 		{ "FileNew", "new", new_accels },
 		{ "FileOpen", "open", open_accels },
@@ -1946,6 +1988,8 @@ create_modern_document_action_mirrors (PlumaWindow *window)
 	 * themselves via the "change-state" signal. */
 	toggle_action = g_simple_action_new_stateful ("show-toolbar", NULL,
 		g_variant_new_boolean (gtk_widget_get_visible (window->priv->toolbar)));
+	g_signal_connect (toggle_action, "activate",
+	                  G_CALLBACK (toggle_action_activated), NULL);
 	g_signal_connect (toggle_action, "change-state",
 	                  G_CALLBACK (_pluma_cmd_view_show_toolbar), window);
 	g_action_map_add_action (G_ACTION_MAP (window), G_ACTION (toggle_action));
@@ -1953,36 +1997,44 @@ create_modern_document_action_mirrors (PlumaWindow *window)
 
 	toggle_action = g_simple_action_new_stateful ("show-statusbar", NULL,
 		g_variant_new_boolean (gtk_widget_get_visible (window->priv->statusbar)));
+	g_signal_connect (toggle_action, "activate",
+	                  G_CALLBACK (toggle_action_activated), NULL);
 	g_signal_connect (toggle_action, "change-state",
 	                  G_CALLBACK (_pluma_cmd_view_show_statusbar), window);
 	g_action_map_add_action (G_ACTION_MAP (window), G_ACTION (toggle_action));
 	g_object_unref (toggle_action);
 
+	/* No gtk_application_set_accels_for_action() for the F9 family: see the
+	 * comment in pluma_window_key_press_event() -- their modifiers are
+	 * matched explicitly there instead. */
 	toggle_action = g_simple_action_new_stateful ("show-side-pane", NULL,
 		g_variant_new_boolean (gtk_widget_get_visible (window->priv->side_panel)));
+	g_signal_connect (toggle_action, "activate",
+	                  G_CALLBACK (toggle_action_activated), NULL);
 	g_signal_connect (toggle_action, "change-state",
 	                  G_CALLBACK (_pluma_cmd_view_show_side_pane), window);
 	g_action_map_add_action (G_ACTION_MAP (window), G_ACTION (toggle_action));
 	g_object_unref (toggle_action);
-	gtk_application_set_accels_for_action (application, "win.show-side-pane", side_pane_accels);
 
 	toggle_action = g_simple_action_new_stateful ("show-bottom-pane", NULL,
 		g_variant_new_boolean (gtk_widget_get_visible (window->priv->bottom_panel)));
 	g_simple_action_set_enabled (toggle_action,
 		pluma_panel_get_n_items (PLUMA_PANEL (window->priv->bottom_panel)) > 0);
+	g_signal_connect (toggle_action, "activate",
+	                  G_CALLBACK (toggle_action_activated), NULL);
 	g_signal_connect (toggle_action, "change-state",
 	                  G_CALLBACK (_pluma_cmd_view_show_bottom_pane), window);
 	g_action_map_add_action (G_ACTION_MAP (window), G_ACTION (toggle_action));
 	g_object_unref (toggle_action);
-	gtk_application_set_accels_for_action (application, "win.show-bottom-pane", bottom_pane_accels);
 
 	toggle_action = g_simple_action_new_stateful ("show-right-pane", NULL,
 		g_variant_new_boolean (gtk_widget_get_visible (window->priv->right_panel)));
+	g_signal_connect (toggle_action, "activate",
+	                  G_CALLBACK (toggle_action_activated), NULL);
 	g_signal_connect (toggle_action, "change-state",
 	                  G_CALLBACK (_pluma_cmd_view_show_right_pane), window);
 	g_action_map_add_action (G_ACTION_MAP (window), G_ACTION (toggle_action));
 	g_object_unref (toggle_action);
-	gtk_application_set_accels_for_action (application, "win.show-right-pane", right_pane_accels);
 
 	parameterized_action = g_simple_action_new ("open-recent", G_VARIANT_TYPE_STRING);
 	g_signal_connect (parameterized_action, "activate",

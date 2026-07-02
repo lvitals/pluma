@@ -12,6 +12,8 @@ G_DECLARE_FINAL_TYPE (PlumaProjectSearchPanel, pluma_project_search_panel, PLUMA
 
 GtkWidget *pluma_project_search_panel_new   (PlumaWindow *window);
 void       pluma_project_search_panel_focus (PlumaProjectSearchPanel *panel);
+void       pluma_project_search_panel_remember_return_page (PlumaProjectSearchPanel *panel,
+                                                             gint                     page_id);
 
 G_END_DECLS
 #endif

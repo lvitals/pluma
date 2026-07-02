@@ -26,6 +26,7 @@
 
 #include <glib/gi18n.h>
 #include <gio/gio.h>
+#include <gdk/gdkkeysyms.h>
 #include <string.h>
 
 #include "pluma-app.h"
@@ -742,6 +743,28 @@ on_panel_destroy_cb (GtkWidget             *widget,
 	g_free (priv);
 }
 
+/* Escape must not close the side panel -- it's shared with Documents/Search/
+ * Source Control, so hiding it just because Escape was pressed while
+ * browsing files would take those away too. Unhandled, it would otherwise
+ * bubble up from the tree view to PlumaPanel's Escape->"close" keybinding.
+ * Consume it here instead and return focus to the active document, matching
+ * the same fix applied to the project search panel. */
+static gboolean
+file_browser_escape_key_press (GtkWidget *widget, GdkEventKey *event, gpointer data)
+{
+	PlumaWindow *window = PLUMA_WINDOW (data);
+	PlumaView *view;
+
+	if (event->keyval != GDK_KEY_Escape)
+		return GDK_EVENT_PROPAGATE;
+
+	view = pluma_window_get_active_view (window);
+	if (view != NULL)
+		gtk_widget_grab_focus (GTK_WIDGET (view));
+
+	return GDK_EVENT_STOP;
+}
+
 GtkWidget *
 pluma_file_browser_panel_new (PlumaWindow *window)
 {
@@ -800,6 +823,15 @@ pluma_file_browser_panel_new (PlumaWindow *window)
 			  priv);
 
 	gtk_widget_show (GTK_WIDGET (priv->tree_widget));
+
+	g_signal_connect (priv->tree_widget,
+	                  "key-press-event",
+	                  G_CALLBACK (file_browser_escape_key_press),
+	                  window);
+	g_signal_connect (pluma_file_browser_widget_get_browser_view (priv->tree_widget),
+	                  "key-press-event",
+	                  G_CALLBACK (file_browser_escape_key_press),
+	                  window);
 
 	add_popup_ui (priv);
 	add_quick_open_ui (priv);
