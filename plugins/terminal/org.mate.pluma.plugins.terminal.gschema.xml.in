@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<schemalist>
+  <enum id="org.mate.pluma.plugins.terminal.CursorBlinkMode">
+    <value nick="system" value="0"/><value nick="on" value="1"/><value nick="off" value="2"/>
+  </enum>
+  <enum id="org.mate.pluma.plugins.terminal.CursorShape">
+    <value nick="block" value="0"/><value nick="ibeam" value="1"/><value nick="underline" value="2"/>
+  </enum>
+  <schema gettext-domain="@GETTEXT_PACKAGE@" id="org.mate.pluma.plugins.terminal" path="/org/mate/pluma/plugins/terminal/">
+    <key name="silent-bell" type="b"><default>true</default><summary>Whether to silence terminal bell</summary></key>
+    <key name="scrollback-lines" type="i"><default>100</default><summary>Number of lines to keep in scrollback</summary></key>
+    <key name="scrollback-unlimited" type="b"><default>false</default><summary>Whether scrollback is unlimited</summary></key>
+    <key name="scroll-on-keystroke" type="b"><default>true</default><summary>Scroll to bottom on keystroke</summary></key>
+    <key name="scroll-on-output" type="b"><default>false</default><summary>Scroll to bottom on output</summary></key>
+    <key name="foreground-color" type="s"><default>'#000000'</default><summary>Terminal foreground color</summary></key>
+    <key name="background-color" type="s"><default>'#FFFFDD'</default><summary>Terminal background color</summary></key>
+    <key name="palette" type="s"><default>'#2E2E34343636:#CCCC00000000:#4E4E9A9A0606:#C4C4A0A00000:#34346565A4A4:#757550507B7B:#060698209A9A:#D3D3D7D7CFCF:#555557575353:#EFEF29292929:#8A8AE2E23434:#FCFCE9E94F4F:#72729F9FCFCF:#ADAD7F7FA8A8:#3434E2E2E2E2:#EEEEEEEEECEC'</default><summary>Terminal color palette</summary></key>
+    <key name="use-theme-colors" type="b"><default>true</default><summary>Use theme colors</summary></key>
+    <key name="cursor-blink-mode" enum="org.mate.pluma.plugins.terminal.CursorBlinkMode"><default>'system'</default><summary>Cursor blink mode</summary></key>
+    <key name="cursor-shape" enum="org.mate.pluma.plugins.terminal.CursorShape"><default>'block'</default><summary>Cursor shape</summary></key>
+    <key name="use-system-font" type="b"><default>true</default><summary>Use system monospace font</summary></key>
+    <key name="font" type="s"><default>'Monospace 10'</default><summary>Terminal font</summary></key>
+  </schema>
+</schemalist>

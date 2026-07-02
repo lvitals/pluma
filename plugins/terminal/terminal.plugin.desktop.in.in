@@ -1,0 +1,10 @@
+[Plugin]
+Loader=C
+Module=terminal
+IAge=3
+Name=Embedded Terminal
+Description=Embed a terminal in the bottom pane.
+Icon=utilities-terminal
+Authors=Paolo Borelli\nMATE Developers
+Copyright=Copyright © 2005 Paolo Borelli
+Website=@PACKAGE_URL@
