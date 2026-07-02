@@ -16,5 +16,12 @@
 # with this program; if not, write to the Free Software Foundation, Inc.,
 # 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
-SEARCHTEXT=`zenity --entry --title="Search text on files" --text="Text to search"`
+SEARCHTEXT=$(zenity --entry \
+    --title="Search text on files" \
+    --text="Text to search" 2>/dev/null)
+status=$?
+
+[ "$status" -eq 0 ] || exit 0
+[ -n "$SEARCHTEXT" ] || exit 0
+
 grep -nHIirF -- "$SEARCHTEXT" ./ | sed 's|\([^:]*:[^:]*:\)|\1  |'

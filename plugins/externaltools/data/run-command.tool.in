@@ -1,4 +1,14 @@
 #!/bin/sh
 
-#TODO: use "gsettings get org.mate.applications-terminal exec"
-exec `zenity --entry --title="Run command - Pluma" --text="Command to run"`
+command=$(zenity --entry \
+    --title="Run command - Pluma" \
+    --text="Command to run" 2>/dev/null)
+status=$?
+
+# Closing or cancelling the dialog is not a tool execution error.
+[ "$status" -eq 0 ] || exit 0
+[ -n "$command" ] || exit 0
+
+# Keep the selected command as one shell expression. Its stdout and stderr
+# remain connected to External Tools, while Zenity's own GTK diagnostics do not.
+exec /bin/sh -c "$command"

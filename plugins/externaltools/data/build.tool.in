@@ -1,15 +1,27 @@
 #!/bin/sh
 
-EHOME=`echo $HOME | sed "s/#/\#/"`
-DIR=$PLUMA_CURRENT_DOCUMENT_DIR
-while test "$DIR" != "/"; do
-    for m in GNUmakefile makefile Makefile; do
-        if [ -f "${DIR}/${m}" ]; then
-            echo "Using ${m} from ${DIR}" | sed "s#$EHOME#~#" > /dev/stderr
-            make -C "${DIR}"
-            exit
+EHOME=$(printf '%s\n' "$HOME" | sed 's/#/\\#/g')
+DIR=${PLUMA_CURRENT_DOCUMENT_DIR:-$PWD}
+
+while [ -n "$DIR" ]; do
+    if [ -f "$DIR/meson.build" ]; then
+        BUILD_DIR="$DIR/build"
+        printf 'Using meson.build from %s\n' "$DIR" |
+            sed "s#$EHOME#~#" >&2
+
+        if [ -f "$BUILD_DIR/meson-private/coredata.dat" ]; then
+            meson setup --reconfigure "$BUILD_DIR" "$DIR" || exit $?
+        else
+            meson setup "$BUILD_DIR" "$DIR" || exit $?
         fi
-    done
-    DIR=`dirname "${DIR}"`
+
+        meson compile -C "$BUILD_DIR"
+        exit $?
+    fi
+
+    [ "$DIR" = "/" ] && break
+    DIR=$(dirname "$DIR")
 done
-echo "No Makefile found!" > /dev/stderr
+
+echo "No meson.build found!" >&2
+exit 1

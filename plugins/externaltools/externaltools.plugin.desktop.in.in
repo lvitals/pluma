@@ -1,5 +1,4 @@
 [Plugin]
-Loader=python3
 Module=externaltools
 IAge=2
 Name=External Tools
