@@ -162,6 +162,7 @@ MATE_DESKTOP_REQUIRED=1.27.1
 PKG_CHECK_MODULES(GMODULE,gmodule-2.0,[GMODULE_ADD="gmodule-2.0"],[GMODULE_ADD=""])
 PKG_CHECK_MODULES(PLUMA, [
 	libxml-2.0 >= 2.5.0
+	libarchive >= 3.0
 	glib-2.0 >= 2.50.0
 	$GMODULE_ADD
 	gthread-2.0 >= 2.13.0
@@ -171,6 +172,7 @@ PKG_CHECK_MODULES(PLUMA, [
 	libpeas-1.0 >= 1.2.0
 	libpeas-gtk-1.0 >= 1.2.0
 ])
+PKG_CHECK_MODULES(VTE, [vte-2.91 >= 0.60])
 
 PKG_CHECK_MODULES(MATE_DESKTOP, mate-desktop-2.0 >= $MATE_DESKTOP_REQUIRED)
 AC_SUBST(MATE_DESKTOP_CFLAGS)
@@ -212,6 +214,23 @@ else
 fi
 
 AM_PATH_PYTHON([3.0])
+
+dnl Lua extensions are loaded by libpeas. LGI supplies GTK/Pluma bindings.
+AC_PATH_PROGS([LUA51], [lua5.1 lua51], [no])
+AS_IF([test "x$LUA51" != "xno"], [
+	AC_MSG_CHECKING([for Lua LGI bindings])
+	AS_IF([$LUA51 -e "require('lgi')" >/dev/null 2>&1], [
+		have_lua_lgi=yes
+	], [
+		have_lua_lgi=no
+	])
+	AC_MSG_RESULT([$have_lua_lgi])
+], [
+	have_lua_lgi=no
+])
+AS_IF([test "x$have_lua_lgi" != "xyes"], [
+	AC_MSG_WARN([Lua 5.1 LGI not found; Lua plugins will be unavailable at runtime])
+])
 
 dnl ================================================================
 dnl GSettings related settings
@@ -274,14 +293,10 @@ plugins/pythonconsole/Makefile
 plugins/pythonconsole/pythonconsole.plugin.desktop.in
 plugins/pythonconsole/org.mate.pluma.plugins.pythonconsole.gschema.xml
 plugins/pythonconsole/pythonconsole/Makefile
-plugins/quickopen/Makefile
-plugins/quickopen/quickopen.plugin.desktop.in
-plugins/quickopen/quickopen/Makefile
 plugins/snippets/Makefile
 plugins/snippets/snippets.plugin.desktop.in
 plugins/snippets/data/lang/Makefile
 plugins/snippets/data/Makefile
-plugins/snippets/snippets/Makefile
 plugins/sort/Makefile
 plugins/sort/sort.plugin.desktop.in
 plugins/spell/Makefile
@@ -289,6 +304,10 @@ plugins/spell/org.mate.pluma.plugins.spell.gschema.xml
 plugins/spell/spell.plugin.desktop.in
 plugins/taglist/Makefile
 plugins/taglist/taglist.plugin.desktop.in
+plugins/terminal/Makefile
+plugins/terminal/terminal.plugin.desktop.in
+plugins/terminal/org.mate.pluma.plugins.terminal.gschema.xml
+plugins/terminal/pluma-terminal.metainfo.xml.in
 plugins/time/Makefile
 plugins/time/org.mate.pluma.plugins.time.gschema.xml
 plugins/time/time.plugin.desktop.in

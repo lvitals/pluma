@@ -27,6 +27,7 @@ mate_desktop_req = '>= 1.27.1'
 libpeas_req = '>= 1.2.0'
 
 libxml_dep = dependency('libxml-2.0', version: '>= 2.5.0')
+libarchive_dep = dependency('libarchive', version: '>= 3.0')
 glib_dep = dependency('glib-2.0', version: glib_req)
 gmodule_dep = dependency('gmodule-2.0')
 gthread_dep = dependency('gthread-2.0', version: '>= 2.13.0')
@@ -36,11 +37,12 @@ gtksourceview_dep = dependency('gtksourceview-4', version: gtksourceview_req)
 libpeas_dep = dependency('libpeas-1.0', version: libpeas_req)
 libpeas_gtk_dep = dependency('libpeas-gtk-1.0', version: libpeas_req)
 mate_desktop_dep = dependency('mate-desktop-2.0', version: mate_desktop_req)
+vte_dep = dependency('vte-2.91', version: '>= 0.60')
 x11_dep = dependency('x11')
 sm_dep = dependency('sm', version: '>= 1.0.0')
 ice_dep = dependency('ice', version: '>= 1.0.0')
 
-# The Quick Open, Python Console, External Tools and Snippets plugins use the
+# The Python Console and External Tools plugins use the
 # optional Python 3 loader shipped separately by some distributions.
 libpeas_loaders_dir = join_paths(
   libpeas_dep.get_variable(pkgconfig: 'libdir'),
@@ -94,6 +96,7 @@ endforeach
 
 pluma_deps = [
   libxml_dep,
+  libarchive_dep,
   glib_dep,
   gmodule_dep,
   gthread_dep,
@@ -130,6 +133,23 @@ enable_introspection = get_option('introspection')
 
 # Python 3 dependency (required for plugins)
 py_installation = python.find_installation('python3')
+
+# Runtime used by third-party Lua plugins. The loader itself is supplied by
+# libpeas, while LGI exposes the GObject-introspection API to Lua.
+lua51_program = find_program('lua5.1', 'lua51', required: false)
+have_lua_lgi = false
+if lua51_program.found()
+  lua_lgi_check = run_command(
+    lua51_program,
+    '-e',
+    'require("lgi")',
+    check: false,
+  )
+  have_lua_lgi = lua_lgi_check.returncode() == 0
+endif
+if not have_lua_lgi
+  warning('Lua 5.1 LGI not found: C plugins work, but Lua plugins require Lua 5.1 and LGI at runtime')
+endif
 
 # Config.h generation
 conf_data = configuration_data()

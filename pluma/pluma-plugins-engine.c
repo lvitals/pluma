@@ -70,6 +70,10 @@ pluma_plugins_engine_init (PlumaPluginsEngine *engine)
 #endif
 
 	peas_engine_enable_loader (PEAS_ENGINE (engine), "python3");
+	/* Lua plugins use libpeas' native Lua 5.1 loader and LGI for the
+	 * introspected Pluma/GTK API. Enabling an unavailable loader is harmless;
+	 * libpeas reports a useful error only if a Lua plugin is requested. */
+	peas_engine_enable_loader (PEAS_ENGINE (engine), "lua5.1");
 
 	engine->priv = pluma_plugins_engine_get_instance_private (engine);
 
