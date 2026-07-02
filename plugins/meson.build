@@ -6,12 +6,12 @@ subdir('docinfo')
 subdir('externaltools')
 subdir('modelines')
 subdir('pythonconsole')
-subdir('quickopen')
 subdir('snippets')
 subdir('sort')
 if enable_spell
   subdir('spell')
 endif
 subdir('taglist')
+subdir('terminal')
 subdir('time')
 subdir('trailsave')

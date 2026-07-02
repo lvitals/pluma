@@ -3,11 +3,11 @@ DIST_SUBDIRS =		\
 	externaltools	\
 	modelines	\
 	pythonconsole	\
-	quickopen	\
 	snippets	\
 	sort 		\
 	spell 		\
 	taglist 	\
+	terminal	\
 	time		\
 	trailsave
 
@@ -16,10 +16,10 @@ SUBDIRS = 		\
 	externaltools	\
 	modelines	\
 	pythonconsole	\
-	quickopen	\
 	snippets	\
 	sort		\
 	taglist		\
+	terminal	\
 	time		\
 	trailsave
 
