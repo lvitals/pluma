@@ -134,21 +134,63 @@ enable_introspection = get_option('introspection')
 # Python 3 dependency (required for plugins)
 py_installation = python.find_installation('python3')
 
-# Runtime used by third-party Lua plugins. The loader itself is supplied by
-# libpeas, while LGI exposes the GObject-introspection API to Lua.
-lua51_program = find_program('lua5.1', 'lua51', required: false)
-have_lua_lgi = false
-if lua51_program.found()
-  lua_lgi_check = run_command(
-    lua51_program,
-    '-e',
-    'require("lgi")',
-    check: false,
-  )
-  have_lua_lgi = lua_lgi_check.returncode() == 0
+# Development package for the native Lua plugin loader (plugins/lualoader).
+# Probe pkg-config from newest to oldest supported Lua; distros package the
+# same Lua version under different pkg-config names (lua5.4, lua-5.4,
+# lua54, ...), so try each spelling before moving to the next version.
+lua_pc_names = {
+  '5.5': ['lua5.5', 'lua-5.5', 'lua55'],
+  '5.4': ['lua5.4', 'lua-5.4', 'lua54'],
+  '5.3': ['lua5.3', 'lua-5.3', 'lua53'],
+  '5.2': ['lua5.2', 'lua-5.2', 'lua52'],
+  '5.1': ['lua5.1', 'lua-5.1', 'lua51'],
+}
+
+have_lua = false
+lua_dep = dependency('', required: false)
+lua_version = ''
+
+foreach ver : ['5.5', '5.4', '5.3', '5.2', '5.1']
+  if not have_lua
+    foreach pc_name : lua_pc_names[ver]
+      if not have_lua
+        lua_candidate = dependency(pc_name, required: false)
+        if lua_candidate.found()
+          lua_dep = lua_candidate
+          lua_version = ver
+          have_lua = true
+        endif
+      endif
+    endforeach
+  endif
+endforeach
+
+if have_lua
+  message('Lua plugin loader: using Lua @0@ (@1@)'.format(lua_version, lua_dep.name()))
+else
+  warning('No Lua development package (5.1-5.5) found via pkg-config: the Lua plugin loader will not be built')
 endif
-if not have_lua_lgi
-  warning('Lua 5.1 LGI not found: C plugins work, but Lua plugins require Lua 5.1 and LGI at runtime')
+
+# LGI (GObject-introspection bindings for Lua) is required at runtime by Lua
+# plugins; check it against the interpreter matching the Lua development
+# version selected above, not a hardcoded one.
+have_lua_lgi = false
+if have_lua
+  lua_version_parts = lua_version.split('.')
+  lua_version_nodot = lua_version_parts[0] + lua_version_parts[1]
+  lua_program = find_program('lua' + lua_version, 'lua' + lua_version_nodot, 'lua', required: false)
+  if lua_program.found()
+    lua_lgi_check = run_command(
+      lua_program,
+      '-e',
+      'require("lgi")',
+      check: false,
+    )
+    have_lua_lgi = lua_lgi_check.returncode() == 0
+  endif
+endif
+if have_lua and not have_lua_lgi
+  warning('Lua LGI not found: Lua plugins require LGI at runtime')
 endif
 
 # Config.h generation
@@ -161,6 +203,11 @@ conf_data.set_quoted('VERSION', meson.project_version())
 conf_data.set_quoted('PACKAGE_VERSION', meson.project_version())
 conf_data.set_quoted('PACKAGE_URL', 'http://mate-desktop.org')
 conf_data.set('TOOLBAR_STYLE', 'PLUMA_TOOLBAR_SYSTEM')
+
+if have_lua
+  conf_data.set('HAVE_LUA', 1)
+  conf_data.set_quoted('LUA_VERSION', lua_version)
+endif
 
 if build_bundled_python_loader
   conf_data.set('HAVE_BUNDLED_PYTHON_LOADER', 1)

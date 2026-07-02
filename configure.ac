@@ -217,21 +217,58 @@ PLUMA_LIBS="$PLUMA_LIBS $GIREPOSITORY_LIBS"
 
 AM_PATH_PYTHON([3.0])
 
-dnl Lua extensions are loaded by libpeas. LGI supplies GTK/Pluma bindings.
-AC_PATH_PROGS([LUA51], [lua5.1 lua51], [no])
-AS_IF([test "x$LUA51" != "xno"], [
-	AC_MSG_CHECKING([for Lua LGI bindings])
-	AS_IF([$LUA51 -e "require('lgi')" >/dev/null 2>&1], [
-		have_lua_lgi=yes
-	], [
-		have_lua_lgi=no
-	])
-	AC_MSG_RESULT([$have_lua_lgi])
+dnl ================================================================
+dnl Lua detection for the native Lua plugin loader (plugins/lualoader)
+dnl ================================================================
+dnl Probe pkg-config from newest to oldest supported Lua; distros package
+dnl the same Lua version under different pkg-config names (lua5.4, lua-5.4,
+dnl lua54, ...), so try each spelling before moving to the next version.
+have_lua=no
+LUA_VERSION=
+LUA_VERSION_NODOT=
+LUA_PC_NAME=
+for lua_ver in 5.5 5.4 5.3 5.2 5.1; do
+	if test "x$have_lua" = xno; then
+		lua_ver_nodot=`echo "$lua_ver" | sed 's/\.//'`
+		for lua_pc in "lua$lua_ver" "lua-$lua_ver" "lua$lua_ver_nodot"; do
+			if $PKG_CONFIG --exists "$lua_pc" 2>/dev/null; then
+				LUA_PC_NAME="$lua_pc"
+				LUA_VERSION="$lua_ver"
+				LUA_VERSION_NODOT="$lua_ver_nodot"
+				have_lua=yes
+				break
+			fi
+		done
+	fi
+done
+
+AM_CONDITIONAL([HAVE_LUA], [test "x$have_lua" = xyes])
+AS_IF([test "x$have_lua" = xyes], [
+	PKG_CHECK_MODULES([LUA], [$LUA_PC_NAME])
+	AC_DEFINE([HAVE_LUA], [1], [Define if a Lua development package (5.1-5.5) was found])
+	AC_DEFINE_UNQUOTED([LUA_VERSION], ["$LUA_VERSION"], [Lua version selected for the Lua plugin loader])
+	AC_MSG_NOTICE([Lua plugin loader: using Lua $LUA_VERSION ($LUA_PC_NAME)])
 ], [
-	have_lua_lgi=no
+	AC_MSG_WARN([No Lua development package (5.1-5.5) found via pkg-config: the Lua plugin loader will not be built])
+])
+AC_SUBST([LUA_VERSION])
+
+dnl LGI (GObject-Introspection bindings for Lua) is required at runtime by
+dnl Lua plugins; check it against the interpreter matching the Lua
+dnl development version selected above, not a hardcoded one.
+have_lua_lgi=no
+AS_IF([test "x$have_lua" = xyes], [
+	AC_PATH_PROGS([LUA_INTERPRETER], [lua$LUA_VERSION lua$LUA_VERSION_NODOT lua], [no])
+	AS_IF([test "x$LUA_INTERPRETER" != xno], [
+		AC_MSG_CHECKING([for Lua LGI bindings ($LUA_INTERPRETER)])
+		AS_IF([$LUA_INTERPRETER -e "require('lgi')" >/dev/null 2>&1], [
+			have_lua_lgi=yes
+		])
+		AC_MSG_RESULT([$have_lua_lgi])
+	])
 ])
 AS_IF([test "x$have_lua_lgi" != "xyes"], [
-	AC_MSG_WARN([Lua 5.1 LGI not found; Lua plugins will be unavailable at runtime])
+	AC_MSG_WARN([Lua LGI not found; Lua plugins will be unavailable at runtime])
 ])
 
 dnl ================================================================
