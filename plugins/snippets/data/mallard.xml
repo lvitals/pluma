@@ -125,17 +125,10 @@ $0
 
 <info>
   <desc>${4:Short description}</desc>
-  <revision pkgversion="${5:program_version}" version="${6:document_version}" date="$<7: import datetime as d; return d.date.isoformat(d.date.today())>" status="${8:incomplete}"/>
+  <revision pkgversion="${5:program_version}" version="${6:document_version}" date="$<lua:date>" status="${8:incomplete}"/>
   <credit type="author">
-    <name>$<9:
-import pwd, os
-try:
-  return pwd.getpwuid(os.getuid()).pw_gecos.split(',')[0]
-except KeyError:
-  return 'Joe Example' ></name>
-    <email>$<10:
-import os
-return os.getenv('EMAIL', 'joe@example.com') ></email>
+    <name>$<lua:user></name>
+    <email>$<lua:email></email>
   </credit>
 </info>
 

@@ -1,5 +1,16 @@
-subdir('snippets')
 subdir('data')
+
+shared_module(
+  'snippets',
+  sources: files('pluma-snippets-plugin.c'),
+  include_directories: [
+    include_directories('../..'),
+    include_directories('../../pluma'),
+  ],
+  dependencies: pluma_deps,
+  install: true,
+  install_dir: join_paths(pkglibdir, 'plugins'),
+)
 
 plugin_desktop_in = configure_file(
   input: 'snippets.plugin.desktop.in.in',

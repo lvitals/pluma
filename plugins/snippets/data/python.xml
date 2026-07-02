@@ -111,11 +111,7 @@ $0]]></text>
   </snippet>
 
   <snippet id="Toggle comments">
-    <text><![CDATA[$<
-from snippets import toggle_lines
-lines = $PLUMA_SELECTED_TEXT or $PLUMA_CURRENT_LINE
-return toggle_lines(lines, comment="#", after_leading_space=True, comment_empty=False)
->]]></text>
+    <text><![CDATA[$<lua:comment_hash:selected>]]></text>
     <description>Toggle comment</description>
     <accelerator><![CDATA[<Primary>m]]></accelerator>
   </snippet>

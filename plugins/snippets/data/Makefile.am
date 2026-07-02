@@ -2,6 +2,7 @@
 SUBDIRS = lang
 
 snippets_DATA = \
+	snippets-runtime.lua \
 	css.xml \
 	c.xml \
 	cpp.xml \

@@ -1,7 +1,7 @@
 [Plugin]
-Loader=python3
 Module=snippets
-IAge=2
+Loader=C
+IAge=3
 Name=Snippets
 Description=Insert often-used pieces of text in a fast way
 Authors=Jesse van den Kieboom <jesse@icecrew.nl>

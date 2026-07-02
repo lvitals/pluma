@@ -48,7 +48,7 @@ $0]]></text>
     <description>Author</description>
   </snippet>
   <snippet id="date">
-    <text><![CDATA[<meta name="date" content="$<1: import time; return time.strftime("%Y-%m-%d") >" />
+    <text><![CDATA[<meta name="date" content="$<lua:date>" />
 $0]]></text>
     <tag>date</tag>
     <description>Date</description>

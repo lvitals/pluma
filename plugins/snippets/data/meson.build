@@ -29,3 +29,7 @@ snippets_data = [
 install_data(snippets_data,
   install_dir: join_paths(pkgdatadir, 'plugins/snippets')
 )
+
+install_data('snippets-runtime.lua',
+  install_dir: join_paths(pkgdatadir, 'plugins/snippets')
+)
