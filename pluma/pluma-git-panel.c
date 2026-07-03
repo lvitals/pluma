@@ -749,34 +749,11 @@ run_git_with_input (PlumaGitPanel *panel, const gchar * const *argv,
 static gchar *
 choose_hunk_patch (PlumaGitPanel *panel, const gchar *diff, const gchar *title)
 {
-	GPtrArray *patches = g_ptr_array_new_with_free_func (g_free);
-	GPtrArray *labels = g_ptr_array_new_with_free_func (g_free);
-	GString *header = g_string_new (NULL);
-	GString *current = NULL;
-	gchar **lines = g_strsplit (diff != NULL ? diff : "", "\n", -1);
+	GPtrArray *hunks = pluma_git_diff_split_hunks (diff);
 	GtkWidget *dialog, *box, *combo;
 	gchar *selected = NULL;
 
-	for (guint i = 0; lines[i] != NULL; i++)
-	{
-		if (g_str_has_prefix (lines[i], "@@ "))
-		{
-			if (current != NULL)
-				g_ptr_array_add (patches, g_string_free (current, FALSE));
-			current = g_string_new (header->str);
-			g_ptr_array_add (labels, g_strdup (lines[i]));
-		}
-		if (current != NULL)
-			g_string_append_printf (current, "%s\n", lines[i]);
-		else
-			g_string_append_printf (header, "%s\n", lines[i]);
-	}
-	if (current != NULL)
-		g_ptr_array_add (patches, g_string_free (current, FALSE));
-	g_string_free (header, TRUE);
-	g_strfreev (lines);
-
-	if (patches->len == 0)
+	if (hunks->len == 0)
 	{
 		gtk_label_set_text (GTK_LABEL (panel->summary_label),
 		                    _("No textual hunks are available for this file."));
@@ -789,21 +766,26 @@ choose_hunk_patch (PlumaGitPanel *panel, const gchar *diff, const gchar *title)
 	box = gtk_dialog_get_content_area (GTK_DIALOG (dialog));
 	gtk_container_set_border_width (GTK_CONTAINER (box), 8);
 	combo = gtk_combo_box_text_new ();
-	for (guint i = 0; i < labels->len; i++)
-		gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), g_ptr_array_index (labels, i));
+	for (guint i = 0; i < hunks->len; i++)
+	{
+		PlumaGitHunk *hunk = g_ptr_array_index (hunks, i);
+		gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), hunk->label);
+	}
 	gtk_combo_box_set_active (GTK_COMBO_BOX (combo), 0);
 	gtk_box_pack_start (GTK_BOX (box), combo, FALSE, FALSE, 0);
 	gtk_widget_show_all (dialog);
 	if (gtk_dialog_run (GTK_DIALOG (dialog)) == GTK_RESPONSE_ACCEPT)
 	{
 		gint active = gtk_combo_box_get_active (GTK_COMBO_BOX (combo));
-		if (active >= 0 && (guint) active < patches->len)
-			selected = g_strdup (g_ptr_array_index (patches, active));
+		if (active >= 0 && (guint) active < hunks->len)
+		{
+			PlumaGitHunk *hunk = g_ptr_array_index (hunks, active);
+			selected = g_strdup (hunk->patch);
+		}
 	}
 	gtk_widget_destroy (dialog);
 out:
-	g_ptr_array_unref (patches);
-	g_ptr_array_unref (labels);
+	g_ptr_array_unref (hunks);
 	return selected;
 }
 

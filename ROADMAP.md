@@ -214,9 +214,13 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 
 # 10. Blame
 
-- [x] Executar blame do arquivo atual sob demanda.
-- [x] Mostrar autor, data e commit sem alterar o texto.
-- [x] Usar o documento ativo ao executar blame.
+Nenhum código de blame existe no projeto hoje (`grep -rl blame pluma/` não
+retorna nada) — os itens abaixo estavam marcados como concluídos por
+engano; toda a seção é trabalho novo, não ajuste incremental.
+
+- [ ] Executar blame do arquivo atual sob demanda.
+- [ ] Mostrar autor, data e commit sem alterar o texto.
+- [ ] Usar o documento ativo ao executar blame.
 - [ ] Abrir commit associado à linha.
 - [ ] Mostrar detalhes em tooltip/popover.
 - [ ] Tratar linhas ainda não commitadas.
@@ -327,20 +331,52 @@ Operações destrutivas avançadas só serão entregues após testes específico
 
 ## Prioridade imediata — integridade de dados
 
-Executar nesta ordem antes de ampliar as operações Git avançadas:
+Reavaliado em auditoria de código (item a item, contra `pluma-git-panel.c`,
+`pluma-git-status-parser.c`, `pluma-git-diff.c`, `pluma-git-commit.c` e
+`tests/`). Os itens 2 e 3 abaixo, como estavam escritos antes, já refletiam
+trabalho concluído e não a prioridade real; a ordem foi corrigida.
 
-1. **Testes dos parsers Git**
-   - Cobrir `status --porcelain=v2 -z`, refs, log, diff e blame.
-   - Incluir caminhos com espaços, hífen, Unicode e bytes inválidos.
-   - Incluir arquivos binários, repositórios sem commits e estados de conflito.
-2. **Proteção de buffers não salvos**
-   - Identificar operações capazes de substituir, remover ou trocar arquivos abertos.
-   - Bloquear a operação ou exigir que o usuário salve/descartar alterações explicitamente.
-   - Cobrir checkout, switch, merge, rebase, pull, restore, reset e limpeza.
-3. **Operações por hunk e linha**
-   - Implementar parser e aplicação segura de patches antes da interface de stage/unstage.
-   - Adicionar stage, unstage e descarte por hunk.
-   - Somente depois habilitar operações por linhas selecionadas.
+1. **Testes dos parsers Git — parcialmente feito**
+   - `status --porcelain=v2 -z`: coberto (`tests/git-status-parser.c` +
+     `tests/git-integration.sh`), incluindo espaços, hífen, Unicode, bytes
+     UTF-8 inválidos, renomeios e conflitos.
+   - diff/hunk: **feito.** `choose_hunk_patch` tinha a lógica de split de
+     hunk (puro parsing) misturada com código GTK (diálogo modal), sem
+     nenhum teste. Extraída para `pluma_git_diff_split_hunks()`
+     (`pluma-git-diff.c`/`.h`, retorna `PlumaGitHunk{label,patch}`);
+     `choose_hunk_patch` agora só monta o diálogo em cima do resultado.
+     4 testes novos em `tests/git-diff.c`: diff vazio/NULL, diff só com
+     cabeçalho (sem `@@`, ex. rename puro) sem gerar hunk fantasma, hunk
+     único, e múltiplos hunks cada um carregando o cabeçalho completo
+     (`diff --git`/`index`/`---`/`+++`) sem vazar linhas de outro hunk —
+     é exatamente isso que o `git apply` precisa para aplicar corretamente.
+   - refs e log: **não é um gap de teste, é feature não implementada.**
+     Investigação confirmou que não existe parser de refs/log hoje —
+     `git log`/`git branch`/`git tag`/`git remote` têm a saída bruta
+     jogada direto num buffer de texto (`history_clicked`,
+     `current_file_history_clicked`, `branches_clicked`, `tags_clicked`,
+     `remotes_clicked`, todas em `pluma-git-panel.c` por volta de
+     `:1446`-`:1476`), sem parsing em campos estruturados. "Testar o
+     parser" não faz sentido até existir parser — isso é trabalho das
+     seções 7 (Branches/tags), 8 (Remotes) e 9 (Histórico), que já têm
+     itens `[ ]` para "criar visão separada" com dados estruturados
+     (branch, autor, data, hash). Tratar como consequência dessas
+     seções, não como item de teste isolado.
+   - blame: não há o que testar — ver seção 10, funcionalidade não existe.
+2. **Proteção de buffers não salvos — já feito para tudo que existe hoje**
+   - `ensure_documents_saved()` (`pluma-git-panel.c:151`) já cobre discard,
+     descarte de hunk, pull, stash pop, switch, merge, rebase, cherry-pick,
+     revert e abort (10 pontos de chamada).
+   - `git reset --hard` e `git clean` continuam não implementados (seções
+     12/13) — nada a proteger ainda; proteger no momento em que forem
+     implementados, não antes.
+3. **Operações por hunk e linha — hunk já feito, falta só linha**
+   - Stage/unstage/descarte por hunk já implementado via
+     `git apply --cached`/`--reverse` (`apply_selected_hunk`,
+     `pluma-git-panel.c:811`), delegando a aplicação do patch ao próprio
+     Git em vez de um parser de patch caseiro.
+   - Falta apenas seleção e aplicação por linhas dentro de um hunk — não
+     existe nenhum código para isso ainda.
    - Exigir prévia, confirmação para descarte e testes de recuperação.
 
 Critério de saída: nenhuma operação dessas etapas pode modificar o repositório sem teste de sucesso, falha e recuperação correspondente.
