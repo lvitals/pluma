@@ -40,6 +40,10 @@ TEST_PROGS			+= git-status-parser
 git_status_parser_SOURCES	= git-status-parser.c
 git_status_parser_LDADD	= $(progs_ldadd)
 
+TEST_PROGS			+= git-blame
+git_blame_SOURCES		= git-blame.c
+git_blame_LDADD			= $(progs_ldadd)
+
 TESTS				= $(TEST_PROGS) git-integration.sh
 else
 TESTS = $(TEST_PROGS)

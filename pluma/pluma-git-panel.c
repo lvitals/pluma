@@ -15,6 +15,7 @@
 #include "pluma-git-status-parser.h"
 #include "pluma-git-commit.h"
 #include "pluma-git-diff.h"
+#include "pluma-git-blame.h"
 
 enum { COL_LABEL, COL_PATH, COL_GROUP, COL_STATUS, COL_IS_GROUP, N_COLS };
 enum { GROUP_OUTGOING, GROUP_CONFLICT, GROUP_STAGED, GROUP_CHANGED, GROUP_UNTRACKED, N_GROUPS };
@@ -117,6 +118,7 @@ static gboolean selected_diff_is_binary (PlumaGitPanel *panel,
 	                                     const gchar *path, gboolean cached);
 static void apply_git_output_colors (PlumaGitPanel *panel, GtkTextBuffer *buffer,
 	                                 const gchar *title);
+static gboolean on_git_output_motion (GtkWidget *widget, GdkEventMotion *event, gpointer data);
 static void panel_show_message (PlumaGitPanel *panel, const gchar *message);
 static void panel_show_error (PlumaGitPanel *panel, const gchar *message);
 
@@ -571,6 +573,37 @@ panel_show_error (PlumaGitPanel *panel, const gchar *message)
 }
 static void schedule_refresh (PlumaGitPanel *p) { if (!p->refresh_source) p->refresh_source=g_timeout_add(250,refresh_timeout,p); }
 
+/* Opens 'text' as a new, read-only, non-reusable tab titled 'title' -
+ * shared by every "show some Git command's formatted output" feature
+ * (History, Branches, Tags, Remotes, Stashes, diffs, Blame). Colored via
+ * apply_git_output_colors(), keyed off 'title' the same way call_done()
+ * already relies on for its own async version of this. */
+static void
+show_read_only_git_tab (PlumaGitPanel *panel, const gchar *title, const gchar *text)
+{
+	PlumaTab *tab;
+	PlumaDocument *doc;
+	GtkTextView *view;
+
+	if (text == NULL || *text == '\0')
+		return;
+
+	tab = pluma_window_create_tab (panel->window, TRUE);
+	doc = pluma_tab_get_document (tab);
+	pluma_tab_set_reusable (tab, FALSE);
+
+	gtk_text_buffer_set_text (GTK_TEXT_BUFFER (doc), text, -1);
+	gtk_text_buffer_set_modified (GTK_TEXT_BUFFER (doc), FALSE);
+	pluma_document_set_short_name_for_display (doc, title != NULL ? title : _("Git Output"));
+	apply_git_output_colors (panel, GTK_TEXT_BUFFER (doc), title);
+
+	view = GTK_TEXT_VIEW (pluma_tab_get_view (tab));
+	gtk_text_view_set_editable (view, FALSE);
+	gtk_text_view_set_cursor_visible (view, FALSE);
+	gtk_widget_add_events (GTK_WIDGET (view), GDK_POINTER_MOTION_MASK);
+	g_signal_connect (view, "motion-notify-event", G_CALLBACK (on_git_output_motion), NULL);
+}
+
 static void
 call_done (GObject *source, GAsyncResult *result, gpointer data)
 {
@@ -599,25 +632,8 @@ call_done (GObject *source, GAsyncResult *result, gpointer data)
 				free_display_out = TRUE;
 			}
 			
-			if (display_out && *display_out)
-			{
-				PlumaTab *tab=pluma_window_create_tab(call->panel->window,TRUE); PlumaDocument *doc=pluma_tab_get_document(tab);
-				pluma_tab_set_reusable (tab, FALSE);
+			show_read_only_git_tab (call->panel, call->title, display_out);
 
-				gtk_text_buffer_set_text(GTK_TEXT_BUFFER(doc),display_out,-1);
-				gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(doc), FALSE);
-				
-				gchar *display_title = g_strdup (call->title ? call->title : _("Git Output"));
-				pluma_document_set_short_name_for_display (doc, display_title);
-				g_free (display_title);
-				
-				apply_git_output_colors (call->panel, GTK_TEXT_BUFFER (doc), call->title);
-
-				GtkTextView *view = GTK_TEXT_VIEW(pluma_tab_get_view(tab));
-				gtk_text_view_set_editable(view,FALSE);
-				gtk_text_view_set_cursor_visible(view,FALSE);
-			}
-			
 			if (free_display_out)
 				g_free (display_out);
 		}
@@ -1094,6 +1110,7 @@ typedef enum
 	GIT_OUTPUT_TAGS,
 	GIT_OUTPUT_REMOTES,
 	GIT_OUTPUT_STASHES,
+	GIT_OUTPUT_BLAME,
 } GitOutputKind;
 
 static GitOutputKind
@@ -1115,7 +1132,77 @@ git_output_kind_for_title (const gchar *title)
 		return GIT_OUTPUT_REMOTES;
 	if (g_strcmp0 (title, _("Git Stashes")) == 0)
 		return GIT_OUTPUT_STASHES;
+	if (g_str_has_prefix (title, _("Blame:")))
+		return GIT_OUTPUT_BLAME;
 	return GIT_OUTPUT_PLAIN;
+}
+
+/* Clicking a commit hash (History, Branches, Stashes, Blame, or a diff's
+ * own "commit <sha>" line all tag hashes with "git-hash") opens that
+ * commit's diff, the same way as any other "Diff: ..." tab. */
+static gboolean
+on_git_hash_tag_event (GtkTextTag *tag, GObject *object, GdkEvent *event, GtkTextIter *iter, gpointer data)
+{
+	PlumaGitPanel *panel = data;
+	GtkTextIter start, end;
+	gchar *hash;
+	gboolean all_zero = TRUE;
+
+	if (event->type != GDK_BUTTON_RELEASE || ((GdkEventButton *) event)->button != 1)
+		return FALSE;
+
+	start = end = *iter;
+	if (!gtk_text_iter_starts_tag (&start, tag))
+		gtk_text_iter_backward_to_tag_toggle (&start, tag);
+	if (!gtk_text_iter_ends_tag (&end, tag))
+		gtk_text_iter_forward_to_tag_toggle (&end, tag);
+	hash = gtk_text_iter_get_text (&start, &end);
+
+	for (const gchar *p = hash; *p != '\0' && all_zero; p++)
+		all_zero = (*p == '0');
+
+	if (*hash == '\0' || all_zero)
+		panel_show_message (panel, _("This line hasn't been committed yet."));
+	else
+	{
+		const gchar *argv[] = {"git", "show", hash, NULL};
+		gchar *title = g_strdup_printf ("Diff: %s", hash);
+		run_git (panel, argv, TRUE, title);
+		g_free (title);
+	}
+	g_free (hash);
+	return TRUE;
+}
+
+/* Swaps in a pointer-style cursor while hovering a clickable "git-hash"
+ * tag, so the click affordance above is actually discoverable. */
+static gboolean
+on_git_output_motion (GtkWidget *widget, GdkEventMotion *event, gpointer data)
+{
+	GtkTextView *view = GTK_TEXT_VIEW (widget);
+	GtkTextBuffer *buffer = gtk_text_view_get_buffer (view);
+	GtkTextTag *hash_tag = gtk_text_tag_table_lookup (
+	    gtk_text_buffer_get_tag_table (buffer), "git-hash");
+	gint buffer_x, buffer_y;
+	GtkTextIter iter;
+	GdkWindow *window;
+
+	gtk_text_view_window_to_buffer_coords (view, GTK_TEXT_WINDOW_TEXT,
+	                                       (gint) event->x, (gint) event->y,
+	                                       &buffer_x, &buffer_y);
+	gtk_text_view_get_iter_at_location (view, &iter, buffer_x, buffer_y);
+
+	window = gtk_text_view_get_window (view, GTK_TEXT_WINDOW_TEXT);
+	if (window != NULL)
+	{
+		gboolean over_hash = hash_tag != NULL && gtk_text_iter_has_tag (&iter, hash_tag);
+		GdkCursor *cursor = over_hash
+		    ? gdk_cursor_new_from_name (gdk_window_get_display (window), "pointer")
+		    : NULL;
+		gdk_window_set_cursor (window, cursor);
+		g_clear_object (&cursor);
+	}
+	return FALSE;
 }
 
 /* Colors the contents of a read-only Git output tab (History, Branches,
@@ -1154,8 +1241,12 @@ apply_git_output_colors (PlumaGitPanel *panel, GtkTextBuffer *buffer, const gcha
 	                            "weight", PANGO_WEIGHT_BOLD, NULL);
 	gtk_text_buffer_create_tag (buffer, "git-diff-meta",
 	                            "foreground", is_dark ? "#8b949e" : "#6e7781", NULL);
-	gtk_text_buffer_create_tag (buffer, "git-hash",
-	                            "foreground", is_dark ? "#d29922" : "#9a6700", NULL);
+	{
+		GtkTextTag *hash_tag = gtk_text_buffer_create_tag (buffer, "git-hash",
+		                            "foreground", is_dark ? "#d29922" : "#9a6700",
+		                            "underline", PANGO_UNDERLINE_SINGLE, NULL);
+		g_signal_connect (hash_tag, "event", G_CALLBACK (on_git_hash_tag_event), panel);
+	}
 	gtk_text_buffer_create_tag (buffer, "git-ref",
 	                            "foreground", is_dark ? "#79b8ff" : "#0969da",
 	                            "weight", PANGO_WEIGHT_BOLD, NULL);
@@ -1251,6 +1342,17 @@ apply_git_output_colors (PlumaGitPanel *panel, GtkTextBuffer *buffer, const gcha
 					if (colon != NULL && g_str_has_prefix (line, "stash@{"))
 						tag_line_substring (buffer, i, line, line,
 						                    (gint) (colon - line), "git-hash");
+				}
+				break;
+
+			case GIT_OUTPUT_BLAME:
+				if (find_hash_token (line, &hash_start, &hash_len))
+					tag_line_substring (buffer, i, line, hash_start, hash_len, "git-hash");
+				{
+					const gchar *marker = strstr (line, "(uncommitted)");
+					if (marker != NULL)
+						tag_line_substring (buffer, i, line, marker,
+						                    (gint) strlen ("(uncommitted)"), "git-muted");
 				}
 				break;
 
@@ -1844,6 +1946,67 @@ current_file_history_clicked (GtkMenuItem *item, gpointer data)
 	g_clear_object (&root);
 	g_clear_object (&location);
 }
+
+static void
+blame_current_file_clicked (GtkMenuItem *item, gpointer data)
+{
+	PlumaGitPanel *panel = data;
+	PlumaDocument *document = pluma_window_get_active_document (panel->window);
+	GFile *location = document != NULL ? pluma_document_get_location (document) : NULL;
+	GFile *root = panel->repo != NULL ? g_file_new_for_path (panel->repo) : NULL;
+	gchar *relative = location != NULL && root != NULL
+	                ? g_file_get_relative_path (root, location) : NULL;
+
+	if (relative == NULL)
+		panel_show_message (panel, _("The active document is not inside the Git repository."));
+	else
+	{
+		const gchar *argv[] = {"git", "blame", "--porcelain", "--", relative, NULL};
+		gchar *porcelain = get_git_output (panel, argv);
+		GPtrArray *lines = pluma_git_blame_parse (porcelain);
+
+		if (lines->len == 0)
+			panel_show_message (panel, _("No blame information is available for this file."));
+		else
+		{
+			GString *formatted = g_string_new (NULL);
+			gchar *title;
+
+			for (guint i = 0; i < lines->len; i++)
+			{
+				PlumaGitBlameLine *blame_line = g_ptr_array_index (lines, i);
+				gchar short_hash[9];
+				gchar *date_str;
+
+				g_strlcpy (short_hash, blame_line->hash, sizeof (short_hash));
+				if (pluma_git_blame_line_is_uncommitted (blame_line))
+					date_str = g_strdup (_("(uncommitted)"));
+				else
+				{
+					GDateTime *dt = g_date_time_new_from_unix_local (blame_line->author_time);
+					date_str = dt != NULL ? g_date_time_format (dt, "%Y-%m-%d") : g_strdup ("");
+					g_clear_pointer (&dt, g_date_time_unref);
+				}
+				/* Real author names/hashes vary in width; fixed-width
+				 * columns keep the content lines up regardless. */
+				g_string_append_printf (formatted, "%s  %-20.20s  %-13s │ %s\n",
+				                        short_hash, blame_line->author, date_str,
+				                        blame_line->content);
+				g_free (date_str);
+			}
+
+			title = g_strdup_printf (_("Blame: %s"), relative);
+			show_read_only_git_tab (panel, title, formatted->str);
+			g_free (title);
+			g_string_free (formatted, TRUE);
+		}
+		g_ptr_array_unref (lines);
+		g_free (porcelain);
+	}
+	g_free (relative);
+	g_clear_object (&root);
+	g_clear_object (&location);
+}
 static void branches_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","branch","-vv","--all",NULL};run_git(p,a,TRUE,_("Git Branches"));}
 static void tags_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","tag","-n",NULL};run_git(p,a,TRUE,_("Git Tags"));}
 static void remotes_clicked(GtkButton*b,gpointer data){PlumaGitPanel*p=data;const gchar*a[]={"git","remote","-v",NULL};run_git(p,a,TRUE,_("Git Remotes"));}
@@ -2384,6 +2547,7 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	add_more_item(menu,_("Commit with Sign-off"),G_CALLBACK(commit_signoff_clicked),p);
 	add_more_item(menu,_("Create Signed Commit"),G_CALLBACK(commit_signed_clicked),p);
 	add_more_item(menu,_("Current File History"),G_CALLBACK(current_file_history_clicked),p);
+	add_more_item(menu,_("Blame Current File"),G_CALLBACK(blame_current_file_clicked),p);
 	add_more_item(menu,_("Compare Two References…"),G_CALLBACK(compare_references_clicked),p);
 	add_more_item(menu,_("Force Push with Lease…"),G_CALLBACK(force_push_with_lease_clicked),p);
 	add_more_item(menu,_("View Stash Diff…"),G_CALLBACK(stash_diff_clicked),p);

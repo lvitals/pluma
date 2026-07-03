@@ -248,16 +248,53 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 
 # 10. Blame
 
-Nenhum código de blame existe no projeto hoje (`grep -rl blame pluma/` não
-retorna nada) — os itens abaixo estavam marcados como concluídos por
-engano; toda a seção é trabalho novo, não ajuste incremental.
+Implementado do zero (não existia nenhum código antes desta sessão).
 
-- [ ] Executar blame do arquivo atual sob demanda.
-- [ ] Mostrar autor, data e commit sem alterar o texto.
-- [ ] Usar o documento ativo ao executar blame.
-- [ ] Abrir commit associado à linha.
+- [x] Executar blame do arquivo atual sob demanda.
+  - `blame_current_file_clicked` (menu "More" → "Blame Current File"),
+    roda `git blame --porcelain -- <arquivo>` de forma síncrona
+    (`get_git_output`), mesmo padrão já usado por `open_side_by_side_diff`.
+- [x] Mostrar autor, data e commit sem alterar o texto.
+  - Aba somente-leitura própria (`show_read_only_git_tab`, extraído de
+    `call_done` e reaproveitado por History/Branches/Tags/Remotes/Stashes/
+    diffs também), colorida via `apply_git_output_colors` (novo caso
+    `GIT_OUTPUT_BLAME`: hash e marcador "(uncommitted)").
+- [x] Usar o documento ativo ao executar blame.
+- [x] Abrir commit associado à linha.
+  - A tag `git-hash` (usada em Blame, History, Branches e Stashes) agora
+    fica sublinhada e clicável: `on_git_hash_tag_event` (sinal `"event"`
+    da própria `GtkTextTag`) extrai o hash sob o clique via
+    `gtk_text_iter_backward/forward_to_tag_toggle` e abre
+    `git show <hash>` numa aba "Diff: <hash>" (reaproveita a coloração de
+    diff já existente). Cursor vira ponteiro ao passar por cima
+    (`on_git_output_motion`, `motion-notify-event` na view). Clicar num
+    hash todo-zero (linha não commitada) mostra aviso em vez de tentar
+    `git show` num commit inexistente. Beneficia não só Blame como
+    History/Branches/Stashes ao mesmo tempo, já que todas usam a mesma
+    tag.
 - [ ] Mostrar detalhes em tooltip/popover.
-- [ ] Tratar linhas ainda não commitadas.
+- [x] Tratar linhas ainda não commitadas.
+  - Marcadas como "(uncommitted)" em vez de data, em vez de mostrar o
+    hash `000...0` do Git como se fosse um commit real; clicar nesse hash
+    não tenta abrir um commit inexistente (ver item acima).
+
+Parser (`pluma-git-blame.c`/`.h`, `pluma_git_blame_parse`) testado com
+saída real de `git blame --porcelain` capturada de um repositório de
+teste (não texto inventado à mão) — 5 testes em `tests/git-blame.c`
+cobrindo: entrada vazia, metadados na primeira ocorrência de um commit,
+reaproveitamento correto de metadados na forma compacta (quando o Git
+repete um commit já visto, ele omite author/summary/etc. e só repete o
+cabeçalho curto — o parser precisa cachear por hash), detecção de linha
+não commitada (hash todo zero) e confirmação de que uma linha commitada
+normal não é marcada como não commitada.
+
+Nota: o clique no hash (padrão GTK3 de "tag clicável" via sinal `"event"`
+da `GtkTextTag`, mesma técnica do `gtk3-demo` de hypertext) compila sem
+warnings e segue a API documentada, mas não foi testado visualmente de
+verdade clicando na interface — não havia Xvfb/xdotool disponíveis para
+testar isolado da tela real, e captura de tela da sessão real do usuário
+está fora de cogitação sem permissão explícita por uso. Vale uma
+passagem manual do usuário antes de considerar 100% validado.
 
 ---
 

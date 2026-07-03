@@ -58,6 +58,7 @@ NOINST_H_FILES =			\
 	pluma-file-browser-view.h	\
 	pluma-file-browser-widget.h	\
 	pluma-file-chooser-dialog.h	\
+	pluma-git-blame.h		\
 	pluma-git-commit.h		\
 	pluma-git-diff.h		\
 	pluma-git-panel.h		\
@@ -191,6 +192,7 @@ endif
 if ENABLE_GIT
 libpluma_la_SOURCES += 			\
 	pluma-git-panel.c		\
+	pluma-git-blame.c		\
 	pluma-git-commit.c		\
 	pluma-git-diff.c		\
 	pluma-git-status-parser.c

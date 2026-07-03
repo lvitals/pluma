@@ -43,6 +43,13 @@ if git_program.found() and enable_git
     include_directories: include_directories('../pluma'),
   )
   test('git-status-parser', git_parser_test)
+  git_blame_test = executable('git-blame',
+    'git-blame.c',
+    '../pluma/pluma-git-blame.c',
+    dependencies: pluma_deps,
+    include_directories: include_directories('../pluma'),
+  )
+  test('git-blame', git_blame_test)
   test('git-integration', shell_program,
     args: files('git-integration.sh'),
     env: ['GIT_CONFIG_NOSYSTEM=1'],
