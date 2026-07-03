@@ -140,6 +140,19 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 - [x] Abrir diff textual ao ativar arquivo alterado.
 - [ ] Oferecer visualização inline e lado a lado.
 - [x] Diferenciar adições, remoções e modificações pela saída Git com destaque de sintaxe.
+  - Cobria só o diff unificado (via linguagem GtkSourceView "diff", dependente
+    do esquema de cores escolhido). History, Branches, Tags, Remotes e
+    Stashes não tinham nenhuma diferenciação visual. Trocado por
+    `apply_git_output_colors()` (`pluma-git-panel.c`) — tags GtkTextTag
+    aplicadas diretamente (cientes de tema claro/escuro via `is_dark_theme()`,
+    já usado pela visão lado a lado), cobrindo as 6 views: diff (+/-/@@/
+    cabeçalho), hash de commit, nomes de ref/branch/tag/remote e marcador de
+    branch atual. Não depende mais do esquema de cores nem da preferência
+    global de "realce de sintaxe".
+  - "View Diff" (antes "Diff selected file") agora também aceita selecionar
+    a raiz de "Changes" ou "Staged Changes" pra ver o diff de todos os
+    arquivos daquele grupo de uma vez, mantendo o comportamento por arquivo
+    quando um arquivo específico é selecionado.
 - [ ] Exibir números de linha antigos e novos.
 - [ ] Navegar entre hunks.
 - [x] Stage, unstage ou descartar hunk.

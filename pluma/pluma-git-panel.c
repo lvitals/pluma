@@ -2,6 +2,7 @@
 #include <config.h>
 #endif
 
+#include <string.h>
 #include <glib/gi18n.h>
 #include "pluma-git-panel.h"
 #include "pluma-commands.h"
@@ -63,6 +64,7 @@ struct _PlumaGitPanel
 	GtkBox parent_instance;
 	PlumaWindow *window;
 	GtkWidget *branch_label, *summary_label, *tree, *message_entry, *commit_button;
+	GtkWidget *toast_revealer, *toast_label, *toast_icon;
 	GtkWidget *commit_count_label, *clear_message_button;
 	GtkWidget *open_button, *stage_button, *discard_button;
 	GtkWidget *filter_entry;
@@ -82,6 +84,7 @@ struct _PlumaGitPanel
 	GSettings *settings;
 	guint refresh_source;
 	guint poll_source;
+	guint message_source;
 	guint statusbar_context;
 	gboolean status_running;
 	gboolean refresh_pending;
@@ -112,6 +115,10 @@ static void run_git (PlumaGitPanel *panel, const gchar * const *argv,
 	                gboolean show_output, const gchar *title);
 static gboolean selected_diff_is_binary (PlumaGitPanel *panel,
 	                                     const gchar *path, gboolean cached);
+static void apply_git_output_colors (PlumaGitPanel *panel, GtkTextBuffer *buffer,
+	                                 const gchar *title);
+static void panel_show_message (PlumaGitPanel *panel, const gchar *message);
+static void panel_show_error (PlumaGitPanel *panel, const gchar *message);
 
 static const gchar *group_names[N_GROUPS] = { N_("Commits to Push"), N_("Conflicts"), N_("Staged Changes"), N_("Changes"), N_("Untracked") };
 
@@ -408,7 +415,8 @@ parse_status (PlumaGitPanel *panel, const guint8 *output, gsize output_length)
 		guint file_changes = counts[GROUP_CONFLICT] + counts[GROUP_STAGED] +
 		                     counts[GROUP_CHANGED] + counts[GROUP_UNTRACKED];
 		gchar *summary = g_strdup_printf (_("%u changes  ↑%d ↓%d"), file_changes, status->ahead, status->behind);
-		gtk_label_set_text (GTK_LABEL (panel->branch_label), head); gtk_label_set_text (GTK_LABEL (panel->summary_label), summary);
+		gtk_label_set_text (GTK_LABEL (panel->branch_label), head);
+		gtk_label_set_text (GTK_LABEL (panel->summary_label), summary);
 		if (panel->statusbar_context != 0)
 		{
 			gtk_statusbar_pop (GTK_STATUSBAR (panel->window->priv->statusbar), panel->statusbar_context);
@@ -435,7 +443,7 @@ status_done (GObject *source, GAsyncResult *result, gpointer data)
 	if (out != NULL) out_data = g_bytes_get_data (out, &out_length);
 	if (!panel->destroyed)
 	{
-		if (error) gtk_label_set_text(GTK_LABEL(panel->summary_label),error->message);
+		if (error) panel_show_error(panel,error->message);
 		else if (g_subprocess_get_successful(G_SUBPROCESS(source)))
 		{
 			const gchar *log_argv[]={"git","log","--format=%h  %s","--max-count=100","@{upstream}..HEAD",NULL};
@@ -470,7 +478,7 @@ status_done (GObject *source, GAsyncResult *result, gpointer data)
 		{
 			gsize err_length = 0; const gchar *err_data = err != NULL ? g_bytes_get_data (err, &err_length) : NULL;
 			gchar *message = err_length > 0 ? g_strndup (err_data, err_length) : g_strdup (_("Git status failed"));
-			gtk_label_set_text (GTK_LABEL (panel->summary_label), message); g_free (message);
+			panel_show_error (panel, message); g_free (message);
 		}
 	}
 	panel->status_running = FALSE;
@@ -505,12 +513,62 @@ pluma_git_panel_refresh (PlumaGitPanel *panel)
 	g_free(repo);
 	if (!panel->repo) { reset_model(panel); gtk_label_set_text(GTK_LABEL(panel->branch_label),_("No Git repository")); gtk_label_set_text(GTK_LABEL(panel->summary_label),"");if(panel->statusbar_context)gtk_statusbar_pop(GTK_STATUSBAR(panel->window->priv->statusbar),panel->statusbar_context);return; }
 	process=spawn_git(panel,argv,&error);
-	if (!process) { gtk_label_set_text(GTK_LABEL(panel->summary_label),error?error->message:_("Git is unavailable")); g_clear_error(&error); return; }
+	if (!process) { panel_show_error(panel,error?error->message:_("Git is unavailable")); g_clear_error(&error); return; }
 	panel->status_running = TRUE;
 	g_subprocess_communicate_async(process,NULL,panel->cancellable,status_done,g_object_ref(panel)); g_object_unref(process);
 }
 
 static gboolean refresh_timeout (gpointer data) { PlumaGitPanel *p=data; p->refresh_source=0; pluma_git_panel_refresh(p); return G_SOURCE_REMOVE; }
+
+static gboolean
+clear_transient_message (gpointer data)
+{
+	PlumaGitPanel *panel = data;
+	panel->message_source = 0;
+	if (!panel->destroyed)
+		gtk_revealer_set_reveal_child (GTK_REVEALER (panel->toast_revealer), FALSE);
+	return G_SOURCE_REMOVE;
+}
+
+/* Shows a one-off info/warning/error message (e.g. "no file selected", a
+ * failed command's error text) as a floating toast notification overlaid
+ * on top of the panel, instead of flat, easy-to-miss text sharing space
+ * with the permanent branch/changes summary. Auto-hides after a few
+ * seconds. 'is_error' just picks the accent color/icon - both variants
+ * behave identically otherwise. */
+static void
+panel_show_message_full (PlumaGitPanel *panel, const gchar *message, gboolean is_error)
+{
+	GtkStyleContext *toast_style = gtk_widget_get_style_context (
+	    gtk_widget_get_parent (panel->toast_label));
+
+	if (panel->message_source != 0)
+	{
+		g_source_remove (panel->message_source);
+		panel->message_source = 0;
+	}
+
+	gtk_style_context_remove_class (toast_style, is_error ? "info" : "error");
+	gtk_style_context_add_class (toast_style, is_error ? "error" : "info");
+	gtk_image_set_from_icon_name (GTK_IMAGE (panel->toast_icon),
+	                              is_error ? "dialog-warning-symbolic" : "dialog-information-symbolic",
+	                              GTK_ICON_SIZE_MENU);
+	gtk_label_set_text (GTK_LABEL (panel->toast_label), message);
+	gtk_revealer_set_reveal_child (GTK_REVEALER (panel->toast_revealer), TRUE);
+	panel->message_source = g_timeout_add_seconds (5, clear_transient_message, panel);
+}
+
+static void
+panel_show_message (PlumaGitPanel *panel, const gchar *message)
+{
+	panel_show_message_full (panel, message, FALSE);
+}
+
+static void
+panel_show_error (PlumaGitPanel *panel, const gchar *message)
+{
+	panel_show_message_full (panel, message, TRUE);
+}
 static void schedule_refresh (PlumaGitPanel *p) { if (!p->refresh_source) p->refresh_source=g_timeout_add(250,refresh_timeout,p); }
 
 static void
@@ -553,12 +611,8 @@ call_done (GObject *source, GAsyncResult *result, gpointer data)
 				pluma_document_set_short_name_for_display (doc, display_title);
 				g_free (display_title);
 				
-				if (call->title && g_str_has_prefix (call->title, "Diff:"))
-				{
-					GtkSourceLanguage *language=gtk_source_language_manager_get_language(gtk_source_language_manager_get_default(),"diff");
-					if(language)pluma_document_set_language(doc,language);
-				}
-				
+				apply_git_output_colors (call->panel, GTK_TEXT_BUFFER (doc), call->title);
+
 				GtkTextView *view = GTK_TEXT_VIEW(pluma_tab_get_view(tab));
 				gtk_text_view_set_editable(view,FALSE);
 				gtk_text_view_set_cursor_visible(view,FALSE);
@@ -567,7 +621,7 @@ call_done (GObject *source, GAsyncResult *result, gpointer data)
 			if (free_display_out)
 				g_free (display_out);
 		}
-		if (error || !g_subprocess_get_successful(G_SUBPROCESS(source))) gtk_label_set_text(GTK_LABEL(call->panel->summary_label),error?error->message:(err&&*err?err:_("Git operation failed")));
+		if (error || !g_subprocess_get_successful(G_SUBPROCESS(source))) panel_show_error(call->panel,error?error->message:(err&&*err?err:_("Git operation failed")));
 		else
 		{
 			if (call->commit_after_success != NULL)
@@ -595,7 +649,7 @@ static void
 run_git (PlumaGitPanel *panel, const gchar * const *argv, gboolean show_output, const gchar *title)
 {
 	GError *error=NULL; GSubprocess *process=spawn_git(panel,argv,&error); GitCall *call;
-	if(!process){gtk_label_set_text(GTK_LABEL(panel->summary_label),error?error->message:_("Git is unavailable"));g_clear_error(&error);return;}
+	if(!process){panel_show_error(panel,error?error->message:_("Git is unavailable"));g_clear_error(&error);return;}
 	call=g_new0(GitCall,1);call->panel=g_object_ref(panel);call->show_output=show_output;call->title=g_strdup(title);
 	g_subprocess_communicate_utf8_async(process,NULL,panel->cancellable,call_done,call);g_object_unref(process);
 }
@@ -610,8 +664,7 @@ stage_all_then_commit (PlumaGitPanel *panel, const gchar *message)
 
 	if (process == NULL)
 	{
-		gtk_label_set_text (GTK_LABEL (panel->summary_label),
-		                    error != NULL ? error->message : _("Git is unavailable"));
+		panel_show_error (panel, error != NULL ? error->message : _("Git is unavailable"));
 		g_clear_error (&error);
 		return;
 	}
@@ -631,9 +684,25 @@ selected_file (PlumaGitPanel *panel, gchar **path, gint *group, gint *status)
 	gtk_tree_model_get(model,&iter,COL_PATH,path,COL_GROUP,group,COL_STATUS,status,COL_IS_GROUP,&is_group,-1);return !is_group&&*path!=NULL;
 }
 
+/* Like selected_file(), but for a selected group header row (e.g. the
+ * "Changes" or "Staged Changes" root) instead of a leaf file row. */
+static gboolean
+selected_group_row (PlumaGitPanel *panel, gint *group)
+{
+	GtkTreeSelection *selection = gtk_tree_view_get_selection (GTK_TREE_VIEW (panel->tree));
+	GtkTreeModel *model;
+	GtkTreeIter iter;
+	gboolean is_group;
+
+	if (!gtk_tree_selection_get_selected (selection, &model, &iter))
+		return FALSE;
+	gtk_tree_model_get (model, &iter, COL_GROUP, group, COL_IS_GROUP, &is_group, -1);
+	return is_group;
+}
+
 static void stage_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){const gchar *a[]={"git","add","--",path,NULL};run_git(p,a,FALSE,NULL);g_free(path);} }
 static void unstage_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){const gchar *a[]={"git","reset","-q","HEAD","--",path,NULL};run_git(p,a,FALSE,NULL);g_free(path);} }
-static void diff_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){if(selected_diff_is_binary(p,path,g==GROUP_STAGED)){gtk_label_set_text(GTK_LABEL(p->summary_label),_("Binary files cannot be displayed as a text diff."));g_free(path);return;}const gchar *a1[]={"git","diff","--cached","--",path,NULL};const gchar *a2[]={"git","diff","--",path,NULL};gchar *title=g_strconcat("Diff: ",path,NULL);run_git(p,g==GROUP_STAGED?a1:a2,TRUE,title);g_free(title);g_free(path);} }
+static void diff_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){if(selected_diff_is_binary(p,path,g==GROUP_STAGED)){panel_show_message(p,_("Binary files cannot be displayed as a text diff."));g_free(path);return;}const gchar *a1[]={"git","diff","--cached","--",path,NULL};const gchar *a2[]={"git","diff","--",path,NULL};gchar *title=g_strconcat("Diff: ",path,NULL);run_git(p,g==GROUP_STAGED?a1:a2,TRUE,title);g_free(title);g_free(path);} }
 static void open_selected (PlumaGitPanel *p) { gchar *path;gint g,s;if(selected_file(p,&path,&g,&s)){gchar *full=g_build_filename(p->repo,path,NULL);gchar *uri=g_filename_to_uri(full,NULL,NULL);pluma_commands_load_uri(p->window,uri,NULL,0);g_free(uri);g_free(full);g_free(path);} }
 
 static void discard_selected (PlumaGitPanel *p)
@@ -646,7 +715,7 @@ static void discard_selected (PlumaGitPanel *p)
 	gtk_dialog_add_button(GTK_DIALOG(d),g==GROUP_UNTRACKED?_("Delete Permanently"):_("Discard"),GTK_RESPONSE_ACCEPT);
 	if(gtk_dialog_run(GTK_DIALOG(d))==GTK_RESPONSE_ACCEPT)
 	{
-		if(g==GROUP_UNTRACKED){gchar*full=g_build_filename(p->repo,path,NULL);GFile*file=g_file_new_for_path(full);GError*error=NULL;if(!g_file_delete(file,NULL,&error))gtk_label_set_text(GTK_LABEL(p->summary_label),error->message);else schedule_refresh(p);g_clear_error(&error);g_object_unref(file);g_free(full);}
+		if(g==GROUP_UNTRACKED){gchar*full=g_build_filename(p->repo,path,NULL);GFile*file=g_file_new_for_path(full);GError*error=NULL;if(!g_file_delete(file,NULL,&error))panel_show_error(p,error->message);else schedule_refresh(p);g_clear_error(&error);g_object_unref(file);g_free(full);}
 		else{const gchar *a[]={"git","restore","--worktree","--",path,NULL};run_git(p,a,FALSE,NULL);}
 	}
 	gtk_widget_destroy(d);g_free(path);
@@ -734,8 +803,7 @@ run_git_with_input (PlumaGitPanel *panel, const gchar * const *argv,
 	g_object_unref (launcher);
 	if (process == NULL)
 	{
-		gtk_label_set_text (GTK_LABEL (panel->summary_label),
-		                    error != NULL ? error->message : _("Git is unavailable"));
+		panel_show_error (panel, error != NULL ? error->message : _("Git is unavailable"));
 		g_clear_error (&error);
 		return;
 	}
@@ -755,8 +823,7 @@ choose_hunk_patch (PlumaGitPanel *panel, const gchar *diff, const gchar *title)
 
 	if (hunks->len == 0)
 	{
-		gtk_label_set_text (GTK_LABEL (panel->summary_label),
-		                    _("No textual hunks are available for this file."));
+		panel_show_message (panel, _("No textual hunks are available for this file."));
 		goto out;
 	}
 	dialog = gtk_dialog_new_with_buttons (title, GTK_WINDOW (panel->window),
@@ -864,6 +931,252 @@ is_dark_theme (GtkSourceStyleScheme *scheme)
 	return FALSE;
 }
 
+/* Whole-line background tag, e.g. for diff +/- lines. Mirrors
+ * open_side_by_side_diff()'s paragraph-background approach below. */
+static void
+tag_whole_line (GtkTextBuffer *buffer, gint line, const gchar *tag_name)
+{
+	GtkTextIter start, end;
+	gtk_text_buffer_get_iter_at_line (buffer, &start, line);
+	end = start;
+	gtk_text_iter_forward_to_line_end (&end);
+	gtk_text_buffer_apply_tag_by_name (buffer, tag_name, &start, &end);
+}
+
+/* Tags the UTF-8 substring [match, match + byte_len) of 'line_text', which
+ * must be the exact text of buffer line 'line'. Character offsets (not
+ * byte offsets) are what GtkTextIter needs, hence g_utf8_pointer_to_offset
+ * rather than pointer subtraction. */
+static void
+tag_line_substring (GtkTextBuffer *buffer, gint line, const gchar *line_text,
+                    const gchar *match, gint byte_len, const gchar *tag_name)
+{
+	GtkTextIter start, end;
+	gint char_start = (gint) g_utf8_pointer_to_offset (line_text, match);
+	gint char_len = (gint) g_utf8_pointer_to_offset (match, match + byte_len);
+	gtk_text_buffer_get_iter_at_line_offset (buffer, &start, line, char_start);
+	gtk_text_buffer_get_iter_at_line_offset (buffer, &end, line, char_start + char_len);
+	gtk_text_buffer_apply_tag_by_name (buffer, tag_name, &start, &end);
+}
+
+static gboolean
+is_hash_char (gchar c)
+{
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+}
+
+/* Finds the first run of 7-40 lowercase hex characters in 'text' that isn't
+ * part of a longer alphanumeric word - a git abbreviated/full commit hash,
+ * as printed by --format=%h/%H, `git branch -vv`, etc. */
+static gboolean
+find_hash_token (const gchar *text, const gchar **out_start, gint *out_byte_len)
+{
+	const gchar *p = text;
+
+	while (*p != '\0')
+	{
+		if (is_hash_char (*p))
+		{
+			const gchar *run_start = p;
+			gint len;
+			gboolean boundary_before, boundary_after;
+
+			while (*p != '\0' && is_hash_char (*p))
+				p++;
+			len = (gint) (p - run_start);
+			boundary_before = (run_start == text) || !g_ascii_isalnum (*(run_start - 1));
+			boundary_after = (*p == '\0') || !g_ascii_isalnum (*p);
+			if (len >= 7 && len <= 40 && boundary_before && boundary_after)
+			{
+				*out_start = run_start;
+				*out_byte_len = len;
+				return TRUE;
+			}
+		}
+		else
+			p++;
+	}
+	return FALSE;
+}
+
+typedef enum
+{
+	GIT_OUTPUT_PLAIN,
+	GIT_OUTPUT_DIFF,
+	GIT_OUTPUT_HISTORY,
+	GIT_OUTPUT_FILE_HISTORY,
+	GIT_OUTPUT_BRANCHES,
+	GIT_OUTPUT_TAGS,
+	GIT_OUTPUT_REMOTES,
+	GIT_OUTPUT_STASHES,
+} GitOutputKind;
+
+static GitOutputKind
+git_output_kind_for_title (const gchar *title)
+{
+	if (title == NULL)
+		return GIT_OUTPUT_PLAIN;
+	if (g_str_has_prefix (title, "Diff:"))
+		return GIT_OUTPUT_DIFF;
+	if (g_strcmp0 (title, _("Git History")) == 0)
+		return GIT_OUTPUT_HISTORY;
+	if (g_str_has_prefix (title, _("History:")))
+		return GIT_OUTPUT_FILE_HISTORY;
+	if (g_strcmp0 (title, _("Git Branches")) == 0)
+		return GIT_OUTPUT_BRANCHES;
+	if (g_strcmp0 (title, _("Git Tags")) == 0)
+		return GIT_OUTPUT_TAGS;
+	if (g_strcmp0 (title, _("Git Remotes")) == 0)
+		return GIT_OUTPUT_REMOTES;
+	if (g_strcmp0 (title, _("Git Stashes")) == 0)
+		return GIT_OUTPUT_STASHES;
+	return GIT_OUTPUT_PLAIN;
+}
+
+/* Colors the contents of a read-only Git output tab (History, Branches,
+ * Tags, Remotes, Stashes, and every unified-diff view) so additions,
+ * removals, hashes and refs are distinguishable at a glance instead of
+ * being flat, uncolored text. Deliberately not GtkSourceView-language-based
+ * (git output isn't a real syntax and isn't consistent line-to-line the
+ * way a language grammar expects) - these are plain GtkTextTags applied
+ * directly, so they always show regardless of the user's chosen scheme or
+ * the global syntax-highlighting setting. The diff add/remove backgrounds
+ * intentionally match open_side_by_side_diff()'s colors above, so both
+ * diff presentations read the same way. */
+static void
+apply_git_output_colors (PlumaGitPanel *panel, GtkTextBuffer *buffer, const gchar *title)
+{
+	GitOutputKind kind = git_output_kind_for_title (title);
+	PlumaDocument *active_doc;
+	GtkSourceStyleScheme *style_scheme = NULL;
+	gboolean is_dark;
+	gchar **lines;
+
+	if (kind == GIT_OUTPUT_PLAIN)
+		return;
+
+	active_doc = pluma_window_get_active_document (panel->window);
+	if (active_doc)
+		style_scheme = gtk_source_buffer_get_style_scheme (GTK_SOURCE_BUFFER (active_doc));
+	is_dark = is_dark_theme (style_scheme);
+
+	gtk_text_buffer_create_tag (buffer, "git-diff-add",
+	                            "paragraph-background", is_dark ? "#1b3220" : "#e6ffed", NULL);
+	gtk_text_buffer_create_tag (buffer, "git-diff-remove",
+	                            "paragraph-background", is_dark ? "#451e20" : "#ffeef0", NULL);
+	gtk_text_buffer_create_tag (buffer, "git-diff-hunk",
+	                            "foreground", is_dark ? "#79b8ff" : "#0969da",
+	                            "weight", PANGO_WEIGHT_BOLD, NULL);
+	gtk_text_buffer_create_tag (buffer, "git-diff-meta",
+	                            "foreground", is_dark ? "#8b949e" : "#6e7781", NULL);
+	gtk_text_buffer_create_tag (buffer, "git-hash",
+	                            "foreground", is_dark ? "#d29922" : "#9a6700", NULL);
+	gtk_text_buffer_create_tag (buffer, "git-ref",
+	                            "foreground", is_dark ? "#79b8ff" : "#0969da",
+	                            "weight", PANGO_WEIGHT_BOLD, NULL);
+	gtk_text_buffer_create_tag (buffer, "git-current",
+	                            "weight", PANGO_WEIGHT_BOLD, NULL);
+	gtk_text_buffer_create_tag (buffer, "git-name",
+	                            "weight", PANGO_WEIGHT_BOLD, NULL);
+	gtk_text_buffer_create_tag (buffer, "git-muted",
+	                            "foreground", is_dark ? "#8b949e" : "#6e7781", NULL);
+
+	{
+		GtkTextIter buf_start, buf_end;
+		gchar *full_text;
+		guint i;
+
+		gtk_text_buffer_get_start_iter (buffer, &buf_start);
+		gtk_text_buffer_get_end_iter (buffer, &buf_end);
+		full_text = gtk_text_buffer_get_text (buffer, &buf_start, &buf_end, FALSE);
+		lines = g_strsplit (full_text, "\n", -1);
+		g_free (full_text);
+
+		for (i = 0; lines[i] != NULL; i++)
+		{
+			const gchar *line = lines[i];
+			const gchar *hash_start;
+			gint hash_len;
+
+			switch (kind)
+			{
+			case GIT_OUTPUT_DIFF:
+				if (g_str_has_prefix (line, "+++") || g_str_has_prefix (line, "---") ||
+				    g_str_has_prefix (line, "diff --git") || g_str_has_prefix (line, "index "))
+					tag_whole_line (buffer, i, "git-diff-meta");
+				else if (g_str_has_prefix (line, "@@"))
+					tag_whole_line (buffer, i, "git-diff-hunk");
+				else if (line[0] == '+')
+					tag_whole_line (buffer, i, "git-diff-add");
+				else if (line[0] == '-')
+					tag_whole_line (buffer, i, "git-diff-remove");
+				break;
+
+			case GIT_OUTPUT_HISTORY:
+			case GIT_OUTPUT_FILE_HISTORY:
+				if (find_hash_token (line, &hash_start, &hash_len))
+					tag_line_substring (buffer, i, line, hash_start, hash_len, "git-hash");
+				{
+					const gchar *open_paren = strchr (line, '(');
+					const gchar *close_paren = open_paren ? strchr (open_paren, ')') : NULL;
+					if (open_paren != NULL && close_paren != NULL)
+						tag_line_substring (buffer, i, line, open_paren,
+						                    (gint) (close_paren - open_paren + 1), "git-ref");
+				}
+				break;
+
+			case GIT_OUTPUT_BRANCHES:
+				if (g_str_has_prefix (line, "* "))
+					tag_whole_line (buffer, i, "git-current");
+				if (find_hash_token (line, &hash_start, &hash_len))
+					tag_line_substring (buffer, i, line, hash_start, hash_len, "git-hash");
+				{
+					const gchar *open_bracket = strchr (line, '[');
+					const gchar *close_bracket = open_bracket ? strchr (open_bracket, ']') : NULL;
+					if (open_bracket != NULL && close_bracket != NULL)
+						tag_line_substring (buffer, i, line, open_bracket,
+						                    (gint) (close_bracket - open_bracket + 1), "git-ref");
+				}
+				break;
+
+			case GIT_OUTPUT_TAGS:
+			case GIT_OUTPUT_REMOTES:
+				{
+					const gchar *token_end = line;
+					while (*token_end != '\0' && !g_ascii_isspace (*token_end))
+						token_end++;
+					if (token_end > line)
+						tag_line_substring (buffer, i, line, line,
+						                    (gint) (token_end - line), "git-name");
+				}
+				if (kind == GIT_OUTPUT_REMOTES)
+				{
+					const gchar *fetch = strstr (line, "(fetch)");
+					const gchar *push = strstr (line, "(push)");
+					if (fetch != NULL)
+						tag_line_substring (buffer, i, line, fetch, (gint) strlen ("(fetch)"), "git-muted");
+					if (push != NULL)
+						tag_line_substring (buffer, i, line, push, (gint) strlen ("(push)"), "git-muted");
+				}
+				break;
+
+			case GIT_OUTPUT_STASHES:
+				{
+					const gchar *colon = strchr (line, ':');
+					if (colon != NULL && g_str_has_prefix (line, "stash@{"))
+						tag_line_substring (buffer, i, line, line,
+						                    (gint) (colon - line), "git-hash");
+				}
+				break;
+
+			default:
+				break;
+			}
+		}
+		g_strfreev (lines);
+	}
+}
+
 static void
 open_side_by_side_diff (PlumaGitPanel *p)
 {
@@ -873,8 +1186,7 @@ open_side_by_side_diff (PlumaGitPanel *p)
 		return;
 	if (selected_diff_is_binary (p, path, g == GROUP_STAGED))
 	{
-		gtk_label_set_text (GTK_LABEL (p->summary_label),
-		                    _("Binary files cannot be displayed as a side-by-side text diff."));
+		panel_show_message (p, _("Binary files cannot be displayed as a side-by-side text diff."));
 		g_free (path);
 		return;
 	}
@@ -1258,8 +1570,7 @@ stage_clicked_cb (PlumaGitPanel *p)
 	{
 		if (g != GROUP_UNTRACKED && selected_diff_is_binary (p, path, g == GROUP_STAGED))
 		{
-			gtk_label_set_text (GTK_LABEL (p->summary_label),
-			                    _("Binary files cannot be displayed as a text diff."));
+			panel_show_message (p, _("Binary files cannot be displayed as a text diff."));
 			g_free (path);
 			return;
 		}
@@ -1365,8 +1676,7 @@ stage_all_commit_clicked (GtkMenuItem *item, gpointer data)
 	if (pluma_git_commit_message_is_valid (message))
 		stage_all_then_commit (panel, message);
 	else
-		gtk_label_set_text (GTK_LABEL (panel->summary_label),
-		                    _("Enter a valid commit message first."));
+		panel_show_message (panel, _("Enter a valid commit message first."));
 	g_free (message);
 }
 static void
@@ -1379,8 +1689,7 @@ amend_commit_clicked (GtkMenuItem *item, gpointer data)
 
 	if (!pluma_git_commit_message_is_valid (message))
 	{
-		gtk_label_set_text (GTK_LABEL (panel->summary_label),
-		                    _("There is no commit message available to amend."));
+		panel_show_message (panel, _("There is no commit message available to amend."));
 	}
 	else
 	{
@@ -1389,8 +1698,7 @@ amend_commit_clicked (GtkMenuItem *item, gpointer data)
 		gtk_text_buffer_set_text (buffer, message, -1);
 		gtk_button_set_label (GTK_BUTTON (panel->commit_button), _("Amend Commit"));
 		gtk_widget_grab_focus (panel->message_entry);
-		gtk_label_set_text (GTK_LABEL (panel->summary_label),
-		                    _("Edit the message, then select Amend Commit."));
+		panel_show_message (panel, _("Edit the message, then select Amend Commit."));
 	}
 	g_free (message);
 }
@@ -1409,8 +1717,7 @@ commit_with_option (PlumaGitPanel *panel, const gchar *option)
 		run_git (panel, argv, FALSE, "commit");
 	}
 	else
-		gtk_label_set_text (GTK_LABEL (panel->summary_label),
-		                    _("Enter a valid commit message first."));
+		panel_show_message (panel, _("Enter a valid commit message first."));
 	g_free (message);
 }
 
@@ -1439,8 +1746,7 @@ current_file_history_clicked (GtkMenuItem *item, gpointer data)
 	                ? g_file_get_relative_path (root, location) : NULL;
 
 	if (relative == NULL)
-		gtk_label_set_text (GTK_LABEL (panel->summary_label),
-		                    _("The active document is not inside the Git repository."));
+		panel_show_message (panel, _("The active document is not inside the Git repository."));
 	else
 	{
 		const gchar *argv[] = {"git", "log", "--follow", "--date=short",
@@ -1494,8 +1800,7 @@ force_push_with_lease_clicked (GtkMenuItem *item, gpointer data)
 
 	if (panel->upstream == NULL || *panel->upstream == '\0')
 	{
-		gtk_label_set_text (GTK_LABEL (panel->summary_label),
-		                    _("Publish the branch before using force push with lease."));
+		panel_show_message (panel, _("Publish the branch before using force push with lease."));
 		return;
 	}
 	if (confirm_action (panel, _("Force push the amended history?"),
@@ -1539,11 +1844,27 @@ static void diff_selected_clicked(GtkButton*b,gpointer data)
 			g_free(full_path);
 		}
 		g_free (path);
+		return;
 	}
-	else
+
 	{
-		gtk_label_set_text (GTK_LABEL (p->summary_label), _("No file selected in Source Control to diff."));
+		gint group = 0;
+
+		if (selected_group_row (p, &group) && group == GROUP_STAGED)
+		{
+			const gchar *a[] = {"git", "diff", "--cached", NULL};
+			run_git (p, a, TRUE, _("Diff: All Staged Changes"));
+			return;
+		}
+		if (selected_group_row (p, &group) && group == GROUP_CHANGED)
+		{
+			const gchar *a[] = {"git", "diff", NULL};
+			run_git (p, a, TRUE, _("Diff: All Changes"));
+			return;
+		}
 	}
+
+	panel_show_message (p, _("Select a file, or the “Changes”/“Staged Changes” group, in Source Control to diff."));
 }
 
 static gchar *
@@ -1589,8 +1910,7 @@ prompt_revision (PlumaGitPanel *panel, const gchar *title, const gchar *label)
 		g_strstrip (revision);
 		if (revision_is_valid (panel, revision))
 			return revision;
-		gtk_label_set_text (GTK_LABEL (panel->summary_label),
-		                    _("The branch, tag, or commit could not be resolved."));
+		panel_show_error (panel, _("The branch, tag, or commit could not be resolved."));
 		g_free (revision);
 	}
 }
@@ -1713,7 +2033,7 @@ filter_changed_cb (GtkSearchEntry *entry, gpointer data)
 static void
 pluma_git_panel_dispose(GObject*object)
 {
-	PlumaGitPanel*p=PLUMA_GIT_PANEL(object);p->destroyed=TRUE;if(p->cancellable)g_cancellable_cancel(p->cancellable);if(p->refresh_source){g_source_remove(p->refresh_source);p->refresh_source=0;}if(p->poll_source){g_source_remove(p->poll_source);p->poll_source=0;}g_clear_object(&p->git_monitor);g_clear_object(&p->cancellable);g_clear_pointer(&p->repo,g_free);
+	PlumaGitPanel*p=PLUMA_GIT_PANEL(object);p->destroyed=TRUE;if(p->cancellable)g_cancellable_cancel(p->cancellable);if(p->refresh_source){g_source_remove(p->refresh_source);p->refresh_source=0;}if(p->poll_source){g_source_remove(p->poll_source);p->poll_source=0;}if(p->message_source){g_source_remove(p->message_source);p->message_source=0;}g_clear_object(&p->git_monitor);g_clear_object(&p->cancellable);g_clear_pointer(&p->repo,g_free);
 	g_clear_pointer (&p->filter_query, g_free);
 	g_clear_pointer (&p->last_status_output, g_free);
 	g_clear_pointer (&p->outgoing_commits, g_free);
@@ -1783,16 +2103,70 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	GtkWidget*row,*button,*scroll,*more,*menu;GtkCellRenderer*r;GtkTreeViewColumn*c;
 	gtk_orientable_set_orientation(GTK_ORIENTABLE(p),GTK_ORIENTATION_VERTICAL);gtk_box_set_spacing(GTK_BOX(p),4);gtk_container_set_border_width(GTK_CONTAINER(p),6);p->cancellable=g_cancellable_new();p->poll_source=g_timeout_add_seconds(2,poll_status,p);
 	p->settings = g_settings_new (PLUMA_SCHEMA_ID);
-	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,3);p->branch_label=gtk_label_new("");gtk_label_set_xalign(GTK_LABEL(p->branch_label),0);button=gtk_button_new_from_icon_name("view-refresh",GTK_ICON_SIZE_MENU);gtk_widget_set_tooltip_text(button,_("Refresh Git status"));g_signal_connect(button,"clicked",G_CALLBACK(refresh_clicked),p);gtk_box_pack_start(GTK_BOX(row),p->branch_label,TRUE,TRUE,0);gtk_box_pack_end(GTK_BOX(row),button,FALSE,FALSE,0);gtk_box_pack_start(GTK_BOX(p),row,FALSE,FALSE,0);
+
+	/* Everything else in this panel lives in content_box; panel_overlay lets
+	 * the toast notification (below) float on top of it instead of taking
+	 * up its own row in the normal layout, where a message can be easy to
+	 * miss - see panel_show_message()/panel_show_error(). */
+	GtkWidget *panel_overlay = gtk_overlay_new ();
+	gtk_box_pack_start (GTK_BOX (p), panel_overlay, TRUE, TRUE, 0);
+	GtkWidget *content_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 4);
+	gtk_container_add (GTK_CONTAINER (panel_overlay), content_box);
+
+	{
+		static GtkCssProvider *toast_css = NULL;
+		if (toast_css == NULL)
+		{
+			toast_css = gtk_css_provider_new ();
+			gtk_css_provider_load_from_data (toast_css,
+				".pluma-git-toast {"
+				"  background-color: #323233;"
+				"  color: #e8e8e8;"
+				"  border-radius: 6px;"
+				"  padding: 6px 10px;"
+				"}"
+				".pluma-git-toast.info { border-left: 3px solid #3794ff; }"
+				".pluma-git-toast.error { border-left: 3px solid #f14c4c; }",
+				-1, NULL);
+		}
+		GtkWidget *toast_box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 8);
+		GtkStyleContext *toast_style = gtk_widget_get_style_context (toast_box);
+		gtk_style_context_add_class (toast_style, "pluma-git-toast");
+		gtk_style_context_add_class (toast_style, "info");
+		gtk_style_context_add_provider (toast_style, GTK_STYLE_PROVIDER (toast_css),
+		                                GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+
+		p->toast_icon = gtk_image_new_from_icon_name ("dialog-information-symbolic", GTK_ICON_SIZE_MENU);
+		gtk_box_pack_start (GTK_BOX (toast_box), p->toast_icon, FALSE, FALSE, 0);
+
+		p->toast_label = gtk_label_new ("");
+		gtk_label_set_line_wrap (GTK_LABEL (p->toast_label), TRUE);
+		gtk_label_set_xalign (GTK_LABEL (p->toast_label), 0);
+		gtk_widget_set_hexpand (p->toast_label, TRUE);
+		gtk_box_pack_start (GTK_BOX (toast_box), p->toast_label, TRUE, TRUE, 0);
+
+		p->toast_revealer = gtk_revealer_new ();
+		gtk_revealer_set_transition_type (GTK_REVEALER (p->toast_revealer),
+		                                  GTK_REVEALER_TRANSITION_TYPE_SLIDE_DOWN);
+		gtk_container_add (GTK_CONTAINER (p->toast_revealer), toast_box);
+		gtk_widget_set_valign (p->toast_revealer, GTK_ALIGN_START);
+		gtk_widget_set_halign (p->toast_revealer, GTK_ALIGN_FILL);
+		gtk_widget_set_margin_start (p->toast_revealer, 6);
+		gtk_widget_set_margin_end (p->toast_revealer, 6);
+		gtk_widget_set_margin_top (p->toast_revealer, 6);
+		gtk_overlay_add_overlay (GTK_OVERLAY (panel_overlay), p->toast_revealer);
+	}
+
+	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,3);p->branch_label=gtk_label_new("");gtk_label_set_xalign(GTK_LABEL(p->branch_label),0);button=gtk_button_new_from_icon_name("view-refresh",GTK_ICON_SIZE_MENU);gtk_widget_set_tooltip_text(button,_("Refresh Git status"));g_signal_connect(button,"clicked",G_CALLBACK(refresh_clicked),p);gtk_box_pack_start(GTK_BOX(row),p->branch_label,TRUE,TRUE,0);gtk_box_pack_end(GTK_BOX(row),button,FALSE,FALSE,0);gtk_box_pack_start(GTK_BOX(content_box),row,FALSE,FALSE,0);
 	p->filter_entry = gtk_search_entry_new ();
 	gtk_entry_set_placeholder_text (GTK_ENTRY (p->filter_entry), _("Filter changes"));
 	gtk_widget_set_tooltip_text (p->filter_entry, _("Filter changes by file name"));
 	g_signal_connect (p->filter_entry, "search-changed", G_CALLBACK (filter_changed_cb), p);
-	gtk_box_pack_start (GTK_BOX (p), p->filter_entry, FALSE, FALSE, 0);
-	p->summary_label=gtk_label_new("");gtk_label_set_xalign(GTK_LABEL(p->summary_label),0);gtk_box_pack_start(GTK_BOX(p),p->summary_label,FALSE,FALSE,0);
+	gtk_box_pack_start (GTK_BOX (content_box), p->filter_entry, FALSE, FALSE, 0);
+	p->summary_label=gtk_label_new("");gtk_label_set_xalign(GTK_LABEL(p->summary_label),0);gtk_box_pack_start(GTK_BOX(content_box),p->summary_label,FALSE,FALSE,0);
 
 	GtkWidget *main_paned = gtk_paned_new (GTK_ORIENTATION_VERTICAL);
-	gtk_box_pack_start (GTK_BOX (p), main_paned, TRUE, TRUE, 0);
+	gtk_box_pack_start (GTK_BOX (content_box), main_paned, TRUE, TRUE, 0);
 
 	GtkWidget *top_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
 	gtk_paned_pack1 (GTK_PANED (main_paned), top_box, TRUE, FALSE);
@@ -1833,7 +2207,7 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,4);
 	gtk_box_set_homogeneous(GTK_BOX(row),TRUE);
 #define TOOL(icon,tip,cb) button=gtk_button_new_from_icon_name(icon,GTK_ICON_SIZE_MENU);gtk_widget_set_tooltip_text(button,tip);g_signal_connect(button,"clicked",G_CALLBACK(cb),p);gtk_box_pack_start(GTK_BOX(row),button,TRUE,TRUE,0)
-	TOOL("document-open-recent-symbolic",_("History"),history_clicked);TOOL("view-list-bullet-symbolic",_("Branches"),branches_clicked);TOOL("bookmark-new-symbolic",_("Tags"),tags_clicked);TOOL("folder-remote-symbolic",_("Remotes"),remotes_clicked);TOOL("package-x-generic-symbolic",_("Stashes"),stash_list_clicked);TOOL("view-dual-symbolic",_("Diff selected file"),diff_selected_clicked);
+	TOOL("document-open-recent-symbolic",_("History"),history_clicked);TOOL("view-list-bullet-symbolic",_("Branches"),branches_clicked);TOOL("bookmark-new-symbolic",_("Tags"),tags_clicked);TOOL("folder-remote-symbolic",_("Remotes"),remotes_clicked);TOOL("package-x-generic-symbolic",_("Stashes"),stash_list_clicked);TOOL("view-dual-symbolic",_("View Diff"),diff_selected_clicked);
 #undef TOOL
 	gtk_widget_set_margin_bottom (row, 6);
 	gtk_box_pack_start(GTK_BOX(top_box),row,FALSE,FALSE,0);
