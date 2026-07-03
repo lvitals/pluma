@@ -814,11 +814,69 @@ run_git_with_input (PlumaGitPanel *panel, const gchar * const *argv,
 	g_object_unref (process);
 }
 
+typedef struct
+{
+	GPtrArray *hunks;      /* PlumaGitHunk*, owned by the caller */
+	GtkWidget *lines_box;  /* refilled with one checkbox per +/- line of
+	                        * the currently-selected hunk */
+	GPtrArray *checks;     /* GtkWidget* (GtkCheckButton), same order as
+	                        * pluma_git_diff_hunk_subset()'s line_selected */
+} HunkChooser;
+
+static void
+hunk_combo_changed (GtkComboBox *combo, gpointer data)
+{
+	HunkChooser *chooser = data;
+	gint active = gtk_combo_box_get_active (combo);
+	PlumaGitHunk *hunk;
+	gchar **lines;
+	gboolean in_body = FALSE;
+	GList *old_children, *l;
+
+	old_children = gtk_container_get_children (GTK_CONTAINER (chooser->lines_box));
+	for (l = old_children; l != NULL; l = l->next)
+		gtk_widget_destroy (GTK_WIDGET (l->data));
+	g_list_free (old_children);
+	g_ptr_array_set_size (chooser->checks, 0);
+
+	if (active < 0 || (guint) active >= chooser->hunks->len)
+		return;
+	hunk = g_ptr_array_index (chooser->hunks, active);
+
+	lines = g_strsplit (hunk->patch, "\n", -1);
+	for (guint i = 0; lines[i] != NULL; i++)
+	{
+		if (!in_body)
+		{
+			if (g_str_has_prefix (lines[i], "@@ "))
+				in_body = TRUE;
+			continue;
+		}
+		if (lines[i][0] == '+' || lines[i][0] == '-')
+		{
+			gchar *label = g_strdup_printf ("%c %s", lines[i][0], lines[i] + 1);
+			GtkWidget *check = gtk_check_button_new_with_label (label);
+			g_free (label);
+			gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (check), TRUE);
+			gtk_box_pack_start (GTK_BOX (chooser->lines_box), check, FALSE, FALSE, 0);
+			g_ptr_array_add (chooser->checks, check);
+		}
+	}
+	g_strfreev (lines);
+	gtk_widget_show_all (chooser->lines_box);
+}
+
+/* Lets the user pick one hunk from 'diff' and, within it, deselect
+ * individual '+'/'-' lines (all selected by default, so leaving every
+ * checkbox alone reproduces the previous whole-hunk behavior exactly).
+ * 'reverse' must match how the caller will `git apply` the result - see
+ * pluma_git_diff_hunk_subset(). */
 static gchar *
-choose_hunk_patch (PlumaGitPanel *panel, const gchar *diff, const gchar *title)
+choose_hunk_patch (PlumaGitPanel *panel, const gchar *diff, const gchar *title, gboolean reverse)
 {
 	GPtrArray *hunks = pluma_git_diff_split_hunks (diff);
-	GtkWidget *dialog, *box, *combo;
+	GtkWidget *dialog, *box, *combo, *scroll;
+	HunkChooser chooser;
 	gchar *selected = NULL;
 
 	if (hunks->len == 0)
@@ -832,14 +890,31 @@ choose_hunk_patch (PlumaGitPanel *panel, const gchar *diff, const gchar *title)
 	                                      _("Continue"), GTK_RESPONSE_ACCEPT, NULL);
 	box = gtk_dialog_get_content_area (GTK_DIALOG (dialog));
 	gtk_container_set_border_width (GTK_CONTAINER (box), 8);
+	gtk_box_set_spacing (GTK_BOX (box), 6);
 	combo = gtk_combo_box_text_new ();
 	for (guint i = 0; i < hunks->len; i++)
 	{
 		PlumaGitHunk *hunk = g_ptr_array_index (hunks, i);
 		gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (combo), hunk->label);
 	}
-	gtk_combo_box_set_active (GTK_COMBO_BOX (combo), 0);
 	gtk_box_pack_start (GTK_BOX (box), combo, FALSE, FALSE, 0);
+
+	gtk_box_pack_start (GTK_BOX (box),
+	                    gtk_label_new (_("Uncheck lines to leave them out of this operation:")),
+	                    FALSE, FALSE, 0);
+
+	chooser.hunks = hunks;
+	chooser.checks = g_ptr_array_new ();
+	chooser.lines_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 2);
+	scroll = gtk_scrolled_window_new (NULL, NULL);
+	gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+	gtk_widget_set_size_request (scroll, -1, 220);
+	gtk_container_add (GTK_CONTAINER (scroll), chooser.lines_box);
+	gtk_box_pack_start (GTK_BOX (box), scroll, TRUE, TRUE, 0);
+
+	g_signal_connect (combo, "changed", G_CALLBACK (hunk_combo_changed), &chooser);
+	gtk_combo_box_set_active (GTK_COMBO_BOX (combo), 0);
+
 	gtk_widget_show_all (dialog);
 	if (gtk_dialog_run (GTK_DIALOG (dialog)) == GTK_RESPONSE_ACCEPT)
 	{
@@ -847,9 +922,18 @@ choose_hunk_patch (PlumaGitPanel *panel, const gchar *diff, const gchar *title)
 		if (active >= 0 && (guint) active < hunks->len)
 		{
 			PlumaGitHunk *hunk = g_ptr_array_index (hunks, active);
-			selected = g_strdup (hunk->patch);
+			gboolean *line_selected = g_new (gboolean, chooser.checks->len);
+
+			for (guint i = 0; i < chooser.checks->len; i++)
+				line_selected[i] = gtk_toggle_button_get_active (
+				    GTK_TOGGLE_BUTTON (g_ptr_array_index (chooser.checks, i)));
+			selected = pluma_git_diff_hunk_subset (hunk, line_selected, chooser.checks->len, reverse);
+			g_free (line_selected);
+			if (selected == NULL)
+				panel_show_message (panel, _("No lines are selected to apply."));
 		}
 	}
+	g_ptr_array_unref (chooser.checks);
 	gtk_widget_destroy (dialog);
 out:
 	g_ptr_array_unref (hunks);
@@ -884,7 +968,8 @@ apply_selected_hunk (PlumaGitPanel *panel, gboolean reverse, gboolean cached,
 	}
 	patch = choose_hunk_patch (panel, diff,
 	                          destructive ? _("Discard Hunk") :
-	                          reverse ? _("Unstage Hunk") : _("Stage Hunk"));
+	                          reverse ? _("Unstage Hunk") : _("Stage Hunk"),
+	                          reverse);
 	if (patch == NULL)
 		goto out;
 	if (destructive && !confirm_action (panel, _("Discard the selected hunk?"),

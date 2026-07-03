@@ -19,4 +19,8 @@ typedef struct
 GPtrArray *pluma_git_diff_split_hunks (const gchar *diff);
 void       pluma_git_hunk_free        (PlumaGitHunk *hunk);
 
+guint pluma_git_diff_count_change_lines (const PlumaGitHunk *hunk);
+gchar *pluma_git_diff_hunk_subset (const PlumaGitHunk *hunk, const gboolean *line_selected,
+                                   guint n_line_selected, gboolean reverse);
+
 #endif

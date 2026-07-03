@@ -126,7 +126,28 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 
 - [x] Stage de arquivo individual ou todos e unstage individual.
 - [x] Stage/unstage de hunk.
-- [ ] Stage/unstage de linhas selecionadas.
+- [x] Stage/unstage de linhas selecionadas.
+  - `pluma_git_diff_hunk_subset()` (`pluma-git-diff.c`/`.h`) reconstrói um
+    hunk mantendo só um subconjunto das linhas `+`/`-` escolhidas pelo
+    usuário (linhas de contexto sempre ficam), recalculando o cabeçalho
+    `@@ -a,b +c,d @@` a partir da contagem real do corpo reconstruído —
+    é a mesma regra do `git add --patch`: no sentido de aplicação
+    escolhido (stage = direto, unstage/descarte = `--reverse`), uma linha
+    do símbolo "que representa a mudança" nessa direção que não foi
+    selecionada é **descartada** do patch; uma linha do símbolo oposto
+    não selecionada vira **contexto** (permanece, já que seu estado não
+    está sendo tocado).
+  - Diálogo de escolha de hunk (`choose_hunk_patch`) ganhou uma lista de
+    checkboxes por linha do hunk selecionado, todas marcadas por padrão
+    (deixar tudo marcado reproduz o comportamento antigo de hunk inteiro).
+  - 6 testes novos em `tests/git-diff.c` cobrindo contagem de linhas,
+    seleção total (deve reproduzir o hunk original), stage parcial,
+    unstage parcial, nada selecionado (retorna NULL) e preservação do
+    cabeçalho compartilhado do arquivo.
+  - Validado também contra `git apply` de verdade num repositório
+    temporário (não só contra as próprias expectativas dos testes): os
+    patches parciais gerados (stage e unstage/`--reverse`) aplicaram e
+    produziram exatamente o conteúdo de arquivo esperado.
 - [x] Descartar alteração com confirmação.
 - [x] Exigir confirmação reforçada para excluir não rastreados.
 - [x] Restaurar arquivo removido pelo descarte da working tree.
@@ -156,7 +177,7 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 - [ ] Exibir números de linha antigos e novos.
 - [ ] Navegar entre hunks.
 - [x] Stage, unstage ou descartar hunk.
-- [ ] Stage, unstage ou descartar linhas selecionadas.
+- [x] Stage, unstage ou descartar linhas selecionadas. (ver seção 4.2 — mesmo diálogo de escolha de hunk, `choose_hunk_patch`/`pluma_git_diff_hunk_subset`, cobre as três operações já que discard também usa `--reverse`.)
 - [x] Comparar working tree com index e index com `HEAD`.
 - [x] Comparar arquivo ou commit com outra referência.
 - [x] Detectar arquivos binários.
@@ -383,14 +404,15 @@ trabalho concluído e não a prioridade real; a ordem foi corrigida.
    - `git reset --hard` e `git clean` continuam não implementados (seções
      12/13) — nada a proteger ainda; proteger no momento em que forem
      implementados, não antes.
-3. **Operações por hunk e linha — hunk já feito, falta só linha**
-   - Stage/unstage/descarte por hunk já implementado via
-     `git apply --cached`/`--reverse` (`apply_selected_hunk`,
-     `pluma-git-panel.c:811`), delegando a aplicação do patch ao próprio
+3. **Operações por hunk e linha — feito, hunk e linha**
+   - Stage/unstage/descarte por hunk via `git apply --cached`/`--reverse`
+     (`apply_selected_hunk`), delegando a aplicação do patch ao próprio
      Git em vez de um parser de patch caseiro.
-   - Falta apenas seleção e aplicação por linhas dentro de um hunk — não
-     existe nenhum código para isso ainda.
-   - Exigir prévia, confirmação para descarte e testes de recuperação.
+   - Stage/unstage/descarte por linha via `pluma_git_diff_hunk_subset()`
+     (seção 4.2) — testado contra os próprios testes e contra `git apply`
+     real num repositório temporário.
+   - Descarte continua exigindo confirmação (`confirm_action`) tanto no
+     nível de hunk inteiro quanto no de linhas selecionadas dentro dele.
 
 Critério de saída: nenhuma operação dessas etapas pode modificar o repositório sem teste de sucesso, falha e recuperação correspondente.
 
