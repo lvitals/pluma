@@ -1,7 +1,9 @@
-# Bundled libpeas lua5.1 plugin loader + vendored LuaGObject runtime.
-# Only built when configure found Lua 5.1 + girepository-2.0 (see
-# configure.ac's "Lua detection" block). See VENDORED.md for what this
-# is and why it exists instead of relying on the system's lgi.
+# Bundled libpeas lua5.1 plugin loader + LuaGObject runtime (LuaGObject
+# itself is a git submodule at third_party/LuaGObject - run
+# `git submodule update --init --recursive` if it's empty). Only built
+# when configure found Lua 5.1 + girepository-2.0 (see configure.ac's
+# "Lua detection" block). See VENDORED.md for what this is and why it
+# exists instead of relying on the system's lgi.
 
 AUTOMAKE_OPTIONS = subdir-objects
 
@@ -40,13 +42,16 @@ liblua51loader_la_LIBADD  = $(PLUMA_LIBS) $(LUA_LIBS)
 resources/peas-lua-resources.c: resources/peas-lua.gresource.xml resources/peas-lua-internal.lua resources/peas-lua-strict.lua
 	$(AM_V_GEN) $(GLIB_COMPILE_RESOURCES) --target=$@ --sourcedir=$(srcdir)/resources --generate-source $(srcdir)/resources/peas-lua.gresource.xml
 
-# --- Vendored LuaGObject (github.com/vtrlx/LuaGObject, MIT). The Meson
-# build vendors this at subprojects/LuaGObject/ and builds it as a
-# subproject; autotools has no equivalent, so this references those same
-# vendored sources directly by relative path instead of duplicating them
-# here. ---
+# --- LuaGObject (github.com/vtrlx/LuaGObject, MIT), a pristine git
+# submodule at third_party/LuaGObject - never patched in-tree (see
+# VENDORED.md for how the one behavioral change it needs, in
+# override/Gtk3.lua and Gtk4.lua, is applied without touching it). Both
+# this file and ../lualoader/meson.build build LuaGObject's C core and
+# install its Lua files by referencing the submodule's sources directly
+# by relative path, instead of using LuaGObject's own build system
+# (which installs to system-wide Lua paths Pluma doesn't want). ---
 
-luagobject_srcdir = $(top_srcdir)/subprojects/LuaGObject/LuaGObject
+luagobject_srcdir = $(top_srcdir)/third_party/LuaGObject/LuaGObject
 
 luagobjectcoredir = $(PLUMA_PLUGIN_LOADERS_DIR)/lua5.1/lua-runtime/LuaGObject
 luagobjectcore_LTLIBRARIES = lua_gobject_core.la
@@ -107,10 +112,10 @@ luagobjectoverride_DATA =				\
 	$(luagobject_srcdir)/override/Pango.lua
 
 luagobjectentrydir = $(PLUMA_PLUGIN_LOADERS_DIR)/lua5.1/lua-runtime
-luagobjectentry_DATA = $(top_srcdir)/subprojects/LuaGObject/LuaGObject.lua
+luagobjectentry_DATA = $(top_srcdir)/third_party/LuaGObject/LuaGObject.lua
 
-# Mirrors subprojects/LuaGObject/LuaGObject/version.lua.in -> version.lua
-# (see subprojects/LuaGObject/LuaGObject/meson.build for the Meson
+# Mirrors third_party/LuaGObject/LuaGObject/version.lua.in -> version.lua
+# (see third_party/LuaGObject/LuaGObject/meson.build for the Meson
 # equivalent of this substitution).
 version.lua: $(luagobject_srcdir)/version.lua.in
 	$(AM_V_GEN) $(SED) "s/@VERSION@/0.10.5/" $< > $@

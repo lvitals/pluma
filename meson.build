@@ -182,7 +182,7 @@ endif
 # process crashes ("cannot register existing type 'GIRepository'") the
 # moment the loader actually runs a Lua plugin. So instead of detecting
 # system lgi, plugins/lualoader vendors LuaGObject (a maintained lgi fork
-# already ported to girepository-2.0, see subprojects/LuaGObject) and
+# already ported to girepository-2.0, see third_party/LuaGObject) and
 # bundles it privately - it only needs Lua 5.1 + girepository-2.0 here.
 lua51_dep = dependency('lua5.1', required: false)
 build_lualoader = lua51_dep.found()

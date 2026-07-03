@@ -54,6 +54,27 @@ You can download the latest Pluma tarball from:
 
 Pluma requires GTK+ (>= 3.22) and GtkSourceView (>= 4.0.2). For a complete list of dependencies see the [build.yml](https://github.com/mate-desktop/pluma/blob/master/.build.yml).
 
+Pluma uses git submodules for a couple of dependencies that aren't packaged
+by distros. In particular, the native Lua plugin loader (`plugins/lualoader`,
+which the `luaconsole` plugin depends on) needs
+[`third_party/LuaGObject`](https://github.com/vtrlx/LuaGObject) - a fork of
+`lgi` built against `girepository-2.0`, used instead of the system's `lgi`
+because that one is still linked against the legacy `libgirepository-1.0`
+and crashes when loaded alongside Pluma's own `girepository-2.0`. Cloning
+recursively (or running `git submodule update --init --recursive` as shown
+below) is required to pull it in; if it's missing, `plugins/lualoader` is
+skipped automatically at configure time and everything else still builds.
+
+```
+$ git clone --recurse-submodules https://github.com/mate-desktop/pluma.git
+```
+
+If you already have a clone without submodules, or pull new changes later:
+
+```
+$ git submodule update --init --recursive
+```
+
 **Warning**: This procedure doesn't install in a separate prefix, so it may
 overwrite your system binaries.
 

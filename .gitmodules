@@ -2,3 +2,6 @@
 	path = pluma/mate-submodules
 	url = https://github.com/lvitals/mate-submodules.git
 	ignore = untracked
+[submodule "third_party/LuaGObject"]
+	path = third_party/LuaGObject
+	url = https://github.com/vtrlx/LuaGObject.git

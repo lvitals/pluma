@@ -12,19 +12,29 @@ loading both in one process crashes with "cannot register existing type
 'GIRepository'" the instant a `Loader=lua5.1` plugin is actually probed
 - not just when one is activated.
 
-Two functional patches on top of the unmodified libpeas source:
+Functional patches on top of the unmodified libpeas source:
 
 1. The hardcoded `require 'lgi'` - once in C
    (`peas_lua_utils_require (L, "lgi")` in
    `peas-plugin-loader-lua.c`) and once in the embedded
    `resources/peas-lua-internal.lua` GResource - changed to
-   `require 'LuaGObject'`, the vendored fork of lgi that's actually built
-   against `girepository-2.0` (see `../../subprojects/LuaGObject/VENDORED.md`).
+   `require 'LuaGObject'`, a fork of lgi that's actually built against
+   `girepository-2.0`. LuaGObject itself is `third_party/LuaGObject`, a
+   **pristine, unmodified git submodule** pinned to
+   `github.com/vtrlx/LuaGObject` (see the repo root README's "Lua plugin
+   loader" section for the clone instructions) - it is never patched
+   in-tree; see point 3 below for how the one behavioral change it needs
+   is applied without touching it.
 2. A new `PEAS_LUA_EXTRA_PATH` C macro (baked in at build time to Pluma's
    private runtime dir) plus a small `luaL_dostring()` call injected
    right after `luaL_openlibs()` in `peas_plugin_loader_lua_initialize()`,
    so this loader's Lua state finds the bundled LuaGObject instead of any
-   system-wide Lua install.
+   system-wide Lua install. `meson.build`/`Makefile.am` in this directory
+   build LuaGObject's C core and install its Lua files directly from
+   `third_party/LuaGObject/LuaGObject/*` by path (mirroring each other),
+   instead of using LuaGObject's own build system, since that installs to
+   system-wide Lua paths we don't want and the submodule can't carry a
+   local patch to redirect it.
 
 The two vendored private headers (`libpeas/peas-plugin-loader.h`,
 `libpeas/peas-plugin-info-priv.h`) also needed their
