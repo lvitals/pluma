@@ -1407,13 +1407,16 @@ pluma_spell_plugin_activate (PlumaWindowActivatable *activatable)
 static void
 pluma_spell_plugin_deactivate (PlumaWindowActivatable *activatable)
 {
+	PlumaSpellPlugin *plugin;
 	PlumaSpellPluginPrivate *data;
 	PlumaWindow *window;
 	GtkUIManager *manager;
+	GList *docs, *l;
 
 	pluma_debug (DEBUG_PLUGINS);
 
-	data = PLUMA_SPELL_PLUGIN (activatable)->priv;
+	plugin = PLUMA_SPELL_PLUGIN (activatable);
+	data = plugin->priv;
 	window = PLUMA_WINDOW (data->window);
 
 	manager = pluma_window_get_ui_manager (window);
@@ -1425,6 +1428,20 @@ pluma_spell_plugin_deactivate (PlumaWindowActivatable *activatable)
 	pluma_window_remove_menu_items (window, "plugin-tools-section", "plugin-spell.check-spelling");
 	pluma_window_remove_menu_items (window, "plugin-tools-section", "plugin-spell.auto-spell");
 	pluma_window_remove_menu_items (window, "plugin-tools-section", "plugin-spell.set-language");
+
+	/* tab_added_cb connects on_document_loaded/on_document_saved directly on
+	 * each document, so they must be disconnected here too: otherwise a
+	 * document outlives the plugin instance with a dangling callback that
+	 * fires on the next load/save and dereferences freed memory. */
+	docs = pluma_window_get_documents (window);
+	for (l = docs; l != NULL; l = g_list_next (l))
+	{
+		PlumaDocument *doc = PLUMA_DOCUMENT (l->data);
+
+		g_signal_handlers_disconnect_by_func (doc, on_document_loaded, plugin);
+		g_signal_handlers_disconnect_by_func (doc, on_document_saved, plugin);
+	}
+	g_list_free (docs);
 
 	g_signal_handler_disconnect (window, data->tab_added_id);
 	g_signal_handler_disconnect (window, data->tab_removed_id);
