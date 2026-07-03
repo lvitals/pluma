@@ -49,3 +49,18 @@ actually installed under `/usr/include/libpeas-1.0/libpeas/`.
 LuaGObject's `_VERSION` - `peas_lua_utils_check_version()` just compares
 this against the string the required module reports at runtime, nothing
 more.
+
+**Known Autotools build-artifact quirk**: `Makefile.am` here references
+LuaGObject's `.c` files via `$(top_srcdir)/third_party/LuaGObject/...` -
+Automake can't always place the resulting `.lo`/`.deps`/`.dirstamp`
+objects in the build directory for sources referenced this way, so they
+land next to the source files instead, inside the submodule's own
+checkout. Harmless (nothing depends on their location, and they're not
+git-tracked), but it makes the submodule show up as having "untracked
+content" in `git status` after any Autotools build. Clean it with
+`git -C third_party/LuaGObject clean -fdx`, or add the same patterns
+(`.deps/`, `.libs/`, `.dirstamp`, `*.lo`, `*.o`) to that submodule's own
+local, uncommitted `$(git -C third_party/LuaGObject rev-parse
+--absolute-git-dir)/info/exclude` so `git status` stops flagging them at
+all (done already on this machine's clone; a fresh clone elsewhere needs
+it redone once).
