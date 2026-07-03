@@ -66,6 +66,8 @@ plugins/externaltools/data/remove-trailing-spaces.desktop.in
 plugins/externaltools/data/run-command.desktop.in
 plugins/externaltools/data/search-recursive.desktop.in
 plugins/externaltools/data/switch-c.desktop.in
+plugins/luaconsole/luaconsole.plugin.desktop.in.in
+plugins/luaconsole/luaconsole/config.ui
 plugins/modelines/modelines.plugin.desktop.in.in
 plugins/pythonconsole/pythonconsole.plugin.desktop.in.in
 plugins/pythonconsole/pythonconsole/__init__.py

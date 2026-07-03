@@ -1,6 +1,8 @@
 DIST_SUBDIRS =		\
 	docinfo 	\
 	externaltools	\
+	luaconsole	\
+	lualoader	\
 	modelines	\
 	pythonconsole	\
 	snippets	\
@@ -14,6 +16,7 @@ DIST_SUBDIRS =		\
 SUBDIRS = 		\
 	docinfo		\
 	externaltools	\
+	luaconsole	\
 	modelines	\
 	pythonconsole	\
 	snippets	\
@@ -25,6 +28,10 @@ SUBDIRS = 		\
 
 if ENABLE_ENCHANT
 SUBDIRS      += spell
+endif
+
+if BUILD_LUALOADER
+SUBDIRS      += lualoader
 endif
 
 -include $(top_srcdir)/git.mk

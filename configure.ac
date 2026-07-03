@@ -220,56 +220,54 @@ AM_PATH_PYTHON([3.0])
 dnl ================================================================
 dnl Lua detection for the native Lua plugin loader (plugins/lualoader)
 dnl ================================================================
-dnl Probe pkg-config from newest to oldest supported Lua; distros package
-dnl the same Lua version under different pkg-config names (lua5.4, lua-5.4,
-dnl lua54, ...), so try each spelling before moving to the next version.
+dnl libpeas' native Lua loader embeds Lua 5.1 specifically, and the
+dnl vendored LuaGObject runtime (plugins/lualoader/LuaGObject, see
+dnl plugins/lualoader/VENDORED.md) is built for 5.1 too, so this probes
+dnl lua5.1 specifically - not "whichever Lua version is newest". Distros
+dnl package it under different pkg-config names (lua5.1, lua-5.1,
+dnl lua51), so try each spelling.
+dnl
+dnl It also needs girepository-2.0: the distro-packaged Lua/GObject-
+dnl Introspection binding (lgi) is still linked against the legacy
+dnl libgirepository-1.0, which crashes the whole process ("cannot
+dnl register existing type 'GIRepository'") if loaded alongside Pluma's
+dnl libgirepository-2.0 - see plugins/lualoader/VENDORED.md. So instead
+dnl of detecting system lgi, plugins/lualoader vendors LuaGObject (a
+dnl maintained lgi fork already ported to girepository-2.0) and bundles
+dnl it privately; it's only usable when Pluma itself is also using
+dnl girepository-2.0 ($have_girepository_2 above).
 have_lua=no
-LUA_VERSION=
-LUA_VERSION_NODOT=
 LUA_PC_NAME=
-for lua_ver in 5.5 5.4 5.3 5.2 5.1; do
+for lua_pc in lua5.1 lua-5.1 lua51; do
 	if test "x$have_lua" = xno; then
-		lua_ver_nodot=`echo "$lua_ver" | sed 's/\.//'`
-		for lua_pc in "lua$lua_ver" "lua-$lua_ver" "lua$lua_ver_nodot"; do
-			if $PKG_CONFIG --exists "$lua_pc" 2>/dev/null; then
-				LUA_PC_NAME="$lua_pc"
-				LUA_VERSION="$lua_ver"
-				LUA_VERSION_NODOT="$lua_ver_nodot"
-				have_lua=yes
-				break
-			fi
-		done
+		if $PKG_CONFIG --exists "$lua_pc" 2>/dev/null; then
+			LUA_PC_NAME="$lua_pc"
+			have_lua=yes
+		fi
 	fi
 done
 
-AM_CONDITIONAL([HAVE_LUA], [test "x$have_lua" = xyes])
 AS_IF([test "x$have_lua" = xyes], [
 	PKG_CHECK_MODULES([LUA], [$LUA_PC_NAME])
-	AC_DEFINE([HAVE_LUA], [1], [Define if a Lua development package (5.1-5.5) was found])
-	AC_DEFINE_UNQUOTED([LUA_VERSION], ["$LUA_VERSION"], [Lua version selected for the Lua plugin loader])
-	AC_MSG_NOTICE([Lua plugin loader: using Lua $LUA_VERSION ($LUA_PC_NAME)])
-], [
-	AC_MSG_WARN([No Lua development package (5.1-5.5) found via pkg-config: the Lua plugin loader will not be built])
-])
-AC_SUBST([LUA_VERSION])
+	PKG_CHECK_MODULES([LUALOADER_EXTRA], [libffi gmodule-2.0])
+	AS_IF([test "x$have_girepository_2" = xyes], [
+		AC_DEFINE([HAVE_LUA], [1], [Define if a Lua 5.1 development package was found])
+		AC_DEFINE_UNQUOTED([LUA_VERSION], ["5.1"], [Lua version selected for the Lua plugin loader])
+		AC_DEFINE([HAVE_BUNDLED_LUA_LOADER], [1], [Building the bundled Lua plugin loader against vendored LuaGObject])
+		AC_MSG_NOTICE([Lua plugin loader: building bundled loader against Lua 5.1 + vendored LuaGObject])
 
-dnl LGI (GObject-Introspection bindings for Lua) is required at runtime by
-dnl Lua plugins; check it against the interpreter matching the Lua
-dnl development version selected above, not a hardcoded one.
-have_lua_lgi=no
-AS_IF([test "x$have_lua" = xyes], [
-	AC_PATH_PROGS([LUA_INTERPRETER], [lua$LUA_VERSION lua$LUA_VERSION_NODOT lua], [no])
-	AS_IF([test "x$LUA_INTERPRETER" != xno], [
-		AC_MSG_CHECKING([for Lua LGI bindings ($LUA_INTERPRETER)])
-		AS_IF([$LUA_INTERPRETER -e "require('lgi')" >/dev/null 2>&1], [
-			have_lua_lgi=yes
-		])
-		AC_MSG_RESULT([$have_lua_lgi])
+		PLUMA_FULLPATH(libdir, NONE, FULL_LIBDIR)
+		PLUMA_PLUGIN_LOADERS_DIR="$FULL_LIBDIR/pluma/plugin-loaders"
+		AC_DEFINE_UNQUOTED([PLUMA_PLUGIN_LOADERS_DIR], ["$PLUMA_PLUGIN_LOADERS_DIR"], [Directory Pluma's bundled plugin loaders are installed in])
+		AC_SUBST([PLUMA_PLUGIN_LOADERS_DIR])
+	], [
+		have_lua=no
+		AC_MSG_WARN([Pluma was configured against the legacy girepository-1.0 API: the bundled Lua plugin loader (which needs girepository-2.0) will not be built])
 	])
+], [
+	AC_MSG_WARN([No Lua 5.1 development package found via pkg-config: the Lua plugin loader will not be built])
 ])
-AS_IF([test "x$have_lua_lgi" != "xyes"], [
-	AC_MSG_WARN([Lua LGI not found; Lua plugins will be unavailable at runtime])
-])
+AM_CONDITIONAL([BUILD_LUALOADER], [test "x$have_lua" = xyes])
 
 dnl ================================================================
 dnl GSettings related settings
@@ -281,6 +279,7 @@ dnl ================================================================
 dnl Misc
 dnl ================================================================
 AC_PATH_PROG(GLIB_MKENUMS, glib-mkenums)
+AC_PATH_PROG(GLIB_COMPILE_RESOURCES, glib-compile-resources)
 
 AC_ARG_ENABLE([tests],
 	AS_HELP_STRING([--enable-tests], [Enable the tests]),
@@ -335,6 +334,11 @@ plugins/externaltools/externaltools.plugin.desktop.in
 plugins/externaltools/data/Makefile
 plugins/externaltools/scripts/Makefile
 plugins/externaltools/tools/Makefile
+plugins/luaconsole/Makefile
+plugins/luaconsole/luaconsole.plugin.desktop.in
+plugins/luaconsole/org.mate.pluma.plugins.luaconsole.gschema.xml
+plugins/luaconsole/luaconsole/Makefile
+plugins/lualoader/Makefile
 plugins/modelines/Makefile
 plugins/modelines/modelines.plugin.desktop.in
 plugins/pythonconsole/Makefile

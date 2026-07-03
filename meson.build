@@ -171,26 +171,25 @@ else
   warning('No Lua development package (5.1-5.5) found via pkg-config: the Lua plugin loader will not be built')
 endif
 
-# LGI (GObject-introspection bindings for Lua) is required at runtime by Lua
-# plugins; check it against the interpreter matching the Lua development
-# version selected above, not a hardcoded one.
-have_lua_lgi = false
-if have_lua
-  lua_version_parts = lua_version.split('.')
-  lua_version_nodot = lua_version_parts[0] + lua_version_parts[1]
-  lua_program = find_program('lua' + lua_version, 'lua' + lua_version_nodot, 'lua', required: false)
-  if lua_program.found()
-    lua_lgi_check = run_command(
-      lua_program,
-      '-e',
-      'require("lgi")',
-      check: false,
-    )
-    have_lua_lgi = lua_lgi_check.returncode() == 0
-  endif
-endif
-if have_lua and not have_lua_lgi
-  warning('Lua LGI not found: Lua plugins require LGI at runtime')
+# libpeas' native Lua plugin loader (used by plugins/lualoader) embeds
+# Lua 5.1 specifically, regardless of which Lua version was newest above,
+# so it needs its own dedicated pkg-config probe.
+#
+# It also needs a GObject-Introspection binding for Lua at runtime. The
+# distro-packaged one (lgi, e.g. lua51-lgi) is still linked against the
+# legacy libgirepository-1.0 compat library, while Pluma/libpeas/modern
+# gobject-introspection all use libgirepository-2.0 - loading both in one
+# process crashes ("cannot register existing type 'GIRepository'") the
+# moment the loader actually runs a Lua plugin. So instead of detecting
+# system lgi, plugins/lualoader vendors LuaGObject (a maintained lgi fork
+# already ported to girepository-2.0, see subprojects/LuaGObject) and
+# bundles it privately - it only needs Lua 5.1 + girepository-2.0 here.
+lua51_dep = dependency('lua5.1', required: false)
+build_lualoader = lua51_dep.found()
+if build_lualoader
+  message('Lua plugin loader: building bundled loader against Lua 5.1 + vendored LuaGObject')
+else
+  warning('No Lua 5.1 development package found via pkg-config: the Lua plugin loader will not be built')
 endif
 
 # Config.h generation
@@ -204,14 +203,21 @@ conf_data.set_quoted('PACKAGE_VERSION', meson.project_version())
 conf_data.set_quoted('PACKAGE_URL', 'http://mate-desktop.org')
 conf_data.set('TOOLBAR_STYLE', 'PLUMA_TOOLBAR_SYSTEM')
 
-if have_lua
+if build_lualoader
   conf_data.set('HAVE_LUA', 1)
-  conf_data.set_quoted('LUA_VERSION', lua_version)
+  conf_data.set_quoted('LUA_VERSION', '5.1')
+  conf_data.set('HAVE_BUNDLED_LUA_LOADER', 1)
+endif
+
+# Both bundled loaders install into the same private directory (as
+# python3/ and lua5.1/ subdirs); either one needing it is enough to
+# require pluma-plugins-engine.c to point libpeas there.
+if build_bundled_python_loader or build_lualoader
+  conf_data.set_quoted('PLUMA_PLUGIN_LOADERS_DIR', join_paths(get_option('prefix'), get_option('libdir'), meson.project_name(), 'plugin-loaders'))
 endif
 
 if build_bundled_python_loader
   conf_data.set('HAVE_BUNDLED_PYTHON_LOADER', 1)
-  conf_data.set_quoted('PLUMA_PLUGIN_LOADERS_DIR', join_paths(get_option('prefix'), get_option('libdir'), meson.project_name(), 'plugin-loaders'))
 endif
 
 if enable_gvfs_metadata

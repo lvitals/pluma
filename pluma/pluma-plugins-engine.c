@@ -65,14 +65,17 @@ pluma_plugins_engine_init (PlumaPluginsEngine *engine)
 
 	pluma_debug (DEBUG_PLUGINS);
 
-#ifdef HAVE_BUNDLED_PYTHON_LOADER
+#if defined(HAVE_BUNDLED_PYTHON_LOADER) || defined(HAVE_BUNDLED_LUA_LOADER)
 	g_setenv ("PEAS_PLUGIN_LOADERS_DIR", PLUMA_PLUGIN_LOADERS_DIR, FALSE);
 #endif
 
 	peas_engine_enable_loader (PEAS_ENGINE (engine), "python3");
-	/* Lua plugins use libpeas' native Lua 5.1 loader and LGI for the
-	 * introspected Pluma/GTK API. Enabling an unavailable loader is harmless;
-	 * libpeas reports a useful error only if a Lua plugin is requested. */
+	/* Lua plugins use Pluma's own bundled lua5.1 loader (plugins/lualoader),
+	 * which uses a private, vendored LuaGObject instead of the system 'lgi'
+	 * for the introspected Pluma/GTK API - see plugins/lualoader/VENDORED.md
+	 * for why the system one can't be used safely here. Enabling an
+	 * unavailable loader is harmless; libpeas reports a useful error only if
+	 * a Lua plugin is requested. */
 	peas_engine_enable_loader (PEAS_ENGINE (engine), "lua5.1");
 
 	engine->priv = pluma_plugins_engine_get_instance_private (engine);
