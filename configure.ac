@@ -307,6 +307,12 @@ AS_IF([test "x$enable_git" = "xyes"], [
 ])
 AM_CONDITIONAL([ENABLE_GIT], [test "x$enable_git" = "xyes"])
 
+# Git panel unit/integration tests (tests/git-*) also need a real `git`
+# binary at test-run time, same gate as Meson's
+# "git_program.found() and enable_git" in tests/meson.build.
+AC_PATH_PROG([GIT], [git])
+AM_CONDITIONAL([ENABLE_GIT_TESTS], [test "x$enable_git" = "xyes" -a "x$GIT" != "x"])
+
 YELP_HELP_INIT
 
 AC_CONFIG_FILES([

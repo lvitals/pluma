@@ -27,6 +27,27 @@ TEST_PROGS			+= document-saver
 document_saver_SOURCES		= document-saver.c
 document_saver_LDADD		= $(progs_ldadd)
 
-TESTS = $(TEST_PROGS)
+if ENABLE_GIT_TESTS
+TEST_PROGS			+= git-diff
+git_diff_SOURCES		= git-diff.c
+git_diff_LDADD			= $(progs_ldadd)
 
-EXTRA_DIST = setup-document-saver.sh
+TEST_PROGS			+= git-commit
+git_commit_SOURCES		= git-commit.c
+git_commit_LDADD		= $(progs_ldadd)
+
+TEST_PROGS			+= git-status-parser
+git_status_parser_SOURCES	= git-status-parser.c
+git_status_parser_LDADD	= $(progs_ldadd)
+
+TESTS				= $(TEST_PROGS) git-integration.sh
+else
+TESTS = $(TEST_PROGS)
+endif
+
+# GIT_CONFIG_NOSYSTEM matches Meson's tests/meson.build env for this test:
+# don't let a real /etc/gitconfig or $HOME/.gitconfig influence the
+# throwaway repo git-integration.sh creates under $TMPDIR.
+TESTS_ENVIRONMENT = GIT_CONFIG_NOSYSTEM=1
+
+EXTRA_DIST = setup-document-saver.sh git-integration.sh
