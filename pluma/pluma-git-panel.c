@@ -1851,7 +1851,7 @@ pluma_git_panel_init(PlumaGitPanel*p)
 	row=gtk_box_new(GTK_ORIENTATION_HORIZONTAL,4);
 	gtk_box_set_homogeneous(GTK_BOX(row),TRUE);
 #define TOOL(icon,tip,cb) button=gtk_button_new_from_icon_name(icon,GTK_ICON_SIZE_MENU);gtk_widget_set_tooltip_text(button,tip);g_signal_connect(button,"clicked",G_CALLBACK(cb),p);gtk_box_pack_start(GTK_BOX(row),button,TRUE,TRUE,0)
-	TOOL("document-open-recent-symbolic",_("History"),history_clicked);TOOL("view-list-bullet-symbolic",_("Branches"),branches_clicked);TOOL("bookmark-new-symbolic",_("Tags"),tags_clicked);TOOL("network-server-symbolic",_("Remotes"),remotes_clicked);TOOL("package-x-generic-symbolic",_("Stashes"),stash_list_clicked);TOOL("view-dual-symbolic",_("Diff selected file"),diff_selected_clicked);
+	TOOL("document-open-recent-symbolic",_("History"),history_clicked);TOOL("view-list-bullet-symbolic",_("Branches"),branches_clicked);TOOL("bookmark-new-symbolic",_("Tags"),tags_clicked);TOOL("folder-remote-symbolic",_("Remotes"),remotes_clicked);TOOL("package-x-generic-symbolic",_("Stashes"),stash_list_clicked);TOOL("view-dual-symbolic",_("Diff selected file"),diff_selected_clicked);
 #undef TOOL
 	gtk_widget_set_margin_bottom (row, 6);
 	gtk_box_pack_start(GTK_BOX(top_box),row,FALSE,FALSE,0);
