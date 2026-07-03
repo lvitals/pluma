@@ -5,6 +5,7 @@
 typedef struct
 {
 	gchar *author;
+	gchar *author_mail;
 	gint64 author_time;
 	gchar *summary;
 } CommitMeta;
@@ -22,6 +23,7 @@ commit_meta_free (gpointer data)
 	if (meta == NULL)
 		return;
 	g_free (meta->author);
+	g_free (meta->author_mail);
 	g_free (meta->summary);
 	g_free (meta);
 }
@@ -33,6 +35,7 @@ pluma_git_blame_line_free (PlumaGitBlameLine *line)
 		return;
 	g_free (line->hash);
 	g_free (line->author);
+	g_free (line->author_mail);
 	g_free (line->summary);
 	g_free (line->content);
 	g_free (line);
@@ -103,6 +106,7 @@ pluma_git_blame_parse (const gchar *porcelain_output)
 
 			blame_line->hash = g_strdup (current_hash);
 			blame_line->author = g_strdup (meta != NULL && meta->author != NULL ? meta->author : "");
+			blame_line->author_mail = g_strdup (meta != NULL && meta->author_mail != NULL ? meta->author_mail : "");
 			blame_line->author_time = meta != NULL ? meta->author_time : 0;
 			blame_line->summary = g_strdup (meta != NULL && meta->summary != NULL ? meta->summary : "");
 			blame_line->content = g_strdup (line + 1);
@@ -129,6 +133,11 @@ pluma_git_blame_parse (const gchar *porcelain_output)
 				continue;
 			if (g_str_has_prefix (line, "author-time "))
 				meta->author_time = g_ascii_strtoll (line + strlen ("author-time "), NULL, 10);
+			else if (g_str_has_prefix (line, "author-mail "))
+			{
+				g_free (meta->author_mail);
+				meta->author_mail = g_strdup (line + strlen ("author-mail "));
+			}
 			else if (g_str_has_prefix (line, "author "))
 			{
 				g_free (meta->author);
@@ -139,8 +148,8 @@ pluma_git_blame_parse (const gchar *porcelain_output)
 				g_free (meta->summary);
 				meta->summary = g_strdup (line + strlen ("summary "));
 			}
-			/* author-mail, author-tz, committer*, previous, filename,
-			 * boundary: not currently surfaced to callers. */
+			/* author-tz, committer*, previous, filename, boundary: not
+			 * currently surfaced to callers. */
 		}
 	}
 	g_strfreev (lines);

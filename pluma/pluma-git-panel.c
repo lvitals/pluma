@@ -577,8 +577,11 @@ static void schedule_refresh (PlumaGitPanel *p) { if (!p->refresh_source) p->ref
  * shared by every "show some Git command's formatted output" feature
  * (History, Branches, Tags, Remotes, Stashes, diffs, Blame). Colored via
  * apply_git_output_colors(), keyed off 'title' the same way call_done()
- * already relies on for its own async version of this. */
-static void
+ * already relies on for its own async version of this. Returns the tab
+ * (or NULL if 'text' was empty and nothing was opened) so callers that
+ * need to attach extra per-tab behavior - e.g. Blame's tooltip - can get
+ * at the view. */
+static PlumaTab *
 show_read_only_git_tab (PlumaGitPanel *panel, const gchar *title, const gchar *text)
 {
 	PlumaTab *tab;
@@ -586,7 +589,7 @@ show_read_only_git_tab (PlumaGitPanel *panel, const gchar *title, const gchar *t
 	GtkTextView *view;
 
 	if (text == NULL || *text == '\0')
-		return;
+		return NULL;
 
 	tab = pluma_window_create_tab (panel->window, TRUE);
 	doc = pluma_tab_get_document (tab);
@@ -602,6 +605,7 @@ show_read_only_git_tab (PlumaGitPanel *panel, const gchar *title, const gchar *t
 	gtk_text_view_set_cursor_visible (view, FALSE);
 	gtk_widget_add_events (GTK_WIDGET (view), GDK_POINTER_MOTION_MASK);
 	g_signal_connect (view, "motion-notify-event", G_CALLBACK (on_git_output_motion), NULL);
+	return tab;
 }
 
 static void
@@ -1203,6 +1207,66 @@ on_git_output_motion (GtkWidget *widget, GdkEventMotion *event, gpointer data)
 		g_clear_object (&cursor);
 	}
 	return FALSE;
+}
+
+/* Blame-only: shows full commit details (hash, author, e-mail, exact
+ * timestamp, commit summary) for the line under the pointer - the main
+ * view only has room for short-hash/author/date/content. Only fires on
+ * views that had a "pluma-git-blame-lines" GPtrArray attached by
+ * blame_current_file_clicked(); a plain g_object_get_data() miss is used
+ * to no-op harmlessly on every other kind of read-only Git tab, so this
+ * doesn't need its own opt-in flag. */
+static gboolean
+on_blame_query_tooltip (GtkWidget *widget, gint x, gint y, gboolean keyboard_mode,
+                        GtkTooltip *tooltip, gpointer data)
+{
+	GtkTextView *view = GTK_TEXT_VIEW (widget);
+	GPtrArray *lines = g_object_get_data (G_OBJECT (widget), "pluma-git-blame-lines");
+	GtkTextIter iter;
+	gint line_no;
+	PlumaGitBlameLine *blame_line;
+	GString *text;
+
+	if (lines == NULL)
+		return FALSE;
+
+	if (keyboard_mode)
+	{
+		GtkTextBuffer *buffer = gtk_text_view_get_buffer (view);
+		gtk_text_buffer_get_iter_at_mark (buffer, &iter, gtk_text_buffer_get_insert (buffer));
+	}
+	else
+	{
+		gint buffer_x, buffer_y;
+
+		gtk_text_view_window_to_buffer_coords (view, GTK_TEXT_WINDOW_WIDGET, x, y,
+		                                       &buffer_x, &buffer_y);
+		gtk_text_view_get_iter_at_location (view, &iter, buffer_x, buffer_y);
+	}
+
+	line_no = gtk_text_iter_get_line (&iter);
+	if (line_no < 0 || (guint) line_no >= lines->len)
+		return FALSE;
+	blame_line = g_ptr_array_index (lines, line_no);
+
+	text = g_string_new (NULL);
+	if (pluma_git_blame_line_is_uncommitted (blame_line))
+		g_string_append (text, _("Not committed yet"));
+	else
+	{
+		GDateTime *dt = g_date_time_new_from_unix_local (blame_line->author_time);
+		gchar *when = dt != NULL ? g_date_time_format (dt, "%Y-%m-%d %H:%M:%S") : g_strdup ("");
+
+		g_string_append_printf (text, "%.10s\n%s %s\n%s\n\n%s",
+		                        blame_line->hash, blame_line->author, blame_line->author_mail,
+		                        when, blame_line->summary);
+		g_free (when);
+		g_clear_pointer (&dt, g_date_time_unref);
+	}
+
+	gtk_tooltip_set_text (tooltip, text->str);
+	g_string_free (text, TRUE);
+	return TRUE;
 }
 
 /* Colors the contents of a read-only Git output tab (History, Branches,
@@ -1966,11 +2030,15 @@ blame_current_file_clicked (GtkMenuItem *item, gpointer data)
 		GPtrArray *lines = pluma_git_blame_parse (porcelain);
 
 		if (lines->len == 0)
+		{
 			panel_show_message (panel, _("No blame information is available for this file."));
+			g_ptr_array_unref (lines);
+		}
 		else
 		{
 			GString *formatted = g_string_new (NULL);
 			gchar *title;
+			PlumaTab *tab;
 
 			for (guint i = 0; i < lines->len; i++)
 			{
@@ -1996,11 +2064,26 @@ blame_current_file_clicked (GtkMenuItem *item, gpointer data)
 			}
 
 			title = g_strdup_printf (_("Blame: %s"), relative);
-			show_read_only_git_tab (panel, title, formatted->str);
+			tab = show_read_only_git_tab (panel, title, formatted->str);
 			g_free (title);
 			g_string_free (formatted, TRUE);
+
+			if (tab != NULL)
+			{
+				/* One line of 'lines' per line of the tab's buffer, in
+				 * the same order - see the loop above - so the tooltip
+				 * handler can index straight into it by buffer line
+				 * number. Ownership moves to the view here. */
+				GtkWidget *view = GTK_WIDGET (pluma_tab_get_view (tab));
+				gtk_widget_set_has_tooltip (view, TRUE);
+				g_object_set_data_full (G_OBJECT (view), "pluma-git-blame-lines",
+				                        lines, (GDestroyNotify) g_ptr_array_unref);
+				g_signal_connect (view, "query-tooltip",
+				                  G_CALLBACK (on_blame_query_tooltip), NULL);
+			}
+			else
+				g_ptr_array_unref (lines);
 		}
-		g_ptr_array_unref (lines);
 		g_free (porcelain);
 	}
 	g_free (relative);

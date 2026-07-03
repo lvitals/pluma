@@ -10,6 +10,7 @@ typedef struct
 {
 	gchar *hash;
 	gchar *author;
+	gchar *author_mail; /* includes the surrounding "<...>", as git prints it */
 	gint64 author_time; /* unix timestamp; 0 if unavailable */
 	gchar *summary;
 	gchar *content;     /* the line's text, without the porcelain "\t" prefix */

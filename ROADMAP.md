@@ -272,29 +272,51 @@ Implementado do zero (não existia nenhum código antes desta sessão).
     `git show` num commit inexistente. Beneficia não só Blame como
     History/Branches/Stashes ao mesmo tempo, já que todas usam a mesma
     tag.
-- [ ] Mostrar detalhes em tooltip/popover.
+- [x] Mostrar detalhes em tooltip/popover.
+  - `on_blame_query_tooltip` (sinal `"query-tooltip"` na view, ativado só
+    para abas de Blame via `gtk_widget_set_has_tooltip`) mostra, ao
+    passar o mouse numa linha: hash, autor completo + e-mail, data e hora
+    exatas (`%Y-%m-%d %H:%M:%S`, não só a data curta da view principal) e
+    a mensagem de resumo do commit — dado que já existia no
+    `PlumaGitBlameLine` mas não cabia na linha formatada. A lista
+    (`GPtrArray`) usada pra montar o texto é anexada à própria view via
+    `g_object_set_data_full` (dono passa a ser a view, liberada
+    automaticamente com ela) e o handler indexa direto pela linha do
+    buffer sob o cursor, já que existe uma linha de texto por
+    `PlumaGitBlameLine` na mesma ordem.
+  - Novo campo `author_mail` no parser (`author-mail <...>` do
+    `--porcelain`, não capturado antes) — cacheado por hash do mesmo jeito
+    que author/summary, incluindo o caso de reaproveitamento na forma
+    compacta. 2 asserts novos em `tests/git-blame.c` cobrindo isso
+    (primeira ocorrência e forma compacta).
 - [x] Tratar linhas ainda não commitadas.
   - Marcadas como "(uncommitted)" em vez de data, em vez de mostrar o
     hash `000...0` do Git como se fosse um commit real; clicar nesse hash
-    não tenta abrir um commit inexistente (ver item acima).
+    não tenta abrir um commit inexistente (ver item acima); o tooltip
+    mostra "Not committed yet" em vez de autor/data/mensagem fictícios.
+
+Com isso, **a seção 10 (Blame) está com todos os itens concluídos.**
 
 Parser (`pluma-git-blame.c`/`.h`, `pluma_git_blame_parse`) testado com
 saída real de `git blame --porcelain` capturada de um repositório de
 teste (não texto inventado à mão) — 5 testes em `tests/git-blame.c`
-cobrindo: entrada vazia, metadados na primeira ocorrência de um commit,
-reaproveitamento correto de metadados na forma compacta (quando o Git
-repete um commit já visto, ele omite author/summary/etc. e só repete o
-cabeçalho curto — o parser precisa cachear por hash), detecção de linha
-não commitada (hash todo zero) e confirmação de que uma linha commitada
-normal não é marcada como não commitada.
+cobrindo: entrada vazia, metadados (incl. e-mail) na primeira ocorrência
+de um commit, reaproveitamento correto de metadados (incl. e-mail) na
+forma compacta (quando o Git repete um commit já visto, ele omite
+author/summary/etc. e só repete o cabeçalho curto — o parser precisa
+cachear por hash), detecção de linha não commitada (hash todo zero) e
+confirmação de que uma linha commitada normal não é marcada como não
+commitada.
 
 Nota: o clique no hash (padrão GTK3 de "tag clicável" via sinal `"event"`
-da `GtkTextTag`, mesma técnica do `gtk3-demo` de hypertext) compila sem
-warnings e segue a API documentada, mas não foi testado visualmente de
-verdade clicando na interface — não havia Xvfb/xdotool disponíveis para
-testar isolado da tela real, e captura de tela da sessão real do usuário
-está fora de cogitação sem permissão explícita por uso. Vale uma
-passagem manual do usuário antes de considerar 100% validado.
+da `GtkTextTag`, mesma técnica do `gtk3-demo` de hypertext) e o tooltip
+(`"query-tooltip"`, também API GTK3 padrão) compilam sem warnings e
+seguem a API documentada, mas nenhum dos dois foi testado visualmente de
+verdade (clicando/passando o mouse na interface) — não havia
+Xvfb/xdotool disponíveis para testar isolado da tela real, e captura de
+tela da sessão real do usuário está fora de cogitação sem permissão
+explícita por uso. Vale uma passagem manual do usuário antes de
+considerar 100% validado.
 
 ---
 

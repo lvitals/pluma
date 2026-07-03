@@ -59,6 +59,7 @@ test_parses_first_occurrence_metadata (void)
 	line1 = g_ptr_array_index (lines, 0);
 	g_assert_cmpstr (line1->hash, ==, "c1154ebccf73b71769fb460c6641381ee654c988");
 	g_assert_cmpstr (line1->author, ==, "Author A");
+	g_assert_cmpstr (line1->author_mail, ==, "<a@a.com>");
 	g_assert_cmpint (line1->author_time, ==, 1783119117);
 	g_assert_cmpstr (line1->summary, ==, "first commit");
 	g_assert_cmpstr (line1->content, ==, "line one");
@@ -81,6 +82,7 @@ test_reuses_metadata_for_compact_repeat_form (void)
 	 * carry the full record for the same commit. */
 	g_assert_cmpstr (line3->hash, ==, line2->hash);
 	g_assert_cmpstr (line3->author, ==, "Author B");
+	g_assert_cmpstr (line3->author_mail, ==, "<b@b.com>");
 	g_assert_cmpint (line3->author_time, ==, 1783119200);
 	g_assert_cmpstr (line3->summary, ==, "second commit");
 	g_assert_cmpstr (line3->content, ==, "line three");
