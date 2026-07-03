@@ -4488,7 +4488,7 @@ create_side_panel (PlumaWindow *window)
     pluma_panel_add_item_with_icon (PLUMA_PANEL (window->priv->side_panel),
                                     window->priv->git_panel,
                                     _("Source Control"),
-                                    "folder-publicshare-symbolic");
+                                    "network-wired-symbolic");
 #endif
 }
 
