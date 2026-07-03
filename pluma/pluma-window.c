@@ -312,6 +312,8 @@ pluma_window_dispose (GObject *object)
     g_clear_object (&window->priv->modern_menu_builder);
     window->priv->modern_recent_section = NULL;
     window->priv->modern_documents_section = NULL;
+    window->priv->modern_tools_section = NULL;
+    window->priv->tools_menu_item = NULL;
 
     if (window->priv->message_bus != NULL)
     {
@@ -2057,6 +2059,71 @@ create_modern_document_action_mirrors (PlumaWindow *window)
 	g_object_unref (parameterized_action);
 }
 
+/* Finds the index, among @root's top-level items, of the submenu that
+ * (directly or via a nested section) links to @section. Used to locate
+ * the "Tools" top-level menu item without hard-coding its position in
+ * pluma-menus.ui. Returns -1 if not found. */
+static gint
+find_menubar_index_for_section (GMenuModel *root, GMenu *section)
+{
+    gint n, i;
+
+    if (root == NULL || section == NULL)
+        return -1;
+
+    n = g_menu_model_get_n_items (root);
+    for (i = 0; i < n; i++)
+    {
+        GMenuModel *submenu;
+        gint m, j;
+
+        submenu = g_menu_model_get_item_link (root, i, G_MENU_LINK_SUBMENU);
+        if (submenu == NULL)
+            continue;
+
+        m = g_menu_model_get_n_items (submenu);
+        for (j = 0; j < m; j++)
+        {
+            GMenuModel *inner_section;
+
+            inner_section = g_menu_model_get_item_link (submenu, j, G_MENU_LINK_SECTION);
+            if (inner_section == G_MENU_MODEL (section))
+            {
+                g_object_unref (inner_section);
+                g_object_unref (submenu);
+                return i;
+            }
+            g_clear_object (&inner_section);
+        }
+        g_object_unref (submenu);
+    }
+
+    return -1;
+}
+
+static void
+update_tools_menu_visibility (PlumaWindow *window)
+{
+    gboolean has_items;
+
+    if (window->priv->tools_menu_item == NULL ||
+        window->priv->modern_tools_section == NULL)
+        return;
+
+    has_items = g_menu_model_get_n_items (G_MENU_MODEL (window->priv->modern_tools_section)) > 0;
+    gtk_widget_set_visible (window->priv->tools_menu_item, has_items);
+}
+
+static void
+modern_tools_section_items_changed (GMenuModel *model,
+                                    gint        position,
+                                    gint        removed,
+                                    gint        added,
+                                    PlumaWindow *window)
+{
+    update_tools_menu_visibility (window);
+}
+
 static void
 create_menu_bar_and_toolbar (PlumaWindow *window,
                              GtkWidget   *main_box)
@@ -2184,11 +2251,15 @@ create_menu_bar_and_toolbar (PlumaWindow *window,
                                                    "recent-files-section");
         GObject *documents = gtk_builder_get_object (window->priv->modern_menu_builder,
                                                       "documents-list-section");
+        GObject *tools = gtk_builder_get_object (window->priv->modern_menu_builder,
+                                                  "plugin-tools-section");
 
         if (G_IS_MENU (recent))
             window->priv->modern_recent_section = G_MENU (recent);
         if (G_IS_MENU (documents))
             window->priv->modern_documents_section = G_MENU (documents);
+        if (G_IS_MENU (tools))
+            window->priv->modern_tools_section = G_MENU (tools);
     }
 
     /* show tooltips in the statusbar */
@@ -2254,6 +2325,31 @@ create_menu_bar_and_toolbar (PlumaWindow *window,
          * does not pre-show the widgets it creates, and main_box below is
          * only shown with a plain gtk_widget_show (not _show_all). */
         gtk_widget_show_all (window->priv->menubar);
+
+        /* The Tools top-level menu only ever holds plugin-contributed
+         * items (see "plugin-tools-section" in pluma-menus.ui). GMenuModel
+         * has no built-in way to hide a submenu when its contents are
+         * empty, so track the section ourselves and hide the menubar
+         * entry while no plugin has added anything to it. */
+        if (window->priv->modern_tools_section != NULL)
+        {
+            GObject *root = gtk_builder_get_object (window->priv->modern_menu_builder,
+                                                     "pluma-menubar");
+            gint tools_index = find_menubar_index_for_section (G_IS_MENU_MODEL (root) ? G_MENU_MODEL (root) : NULL,
+                                                                window->priv->modern_tools_section);
+
+            if (tools_index >= 0)
+            {
+                GList *children = gtk_container_get_children (GTK_CONTAINER (window->priv->menubar));
+
+                window->priv->tools_menu_item = g_list_nth_data (children, tools_index);
+                g_list_free (children);
+
+                g_signal_connect (window->priv->modern_tools_section, "items-changed",
+                                  G_CALLBACK (modern_tools_section_items_changed), window);
+                update_tools_menu_visibility (window);
+            }
+        }
     }
     gtk_box_pack_start (GTK_BOX (main_box),
                         window->priv->menubar,

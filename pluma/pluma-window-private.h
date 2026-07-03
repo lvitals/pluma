@@ -96,6 +96,8 @@ struct _PlumaWindowPrivate
 	GtkBuilder     *modern_menu_builder;
 	GMenu          *modern_recent_section;    /* owned by modern_menu_builder */
 	GMenu          *modern_documents_section; /* owned by modern_menu_builder */
+	GMenu          *modern_tools_section;     /* owned by modern_menu_builder */
+	GtkWidget      *tools_menu_item;          /* owned by menubar */
 	PlumaToolbarSetting toolbar_style;
 
 	/* recent files */
