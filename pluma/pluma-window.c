@@ -4469,7 +4469,7 @@ create_side_panel (PlumaWindow *window)
     pluma_panel_add_item_with_icon (PLUMA_PANEL (window->priv->side_panel),
                                     documents_panel,
                                     _("Documents"),
-                                    "text-x-generic");
+                                    "text-x-generic-symbolic");
 
     window->priv->project_search_panel = pluma_project_search_panel_new (window);
     pluma_panel_add_item_with_icon (PLUMA_PANEL (window->priv->side_panel),
@@ -4488,7 +4488,7 @@ create_side_panel (PlumaWindow *window)
     pluma_panel_add_item_with_icon (PLUMA_PANEL (window->priv->side_panel),
                                     window->priv->git_panel,
                                     _("Source Control"),
-                                    "vcs-branch-symbolic");
+                                    "network-server-symbolic");
 #endif
 }
 
