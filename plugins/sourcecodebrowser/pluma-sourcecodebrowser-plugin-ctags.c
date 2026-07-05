@@ -68,17 +68,37 @@ scb_tag_get_field (ScbTag *tag, const gchar *key)
 }
 
 /* The bundled icon set only covers common OOP/C-ish ctags kinds. Kinds from
- * other ctags parsers (e.g. the Autoconf/M4 parser used for configure.ac)
- * have no dedicated icon, so map them onto the closest existing one instead
- * of always falling back to the generic "missing image" icon. */
+ * other ctags parsers (e.g. the Autoconf/M4 parser used for configure.ac,
+ * or the Meson and Sh parsers) have no dedicated icon, so map them onto the
+ * closest existing one instead of always falling back to the generic
+ * "missing image" icon. */
 static const struct { const gchar *kind; const gchar *icon; } kind_icon_aliases[] = {
+	/* Autoconf/M4 (configure.ac) */
 	{ "definition", "define" },
 	{ "subst",      "variable" },
 	{ "package",    "namespace" },
 	{ "optenable",  "property" },
 	{ "condition",  "property" },
+	/* generic C/C++ */
 	{ "prototype",  "function" },
 	{ "externvar",  "variable" },
+	/* Meson (meson.build) */
+	{ "build",      "macro" },
+	{ "cfgdata",    "struct" },
+	{ "cfgvar",     "variable" },
+	{ "project",    "namespace" },
+	{ "subdir",     "namespace" },
+	/* Sh/Zsh (shell scripts) */
+	{ "alias",         "define" },
+	/* Markdown */
+	{ "chapter",       "namespace" },
+	{ "section",       "struct" },
+	{ "subsection",    "member" },
+	{ "subsubsection", "field" },
+	{ "l4subsection",  "property" },
+	{ "l5subsection",  "variable" },
+	{ "hashtag",       "macro" },
+	{ "footnote",      "define" },
 	{ NULL, NULL }
 };
 
