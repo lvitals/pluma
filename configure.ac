@@ -357,6 +357,10 @@ plugins/snippets/data/lang/Makefile
 plugins/snippets/data/Makefile
 plugins/sort/Makefile
 plugins/sort/sort.plugin.desktop.in
+plugins/sourcecodebrowser/Makefile
+plugins/sourcecodebrowser/org.mate.pluma.plugins.sourcecodebrowser.gschema.xml
+plugins/sourcecodebrowser/sourcecodebrowser.plugin.desktop.in
+plugins/sourcecodebrowser/icons/Makefile
 plugins/spell/Makefile
 plugins/spell/org.mate.pluma.plugins.spell.gschema.xml
 plugins/spell/spell.plugin.desktop.in

@@ -12,6 +12,7 @@ subdir('modelines')
 subdir('pythonconsole')
 subdir('snippets')
 subdir('sort')
+subdir('sourcecodebrowser')
 if enable_spell
   subdir('spell')
 endif

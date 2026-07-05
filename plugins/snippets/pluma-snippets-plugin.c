@@ -1468,22 +1468,20 @@ activate (PlumaWindowActivatable *activatable)
 {
     PlumaSnippetsPlugin *self = PLUMA_SNIPPETS_PLUGIN (activatable);
     gchar *data_dir = peas_extension_base_get_data_dir (PEAS_EXTENSION_BASE (self));
-    gchar *system_dir = g_build_filename (data_dir, "snippets", NULL);
     gchar *user_dir = g_build_filename (g_get_user_config_dir (), "pluma", "snippets", NULL);
-    load_directory (self, system_dir);
+    load_directory (self, data_dir);
     load_directory (self, user_dir); /* user definitions override system definitions */
     self->provider = g_object_new (TYPE_SNIPPETS_PROVIDER, NULL);
     self->provider->plugin = self;
-    self->data_dir = g_strdup (system_dir);
+    self->data_dir = g_strdup (data_dir);
     self->lua_program = g_find_program_in_path ("lua5.1");
     if (self->lua_program == NULL)
         self->lua_program = g_find_program_in_path ("lua51");
-    self->lua_runtime = g_build_filename (system_dir, "snippets-runtime.lua", NULL);
+    self->lua_runtime = g_build_filename (data_dir, "snippets-runtime.lua", NULL);
     if (!g_file_test (self->lua_runtime, G_FILE_TEST_IS_REGULAR))
         g_clear_pointer (&self->lua_runtime, g_free);
     install_accelerators (self);
     g_free (user_dir);
-    g_free (system_dir);
     g_free (data_dir);
     set_view (self, pluma_window_get_active_view (self->window));
 }

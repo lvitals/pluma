@@ -7,6 +7,7 @@ DIST_SUBDIRS =		\
 	pythonconsole	\
 	snippets	\
 	sort 		\
+	sourcecodebrowser \
 	spell 		\
 	taglist 	\
 	terminal	\
@@ -21,6 +22,7 @@ SUBDIRS = 		\
 	pythonconsole	\
 	snippets	\
 	sort		\
+	sourcecodebrowser \
 	taglist		\
 	terminal	\
 	time		\
