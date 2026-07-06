@@ -1918,16 +1918,23 @@ provider_get_start_iter (GtkSourceCompletionProvider *base, GtkSourceCompletionC
     SnippetsProvider *provider = SNIPPETS_PROVIDER (base);
     GtkTextBuffer *buffer;
     GtkTextIter context_iter;
+    gboolean has_context_iter;
 
-    if (provider->start_mark == NULL || gtk_text_mark_get_deleted (provider->start_mark))
+    has_context_iter = gtk_source_completion_context_get_iter (context, &context_iter);
+
+    if (provider->start_mark == NULL || gtk_text_mark_get_deleted (provider->start_mark)) {
+        if (has_context_iter) {
+            *iter = context_iter;
+            return TRUE;
+        }
         return FALSE;
+    }
 
     buffer = gtk_text_mark_get_buffer (provider->start_mark);
 
-    if (gtk_source_completion_context_get_iter (context, &context_iter)) {
-        if (gtk_text_iter_get_buffer (&context_iter) != buffer) {
-            return FALSE;
-        }
+    if (has_context_iter && gtk_text_iter_get_buffer (&context_iter) != buffer) {
+        *iter = context_iter;
+        return TRUE;
     }
 
     gtk_text_buffer_get_iter_at_mark (buffer, iter, provider->start_mark);
