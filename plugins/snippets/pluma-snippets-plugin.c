@@ -1780,10 +1780,16 @@ completion_word (SnippetsProvider *provider, GtkSourceCompletionContext *context
             break;
         start = previous;
     }
-    if (provider->start_mark == NULL)
+    if (provider->start_mark == NULL ||
+        gtk_text_mark_get_deleted (provider->start_mark) ||
+        gtk_text_mark_get_buffer (provider->start_mark) != gtk_text_iter_get_buffer (&start)) {
+        if (provider->start_mark != NULL && !gtk_text_mark_get_deleted (provider->start_mark)) {
+            gtk_text_buffer_delete_mark (gtk_text_mark_get_buffer (provider->start_mark), provider->start_mark);
+        }
         provider->start_mark = gtk_text_buffer_create_mark (gtk_text_iter_get_buffer (&start), NULL, &start, TRUE);
-    else
+    } else {
         gtk_text_buffer_move_mark (gtk_text_iter_get_buffer (&start), provider->start_mark, &start);
+    }
     return gtk_text_buffer_get_text (gtk_text_iter_get_buffer (&start), &start, cursor, FALSE);
 }
 
@@ -1911,9 +1917,19 @@ provider_get_start_iter (GtkSourceCompletionProvider *base, GtkSourceCompletionC
 {
     SnippetsProvider *provider = SNIPPETS_PROVIDER (base);
     GtkTextBuffer *buffer;
+    GtkTextIter context_iter;
+
     if (provider->start_mark == NULL || gtk_text_mark_get_deleted (provider->start_mark))
         return FALSE;
+
     buffer = gtk_text_mark_get_buffer (provider->start_mark);
+
+    if (gtk_source_completion_context_get_iter (context, &context_iter)) {
+        if (gtk_text_iter_get_buffer (&context_iter) != buffer) {
+            return FALSE;
+        }
+    }
+
     gtk_text_buffer_get_iter_at_mark (buffer, iter, provider->start_mark);
     return TRUE;
 }
@@ -2127,6 +2143,15 @@ set_view (PlumaSnippetsPlugin *self, PlumaView *view)
         gtk_source_completion_remove_provider (gtk_source_view_get_completion (GTK_SOURCE_VIEW (self->view)),
                                                GTK_SOURCE_COMPLETION_PROVIDER (self->provider), NULL);
     clear_placeholders (self);
+
+    if (self->provider != NULL && self->provider->start_mark != NULL) {
+        if (!gtk_text_mark_get_deleted (self->provider->start_mark)) {
+            gtk_text_buffer_delete_mark (gtk_text_mark_get_buffer (self->provider->start_mark),
+                                         self->provider->start_mark);
+        }
+        self->provider->start_mark = NULL;
+    }
+
     g_set_object (&self->view, view);
     self->key_handler = view == NULL ? 0 :
         g_signal_connect (view, "key-press-event", G_CALLBACK (key_press), self);
