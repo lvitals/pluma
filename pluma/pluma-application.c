@@ -54,6 +54,9 @@ struct _PlumaApplicationPrivate
 
 	/* Application state */
 	gboolean session_restored;
+
+	GSettings *interface_settings;
+	GSettings *mate_interface_settings;
 };
 
 G_DEFINE_TYPE_WITH_PRIVATE (PlumaApplication, pluma_application, GTK_TYPE_APPLICATION)
@@ -129,8 +132,47 @@ pluma_application_activate (GApplication *application)
 }
 
 static void
+color_scheme_changed (GSettings   *settings,
+                      const gchar *key,
+                      gpointer     user_data)
+{
+	gchar *scheme = g_settings_get_string (settings, "color-scheme");
+	GtkSettings *gtk_settings = gtk_settings_get_default ();
+	gboolean prefer_dark = (g_strcmp0 (scheme, "prefer-dark") == 0);
+
+	pluma_debug_message (DEBUG_APP, "System color scheme changed: %s (prefer-dark=%d)", scheme, prefer_dark);
+
+	g_object_set (gtk_settings, "gtk-application-prefer-dark-theme", prefer_dark, NULL);
+	g_free (scheme);
+}
+
+static void
+mate_interface_changed (GSettings   *settings,
+                        const gchar *key,
+                        gpointer     user_data)
+{
+	GtkSettings *gtk_settings = gtk_settings_get_default ();
+
+	if (key == NULL || g_strcmp0 (key, "gtk-theme") == 0)
+	{
+		gchar *theme = g_settings_get_string (settings, "gtk-theme");
+		pluma_debug_message (DEBUG_APP, "MATE GTK theme changed: %s", theme);
+		g_object_set (gtk_settings, "gtk-theme-name", theme, NULL);
+		g_free (theme);
+	}
+	if (key == NULL || g_strcmp0 (key, "icon-theme") == 0)
+	{
+		gchar *theme = g_settings_get_string (settings, "icon-theme");
+		pluma_debug_message (DEBUG_APP, "MATE Icon theme changed: %s", theme);
+		g_object_set (gtk_settings, "gtk-icon-theme-name", theme, NULL);
+		g_free (theme);
+	}
+}
+
+static void
 pluma_application_startup (GApplication *application)
 {
+	PlumaApplication *app = PLUMA_APPLICATION (application);
 	static const GActionEntry application_actions[] = {
 		{ "quit", quit_action_activated, NULL, NULL, NULL, { 0, 0, 0 } }
 	};
@@ -139,6 +181,58 @@ pluma_application_startup (GApplication *application)
 
 	/* Chain up to parent first */
 	G_APPLICATION_CLASS (pluma_application_parent_class)->startup (application);
+
+	/* Setup GNOME 3/4 modern color scheme (light/dark mode) compatibility */
+	app->priv->interface_settings = NULL;
+	app->priv->mate_interface_settings = NULL;
+
+	GtkSettings *gtk_settings = gtk_settings_get_default ();
+	/* Set fallback icon theme to "mate" to resolve missing legacy icons on GNOME sessions */
+	g_object_set (gtk_settings, "gtk-fallback-icon-theme", "mate", NULL);
+
+	const gchar *current_desktop = g_getenv ("XDG_CURRENT_DESKTOP");
+	gboolean is_mate = (current_desktop != NULL && g_strrstr (current_desktop, "MATE") != NULL);
+
+	GSettingsSchemaSource *schema_source = g_settings_schema_source_get_default ();
+	if (schema_source != NULL)
+	{
+		GSettingsSchema *schema = g_settings_schema_source_lookup (schema_source, "org.gnome.desktop.interface", TRUE);
+		if (schema != NULL)
+		{
+			if (g_settings_schema_has_key (schema, "color-scheme"))
+			{
+				pluma_debug_message (DEBUG_APP, "Init color scheme preference listener");
+				app->priv->interface_settings = g_settings_new ("org.gnome.desktop.interface");
+				g_signal_connect (app->priv->interface_settings,
+				                  "changed::color-scheme",
+				                  G_CALLBACK (color_scheme_changed),
+				                  NULL);
+				color_scheme_changed (app->priv->interface_settings, "color-scheme", NULL);
+			}
+			g_settings_schema_unref (schema);
+		}
+
+		/* If running in MATE session, sync settings directly from org.mate.interface (critical for Wayland support) */
+		GSettingsSchema *mate_schema = g_settings_schema_source_lookup (schema_source, "org.mate.interface", TRUE);
+		if (mate_schema != NULL)
+		{
+			if (is_mate)
+			{
+				pluma_debug_message (DEBUG_APP, "Init MATE desktop settings sync");
+				app->priv->mate_interface_settings = g_settings_new ("org.mate.interface");
+				g_signal_connect (app->priv->mate_interface_settings,
+				                  "changed::gtk-theme",
+				                  G_CALLBACK (mate_interface_changed),
+				                  NULL);
+				g_signal_connect (app->priv->mate_interface_settings,
+				                  "changed::icon-theme",
+				                  G_CALLBACK (mate_interface_changed),
+				                  NULL);
+				mate_interface_changed (app->priv->mate_interface_settings, NULL, NULL);
+			}
+			g_settings_schema_unref (mate_schema);
+		}
+	}
 	g_action_map_add_action_entries (G_ACTION_MAP (application),
 	                                 application_actions,
 	                                 G_N_ELEMENTS (application_actions),
@@ -221,6 +315,18 @@ pluma_application_finalize (GObject *object)
 	pluma_debug_message (DEBUG_APP, "PlumaApplication finalize");
 
 	pluma_application_free_command_line_data (app);
+
+	if (app->priv->interface_settings != NULL)
+	{
+		g_object_unref (app->priv->interface_settings);
+		app->priv->interface_settings = NULL;
+	}
+
+	if (app->priv->mate_interface_settings != NULL)
+	{
+		g_object_unref (app->priv->mate_interface_settings);
+		app->priv->mate_interface_settings = NULL;
+	}
 
 	/* Chain up to parent */
 	G_OBJECT_CLASS (pluma_application_parent_class)->finalize (object);
