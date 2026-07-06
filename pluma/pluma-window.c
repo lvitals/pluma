@@ -233,12 +233,20 @@ pluma_window_dispose (GObject *object)
 #if GLIB_CHECK_VERSION(2,62,0)
     g_clear_signal_handler (&window->priv->bottom_panel_item_removed_handler_id,
                             window->priv->bottom_panel);
+    g_clear_signal_handler (&window->priv->right_panel_item_removed_handler_id,
+                            window->priv->right_panel);
 #else
     if (window->priv->bottom_panel_item_removed_handler_id != 0)
     {
         g_signal_handler_disconnect (window->priv->bottom_panel,
                                      window->priv->bottom_panel_item_removed_handler_id);
         window->priv->bottom_panel_item_removed_handler_id = 0;
+    }
+    if (window->priv->right_panel_item_removed_handler_id != 0)
+    {
+        g_signal_handler_disconnect (window->priv->right_panel,
+                                     window->priv->right_panel_item_removed_handler_id);
+        window->priv->right_panel_item_removed_handler_id = 0;
     }
 #endif
 
@@ -4544,6 +4552,38 @@ bottom_panel_item_added (PlumaPanel  *panel,
 }
 
 static void
+right_panel_item_removed (PlumaPanel  *panel,
+                          GtkWidget   *item,
+                          PlumaWindow *window)
+{
+    if (pluma_panel_get_n_items (panel) == 0)
+    {
+        gtk_widget_hide (GTK_WIDGET (panel));
+
+        sync_view_toggle_action_enabled (window, "show-right-pane", FALSE);
+    }
+}
+
+static void
+right_panel_item_added (PlumaPanel  *panel,
+                        GtkWidget   *item,
+                        PlumaWindow *window)
+{
+    /* if it's the first item added, set the menu item
+     * sensitive and if needed show the panel */
+    if (pluma_panel_get_n_items (panel) == 1)
+    {
+        gboolean show;
+
+        sync_view_toggle_action_enabled (window, "show-right-pane", TRUE);
+
+        show = get_view_toggle_action_state (window, "show-right-pane");
+        if (show)
+            gtk_widget_show (GTK_WIDGET (panel));
+    }
+}
+
+static void
 create_bottom_panel (PlumaWindow *window)
 {
     pluma_debug (DEBUG_WINDOW);
@@ -4670,6 +4710,10 @@ init_panels_visibility (PlumaWindow *window)
             gtk_widget_show (window->priv->right_panel);
         }
     }
+    else
+    {
+        sync_view_toggle_action_enabled (window, "show-right-pane", FALSE);
+    }
 
     /* start track sensitivity after the initial state is set */
     window->priv->bottom_panel_item_removed_handler_id =
@@ -4681,6 +4725,17 @@ init_panels_visibility (PlumaWindow *window)
     g_signal_connect (window->priv->bottom_panel,
                       "item_added",
                       G_CALLBACK (bottom_panel_item_added),
+                      window);
+
+    window->priv->right_panel_item_removed_handler_id =
+        g_signal_connect (window->priv->right_panel,
+                          "item_removed",
+                          G_CALLBACK (right_panel_item_removed),
+                          window);
+
+    g_signal_connect (window->priv->right_panel,
+                      "item_added",
+                      G_CALLBACK (right_panel_item_added),
                       window);
 }
 

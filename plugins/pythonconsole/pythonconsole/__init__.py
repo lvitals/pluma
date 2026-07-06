@@ -42,19 +42,24 @@ class PythonConsolePlugin(GObject.Object, Pluma.WindowActivatable, PeasGtk.Confi
         GObject.Object.__init__(self)
         self.config_widget = None
 
+    def _on_console_destroy(self, console):
+        self._console = None
+
     def do_activate(self):
         self._console = PythonConsole(namespace = {'__builtins__' : __builtins__,
                                              'pluma' : Pluma,
                                              'window' : self.window})
+        self._console.connect("destroy", self._on_console_destroy)
         bottom = self.window.get_bottom_panel()
         image = Gtk.Image()
         image.set_from_icon_name(PYTHON_ICON, Gtk.IconSize.MENU)
         bottom.add_item(self._console, _('Python Console'), image)
 
     def do_deactivate(self):
-        self._console.stop()
-        bottom = self.window.get_bottom_panel()
-        bottom.remove_item(self._console)
+        if self._console is not None:
+            self._console.stop()
+            bottom = self.window.get_bottom_panel()
+            bottom.remove_item(self._console)
 
     def do_create_configure_widget(self):
         if not self.config_widget:

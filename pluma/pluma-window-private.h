@@ -121,6 +121,7 @@ struct _PlumaWindowPrivate
 	PlumaWindowState state;
 
 	gulong          bottom_panel_item_removed_handler_id;
+	gulong          right_panel_item_removed_handler_id;
 
 	GtkWindowGroup *window_group;
 

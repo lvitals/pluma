@@ -1266,6 +1266,67 @@ tab_removed_cb (PlumaWindow *window,
 }
 
 static void
+register_modern_actions (PlumaSpellPlugin *plugin,
+                         GtkApplication   *application)
+{
+	PlumaSpellPluginPrivate *data = plugin->priv;
+	PlumaWindow *window = PLUMA_WINDOW (data->window);
+
+	static const gchar * const check_spell_accels[] = { "<shift>F7", NULL };
+	static const gchar * const auto_spell_accels[] = { "<control>F7", NULL };
+	static const PlumaLegacyActionMapping spell_mappings[] = {
+		{ "CheckSpell", "check-spelling", NULL },
+		{ "ConfigSpell", "set-language", NULL },
+		{ "AutoSpell", "auto-spell", NULL }
+	};
+	GMenuItem *item;
+
+	data->modern_action_group = g_simple_action_group_new ();
+	pluma_action_migration_mirror_group (application,
+	                                     G_ACTION_MAP (data->modern_action_group),
+	                                     data->action_group, spell_mappings,
+	                                     G_N_ELEMENTS (spell_mappings));
+	gtk_widget_insert_action_group (GTK_WIDGET (window), "plugin-spell",
+	                                G_ACTION_GROUP (data->modern_action_group));
+
+	/* mirror_group always sets accelerators under the "win." prefix,
+	 * which does not apply to this "plugin-spell." group, so set
+	 * them here with the correct detailed action names instead. */
+	gtk_application_set_accels_for_action (application,
+	                                       "plugin-spell.check-spelling",
+	                                       check_spell_accels);
+	gtk_application_set_accels_for_action (application,
+	                                       "plugin-spell.auto-spell",
+	                                       auto_spell_accels);
+
+	item = g_menu_item_new (_("_Check Spelling..."), "plugin-spell.check-spelling");
+	pluma_window_add_menu_item (window, "plugin-tools-section", item);
+	g_object_unref (item);
+
+	item = g_menu_item_new (_("_Autocheck Spelling"), "plugin-spell.auto-spell");
+	pluma_window_add_menu_item (window, "plugin-tools-section", item);
+	g_object_unref (item);
+
+	item = g_menu_item_new (_("Set _Language..."), "plugin-spell.set-language");
+	pluma_window_add_menu_item (window, "plugin-tools-section", item);
+	g_object_unref (item);
+}
+
+static void
+on_application_notify (GtkWindow        *window,
+                       GParamSpec       *pspec,
+                       PlumaSpellPlugin *plugin)
+{
+	GtkApplication *application = gtk_window_get_application (window);
+
+	if (application != NULL)
+	{
+		register_modern_actions (plugin, application);
+		g_signal_handlers_disconnect_by_func (window, on_application_notify, plugin);
+	}
+}
+
+static void
 pluma_spell_plugin_activate (PlumaWindowActivatable *activatable)
 {
 	PlumaSpellPlugin *plugin;
@@ -1329,51 +1390,14 @@ pluma_spell_plugin_activate (PlumaWindowActivatable *activatable)
 	{
 		GtkApplication *application = gtk_window_get_application (GTK_WINDOW (window));
 
-		/* AutoSpell is a GtkToggleAction, so mirror_group is used instead of
-		 * the plain GActionEntry wrapper other plugins use: it already keeps
-		 * a stateful boolean GAction in sync with the legacy toggle in both
-		 * directions, which is what makes the mirrored action follow the
-		 * per-document autospell state set up by update_ui() below. */
 		if (application != NULL)
 		{
-			static const gchar * const check_spell_accels[] = { "<shift>F7", NULL };
-			static const gchar * const auto_spell_accels[] = { "<control>F7", NULL };
-			static const PlumaLegacyActionMapping spell_mappings[] = {
-				{ "CheckSpell", "check-spelling", NULL },
-				{ "ConfigSpell", "set-language", NULL },
-				{ "AutoSpell", "auto-spell", NULL }
-			};
-			GMenuItem *item;
-
-			data->modern_action_group = g_simple_action_group_new ();
-			pluma_action_migration_mirror_group (application,
-			                                     G_ACTION_MAP (data->modern_action_group),
-			                                     data->action_group, spell_mappings,
-			                                     G_N_ELEMENTS (spell_mappings));
-			gtk_widget_insert_action_group (GTK_WIDGET (window), "plugin-spell",
-			                                G_ACTION_GROUP (data->modern_action_group));
-
-			/* mirror_group always sets accelerators under the "win." prefix,
-			 * which does not apply to this "plugin-spell." group, so set
-			 * them here with the correct detailed action names instead. */
-			gtk_application_set_accels_for_action (application,
-			                                       "plugin-spell.check-spelling",
-			                                       check_spell_accels);
-			gtk_application_set_accels_for_action (application,
-			                                       "plugin-spell.auto-spell",
-			                                       auto_spell_accels);
-
-			item = g_menu_item_new (_("_Check Spelling..."), "plugin-spell.check-spelling");
-			pluma_window_add_menu_item (window, "plugin-tools-section", item);
-			g_object_unref (item);
-
-			item = g_menu_item_new (_("_Autocheck Spelling"), "plugin-spell.auto-spell");
-			pluma_window_add_menu_item (window, "plugin-tools-section", item);
-			g_object_unref (item);
-
-			item = g_menu_item_new (_("Set _Language..."), "plugin-spell.set-language");
-			pluma_window_add_menu_item (window, "plugin-tools-section", item);
-			g_object_unref (item);
+			register_modern_actions (plugin, application);
+		}
+		else
+		{
+			g_signal_connect (window, "notify::application",
+			                  G_CALLBACK (on_application_notify), plugin);
 		}
 	}
 
@@ -1418,6 +1442,8 @@ pluma_spell_plugin_deactivate (PlumaWindowActivatable *activatable)
 	plugin = PLUMA_SPELL_PLUGIN (activatable);
 	data = plugin->priv;
 	window = PLUMA_WINDOW (data->window);
+
+	g_signal_handlers_disconnect_by_func (window, on_application_notify, plugin);
 
 	manager = pluma_window_get_ui_manager (window);
 
