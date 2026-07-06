@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<snippets language="Lua">
+  <snippet id="shebang">
+    <text><![CDATA[#!/usr/bin/env lua
+
+$0]]></text>
+    <tag>shebang</tag>
+    <description>Lua shebang</description>
+  </snippet>
+
+  <snippet id="main">
+    <text><![CDATA[local function main()
+	$0
+end
+
+main()]]></text>
+    <tag>main</tag>
+    <description>main function</description>
+  </snippet>
+
+  <snippet id="if">
+    <text><![CDATA[if ${1:condition} then
+	$0
+end]]></text>
+    <tag>if</tag>
+    <description>if</description>
+  </snippet>
+
+  <snippet id="ife">
+    <text><![CDATA[if ${1:condition} then
+	$0
+else
+
+end]]></text>
+    <tag>ife</tag>
+    <description>if else</description>
+  </snippet>
+
+  <snippet id="elif">
+    <text><![CDATA[elseif ${1:condition} then
+	$0]]></text>
+    <tag>elif</tag>
+    <description>elseif</description>
+  </snippet>
+
+  <snippet id="else">
+    <text><![CDATA[else
+	$0]]></text>
+    <tag>else</tag>
+    <description>else</description>
+  </snippet>
+
+  <snippet id="while">
+    <text><![CDATA[while ${1:condition} do
+	$0
+end]]></text>
+    <tag>while</tag>
+    <description>while loop</description>
+  </snippet>
+
+  <snippet id="repeat">
+    <text><![CDATA[repeat
+	$0
+until ${1:condition}]]></text>
+    <tag>repeat</tag>
+    <description>repeat until</description>
+  </snippet>
+
+  <snippet id="for">
+    <text><![CDATA[for ${1:i} = ${2:1}, ${3:count} do
+	$0
+end]]></text>
+    <tag>for</tag>
+    <description>for loop</description>
+  </snippet>
+
+  <snippet id="forstep">
+    <text><![CDATA[for ${1:i} = ${2:1}, ${3:count}, ${4:1} do
+	$0
+end]]></text>
+    <tag>forstep</tag>
+    <description>for loop with step</description>
+  </snippet>
+
+  <snippet id="ipairs">
+    <text><![CDATA[for ${1:i}, ${2:value} in ipairs(${3:table}) do
+	$0
+end]]></text>
+    <tag>ipairs</tag>
+    <description>ipairs loop</description>
+  </snippet>
+
+  <snippet id="pairs">
+    <text><![CDATA[for ${1:key}, ${2:value} in pairs(${3:table}) do
+	$0
+end]]></text>
+    <tag>pairs</tag>
+    <description>pairs loop</description>
+  </snippet>
+
+  <snippet id="fun">
+    <text><![CDATA[function ${1:name}(${2:args})
+	$0
+end]]></text>
+    <tag>fun</tag>
+    <description>function</description>
+  </snippet>
+
+  <snippet id="lfun">
+    <text><![CDATA[local function ${1:name}(${2:args})
+	$0
+end]]></text>
+    <tag>lfun</tag>
+    <description>local function</description>
+  </snippet>
+
+  <snippet id="anon">
+    <text><![CDATA[function (${1:args})
+	$0
+end]]></text>
+    <tag>anon</tag>
+    <description>anonymous function</description>
+  </snippet>
+
+  <snippet id="ret">
+    <text><![CDATA[return ${1:value}]]></text>
+    <tag>ret</tag>
+    <description>return value</description>
+  </snippet>
+
+  <snippet id="table">
+    <text><![CDATA[local ${1:name} = {
+	$0
+}]]></text>
+    <tag>table</tag>
+    <description>table</description>
+  </snippet>
+
+  <snippet id="require">
+    <text><![CDATA[local ${1:name} = require("${2:module}")]]></text>
+    <tag>require</tag>
+    <description>require module</description>
+  </snippet>
+
+  <snippet id="module">
+    <text><![CDATA[local M = {}
+
+$0
+
+return M]]></text>
+    <tag>module</tag>
+    <description>Lua module</description>
+  </snippet>
+
+  <snippet id="class">
+    <text><![CDATA[local ${1:Class} = {}
+${1:Class}.__index = ${1:Class}
+
+function ${1:Class}:new(${2:args})
+	local self = setmetatable({}, ${1:Class})
+	$0
+	return self
+end
+
+return ${1:Class}]]></text>
+    <tag>class</tag>
+    <description>simple class</description>
+  </snippet>
+
+  <snippet id="method">
+    <text><![CDATA[function ${1:Class}:${2:method}(${3:args})
+	$0
+end]]></text>
+    <tag>method</tag>
+    <description>method</description>
+  </snippet>
+
+  <snippet id="print">
+    <text><![CDATA[print(${1:value})]]></text>
+    <tag>print</tag>
+    <description>print</description>
+  </snippet>
+
+  <snippet id="fmt">
+    <text><![CDATA[string.format("${1:%s}", ${2:value})]]></text>
+    <tag>fmt</tag>
+    <description>string.format</description>
+  </snippet>
+
+  <snippet id="pcall">
+    <text><![CDATA[local ok, result = pcall(function()
+	$0
+end)
+
+if not ok then
+	print(result)
+end]]></text>
+    <tag>pcall</tag>
+    <description>protected call</description>
+  </snippet>
+
+  <snippet id="assert">
+    <text><![CDATA[assert(${1:condition}, "${2:message}")]]></text>
+    <tag>assert</tag>
+    <description>assert</description>
+  </snippet>
+
+  <snippet id="error">
+    <text><![CDATA[error("${1:message}")]]></text>
+    <tag>error</tag>
+    <description>error</description>
+  </snippet>
+
+  <snippet id="meta">
+    <text><![CDATA[local ${1:mt} = {
+	__index = ${2:table}
+}
+
+setmetatable(${3:object}, ${1:mt})]]></text>
+    <tag>meta</tag>
+    <description>metatable</description>
+  </snippet>
+
+  <snippet id="co">
+    <text><![CDATA[local ${1:co} = coroutine.create(function()
+	$0
+end)]]></text>
+    <tag>co</tag>
+    <description>coroutine.create</description>
+  </snippet>
+
+  <snippet id="yield">
+    <text><![CDATA[coroutine.yield(${1:value})]]></text>
+    <tag>yield</tag>
+    <description>coroutine yield</description>
+  </snippet>
+
+  <snippet id="open">
+    <text><![CDATA[local file, err = io.open("${1:path}", "${2:r}")
+if not file then
+	error(err)
+end
+
+$0
+
+file:close()]]></text>
+    <tag>open</tag>
+    <description>io.open</description>
+  </snippet>
+
+  <snippet id="lines">
+    <text><![CDATA[for line in io.lines("${1:path}") do
+	$0
+end]]></text>
+    <tag>lines</tag>
+    <description>read lines</description>
+  </snippet>
+
+  <snippet id="comment">
+    <text><![CDATA[-- ${1:comment}]]></text>
+    <tag>comment</tag>
+    <description>line comment</description>
+  </snippet>
+
+  <snippet id="block">
+    <text><![CDATA[--[[
+${1:comment}
+]]]]><![CDATA[>]]></text>
+    <tag>block</tag>
+    <description>block comment</description>
+  </snippet>
+</snippets>
+

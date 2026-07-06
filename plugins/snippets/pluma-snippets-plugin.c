@@ -916,6 +916,60 @@ on_new_language_button_clicked (GtkButton *button, SnippetsManager *manager)
     gtk_widget_grab_focus (manager->new_language_entry);
 }
 
+/* Removes every snippet in the currently-selected language, after
+ * confirmation. Only affects this session's in-memory snippets and the
+ * user's own override file (write_language_file() only ever writes to
+ * ~/.config/pluma/snippets/) -- a language that also has bundled snippets
+ * in the system data dir will still reappear on the next restart, exactly
+ * like removing a single bundled snippet already does; not something this
+ * button can or should try to fix. */
+static void
+on_remove_language_button_clicked (GtkButton *button, SnippetsManager *manager)
+{
+    gchar *language = gtk_combo_box_text_get_active_text (GTK_COMBO_BOX_TEXT (manager->language_combo));
+    GtkWidget *dialog;
+    gint response;
+    GHashTableIter iter;
+    gpointer key, value;
+
+    if (language == NULL)
+        return;
+
+    dialog = gtk_message_dialog_new (GTK_WINDOW (manager->plugin->window), GTK_DIALOG_MODAL,
+                                     GTK_MESSAGE_QUESTION, GTK_BUTTONS_NONE,
+                                     _("Remove all snippets for “%s”?"), language);
+    gtk_message_dialog_format_secondary_text (GTK_MESSAGE_DIALOG (dialog),
+        _("This removes every snippet in this language and cannot be undone."));
+    gtk_dialog_add_button (GTK_DIALOG (dialog), _("_Cancel"), GTK_RESPONSE_CANCEL);
+    gtk_dialog_add_button (GTK_DIALOG (dialog), _("_Remove"), GTK_RESPONSE_ACCEPT);
+    gtk_style_context_add_class (gtk_widget_get_style_context (
+        gtk_dialog_get_widget_for_response (GTK_DIALOG (dialog), GTK_RESPONSE_ACCEPT)), "destructive-action");
+    gtk_dialog_set_default_response (GTK_DIALOG (dialog), GTK_RESPONSE_CANCEL);
+    response = gtk_dialog_run (GTK_DIALOG (dialog));
+    gtk_widget_destroy (dialog);
+
+    if (response != GTK_RESPONSE_ACCEPT) {
+        g_free (language);
+        return;
+    }
+
+    g_hash_table_iter_init (&iter, manager->plugin->snippets);
+    while (g_hash_table_iter_next (&iter, &key, &value)) {
+        Snippet *snippet = value;
+        if (g_strcmp0 (snippet->language, language) == 0)
+            g_hash_table_iter_remove (&iter);
+    }
+    write_language_file (manager->plugin, language, NULL);
+    g_free (language);
+
+    g_clear_pointer (&manager->selected_key, g_free);
+    gtk_widget_set_sensitive (manager->save_button, FALSE);
+    gtk_widget_set_sensitive (manager->cancel_button, FALSE);
+    manager_populate (manager);
+    manager_populate_language_combo (manager);
+    install_accelerators (manager->plugin);
+}
+
 /* Entry + autocomplete (real GtkSourceView language ids, plus "global" for
  * language-agnostic snippets) + a Criar button, in a popover off the "+"
  * button -- so adding a language doesn't need an already-open document of
@@ -967,20 +1021,23 @@ static GtkWidget *
 build_manager_widget (PlumaSnippetsPlugin *self)
 {
     SnippetsManager *manager = g_new0 (SnippetsManager, 1);
+    GtkWidget *root = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
     GtkWidget *box = gtk_paned_new (GTK_ORIENTATION_HORIZONTAL);
     GtkWidget *left = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
     GtkWidget *right = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
     GtkWidget *fields_grid = gtk_grid_new ();
-    GtkWidget *bottom_bar = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget *footer = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
     GtkWidget *scroll = gtk_scrolled_window_new (NULL, NULL);
     GtkWidget *text_scroll = gtk_scrolled_window_new (NULL, NULL);
     GtkWidget *import_button = gtk_button_new_with_mnemonic (_("_Importar"));
     GtkWidget *export_button = gtk_button_new_with_mnemonic (_("_Exportar"));
     GtkWidget *new_button = gtk_button_new_with_mnemonic (_("_Novo"));
     GtkWidget *delete_button = gtk_button_new_with_mnemonic (_("_Remover"));
-    GtkWidget *buttons = gtk_grid_new ();
+    GtkWidget *new_delete_box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget *import_export_box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
     GtkWidget *language_box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
     GtkWidget *new_language_button = gtk_button_new_from_icon_name ("list-add-symbolic", GTK_ICON_SIZE_BUTTON);
+    GtkWidget *remove_language_button = gtk_button_new_from_icon_name ("user-trash-symbolic", GTK_ICON_SIZE_BUTTON);
     GtkTreeModel *sortable;
     GtkCellRenderer *renderer;
     guint column;
@@ -995,6 +1052,7 @@ build_manager_widget (PlumaSnippetsPlugin *self)
     manager->language_combo = gtk_combo_box_text_new ();
     manager->new_language_popover = build_new_language_popover (manager);
     gtk_widget_set_tooltip_text (new_language_button, _("Add a new language…"));
+    gtk_widget_set_tooltip_text (remove_language_button, _("Remove this language…"));
 
     manager->search_entry = gtk_search_entry_new ();
     gtk_entry_set_placeholder_text (GTK_ENTRY (manager->search_entry),
@@ -1028,23 +1086,21 @@ build_manager_widget (PlumaSnippetsPlugin *self)
     gtk_widget_set_hexpand (manager->language_combo, TRUE);
     gtk_box_pack_start (GTK_BOX (language_box), manager->language_combo, TRUE, TRUE, 0);
     gtk_box_pack_start (GTK_BOX (language_box), new_language_button, FALSE, FALSE, 0);
+    gtk_box_pack_start (GTK_BOX (language_box), remove_language_button, FALSE, FALSE, 0);
     gtk_box_pack_start (GTK_BOX (left), language_box, FALSE, FALSE, 0);
     gtk_box_pack_start (GTK_BOX (left), manager->search_entry, FALSE, FALSE, 0);
     gtk_box_pack_start (GTK_BOX (left), scroll, TRUE, TRUE, 0);
-    /* 2x2 grid instead of a button box crammed into one row -- each button
-     * gets a real share of the panel's width instead of being squeezed. */
-    gtk_grid_set_row_spacing (GTK_GRID (buttons), 6);
-    gtk_grid_set_column_spacing (GTK_GRID (buttons), 6);
-    gtk_grid_set_column_homogeneous (GTK_GRID (buttons), TRUE);
-    gtk_widget_set_hexpand (new_button, TRUE);
-    gtk_widget_set_hexpand (delete_button, TRUE);
-    gtk_widget_set_hexpand (import_button, TRUE);
-    gtk_widget_set_hexpand (export_button, TRUE);
-    gtk_grid_attach (GTK_GRID (buttons), new_button, 0, 0, 1, 1);
-    gtk_grid_attach (GTK_GRID (buttons), delete_button, 1, 0, 1, 1);
-    gtk_grid_attach (GTK_GRID (buttons), import_button, 0, 1, 1, 1);
-    gtk_grid_attach (GTK_GRID (buttons), export_button, 1, 1, 1, 1);
-    gtk_box_pack_start (GTK_BOX (left), buttons, FALSE, FALSE, 0);
+    /* Novo/Remover then Importar/Exportar, stacked below the list -- both
+     * pairs packed in their own homogeneous box so the two buttons in a
+     * pair always match width and share space evenly. */
+    gtk_box_set_homogeneous (GTK_BOX (new_delete_box), TRUE);
+    gtk_box_pack_start (GTK_BOX (new_delete_box), new_button, TRUE, TRUE, 0);
+    gtk_box_pack_start (GTK_BOX (new_delete_box), delete_button, TRUE, TRUE, 0);
+    gtk_box_pack_start (GTK_BOX (left), new_delete_box, FALSE, FALSE, 0);
+    gtk_box_set_homogeneous (GTK_BOX (import_export_box), TRUE);
+    gtk_box_pack_start (GTK_BOX (import_export_box), import_button, TRUE, TRUE, 0);
+    gtk_box_pack_start (GTK_BOX (import_export_box), export_button, TRUE, TRUE, 0);
+    gtk_box_pack_start (GTK_BOX (left), import_export_box, FALSE, FALSE, 0);
 
     /* --- Right side: just the fields + a big body editor. --- */
     gtk_grid_set_row_spacing (GTK_GRID (fields_grid), 6);
@@ -1088,17 +1144,34 @@ build_manager_widget (PlumaSnippetsPlugin *self)
     gtk_style_context_add_class (gtk_widget_get_style_context (manager->save_button), "suggested-action");
     gtk_widget_set_sensitive (manager->save_button, FALSE);
     gtk_widget_set_sensitive (manager->cancel_button, FALSE);
-    gtk_box_pack_end (GTK_BOX (bottom_bar), manager->save_button, FALSE, FALSE, 0);
-    gtk_box_pack_end (GTK_BOX (bottom_bar), manager->cancel_button, FALSE, FALSE, 0);
-    gtk_box_pack_start (GTK_BOX (right), bottom_bar, FALSE, FALSE, 0);
 
     gtk_paned_pack1 (GTK_PANED (box), left, FALSE, FALSE);
     gtk_paned_pack2 (GTK_PANED (box), right, TRUE, FALSE);
     gtk_paned_set_position (GTK_PANED (box), 340);
+    gtk_box_pack_start (GTK_BOX (root), box, TRUE, TRUE, 0);
+
+    /* A full-width separator between the paned area and the footer --
+     * spans both columns evenly instead of only sitting under one side, so
+     * it reads as one continuous line across the whole dialog. */
+    gtk_box_pack_start (GTK_BOX (root), gtk_separator_new (GTK_ORIENTATION_HORIZONTAL), FALSE, FALSE, 0);
+
+    /* Footer: just Cancelar/Salvar now (Novo/Remover/Importar/Exportar
+     * moved above, under the list) -- in their own homogeneous box so both
+     * end up the same size. */
+    {
+        GtkWidget *save_cancel_box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+        gtk_box_set_homogeneous (GTK_BOX (save_cancel_box), TRUE);
+        gtk_box_pack_start (GTK_BOX (save_cancel_box), manager->cancel_button, TRUE, TRUE, 0);
+        gtk_box_pack_start (GTK_BOX (save_cancel_box), manager->save_button, TRUE, TRUE, 0);
+        gtk_box_pack_end (GTK_BOX (footer), save_cancel_box, FALSE, FALSE, 0);
+    }
+    gtk_box_pack_start (GTK_BOX (root), footer, FALSE, FALSE, 0);
+
     g_signal_connect (gtk_tree_view_get_selection (GTK_TREE_VIEW (manager->tree)), "changed",
                       G_CALLBACK (manager_selection_changed), manager);
     g_signal_connect (manager->language_combo, "changed", G_CALLBACK (manager_language_changed), manager);
     g_signal_connect (new_language_button, "clicked", G_CALLBACK (on_new_language_button_clicked), manager);
+    g_signal_connect (remove_language_button, "clicked", G_CALLBACK (on_remove_language_button_clicked), manager);
     g_signal_connect (manager->search_entry, "search-changed", G_CALLBACK (manager_search_changed), manager);
     g_signal_connect (manager->save_button, "clicked", G_CALLBACK (manager_save), manager);
     g_signal_connect (manager->cancel_button, "clicked", G_CALLBACK (manager_cancel_edit), manager);
@@ -1106,11 +1179,11 @@ build_manager_widget (PlumaSnippetsPlugin *self)
     g_signal_connect (export_button, "clicked", G_CALLBACK (manager_export), manager);
     g_signal_connect (new_button, "clicked", G_CALLBACK (manager_new), manager);
     g_signal_connect (delete_button, "clicked", G_CALLBACK (manager_delete), manager);
-    g_object_set_data_full (G_OBJECT (box), "snippets-manager", manager, (GDestroyNotify) manager_free);
+    g_object_set_data_full (G_OBJECT (root), "snippets-manager", manager, (GDestroyNotify) manager_free);
     manager_populate (manager);
     manager_populate_language_combo (manager);
-    gtk_widget_show_all (box);
-    return box;
+    gtk_widget_show_all (root);
+    return root;
 }
 
 static GtkWidget *

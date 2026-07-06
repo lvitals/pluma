@@ -24,6 +24,7 @@ snippets_data = [
   'tcl.xml',
   'xml.xml',
   'xslt.xml',
+  'lua.xml',
 ]
 
 install_data(snippets_data,

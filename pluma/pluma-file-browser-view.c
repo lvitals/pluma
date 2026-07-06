@@ -1056,6 +1056,48 @@ pluma_file_browser_view_set_model (PlumaFileBrowserView * tree_view,
 	gtk_tree_view_set_model (GTK_TREE_VIEW (tree_view), model);
 }
 
+typedef struct {
+	PlumaFileBrowserView *tree_view;
+	GtkTreeRowReference *rowref;
+} RenameIdleData;
+
+static gboolean
+start_rename_idle_cb (RenameIdleData *data)
+{
+	PlumaFileBrowserView *tree_view = data->tree_view;
+	GtkTreeRowReference *rowref = data->rowref;
+
+	if (GTK_IS_WIDGET (tree_view)) {
+		GtkTreePath *path_editable = tree_view->priv->editable ? gtk_tree_row_reference_get_path (tree_view->priv->editable) : NULL;
+		GtkTreePath *path_rowref = gtk_tree_row_reference_valid (rowref) ? gtk_tree_row_reference_get_path (rowref) : NULL;
+
+		if (path_editable && path_rowref && gtk_tree_path_compare (path_editable, path_rowref) == 0) {
+			gtk_widget_grab_focus (GTK_WIDGET (tree_view));
+
+			gtk_tree_view_set_cursor (GTK_TREE_VIEW (tree_view),
+						  path_editable,
+						  tree_view->priv->column,
+						  TRUE);
+
+			gtk_tree_view_scroll_to_cell (GTK_TREE_VIEW (tree_view),
+						      path_editable,
+						      tree_view->priv->column,
+						      FALSE, 0.0, 0.0);
+		}
+
+		if (path_editable)
+			gtk_tree_path_free (path_editable);
+		if (path_rowref)
+			gtk_tree_path_free (path_rowref);
+	}
+
+	g_object_unref (tree_view);
+	gtk_tree_row_reference_free (rowref);
+	g_free (data);
+
+	return FALSE;
+}
+
 void
 pluma_file_browser_view_start_rename (PlumaFileBrowserView * tree_view,
 				      GtkTreeIter * iter)
@@ -1063,6 +1105,7 @@ pluma_file_browser_view_start_rename (PlumaFileBrowserView * tree_view,
 	guint flags;
 	GtkTreeRowReference *rowref;
 	GtkTreePath *path;
+	RenameIdleData *data;
 
 	g_return_if_fail (PLUMA_IS_FILE_BROWSER_VIEW (tree_view));
 	g_return_if_fail (PLUMA_IS_FILE_BROWSER_STORE
@@ -1079,24 +1122,22 @@ pluma_file_browser_view_start_rename (PlumaFileBrowserView * tree_view,
 	path = gtk_tree_model_get_path (tree_view->priv->model, iter);
 	rowref = gtk_tree_row_reference_new (tree_view->priv->model, path);
 
-	/* Start editing */
-	gtk_widget_grab_focus (GTK_WIDGET (tree_view));
+	data = g_new0 (RenameIdleData, 1);
+	data->tree_view = g_object_ref (tree_view);
+	data->rowref = gtk_tree_row_reference_new (tree_view->priv->model, path);
 
 	if (gtk_tree_path_up (path))
 		gtk_tree_view_expand_to_path (GTK_TREE_VIEW (tree_view),
 					      path);
 
 	gtk_tree_path_free (path);
+
+	if (tree_view->priv->editable != NULL)
+		gtk_tree_row_reference_free (tree_view->priv->editable);
+
 	tree_view->priv->editable = rowref;
 
-	gtk_tree_view_set_cursor (GTK_TREE_VIEW (tree_view),
-				  gtk_tree_row_reference_get_path (tree_view->priv->editable),
-				  tree_view->priv->column, TRUE);
-
-	gtk_tree_view_scroll_to_cell (GTK_TREE_VIEW (tree_view),
-				      gtk_tree_row_reference_get_path (tree_view->priv->editable),
-				      tree_view->priv->column,
-				      FALSE, 0.0, 0.0);
+	g_idle_add ((GSourceFunc) start_rename_idle_cb, data);
 }
 
 void
