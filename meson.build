@@ -277,7 +277,7 @@ warn_flags = [
   '-Wno-sign-compare',
 ]
 add_project_arguments(cc.get_supported_arguments(warn_flags), language: 'c')
-add_project_arguments('-DHAVE_CONFIG_H', language: 'c')
+add_project_arguments('-DHAVE_CONFIG_H', '-I' + meson.project_build_root(), language: 'c')
 
 # Subdirs
 subdir('po')

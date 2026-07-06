@@ -24,7 +24,7 @@ i18n.merge_file(
   type: 'desktop',
   po_dir: join_paths(meson.project_source_root(), 'po'),
   install: true,
-  install_dir: join_paths(pkgdatadir, 'plugins'),
+  install_dir: join_paths(pkglibdir, 'plugins'),
 )
 
 i18n.merge_file(

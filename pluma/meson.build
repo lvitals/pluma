@@ -1,5 +1,12 @@
 subdir('dialogs')
+libegg_deps = [
+  glib_dep,
+  gtk_dep,
+  ice_dep,
+  sm_dep,
+]
 subdir('mate-submodules/libegg')
+libegg = egg
 
 inst_h_files = [
   'pluma-app.h',
