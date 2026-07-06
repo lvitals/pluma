@@ -1,2 +1,68 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<snippets/>
+<snippets language="global">
+  <snippet id="docpath">
+    <text><![CDATA[\$PLUMA_CURRENT_DOCUMENT_PATH]]></text>
+    <description>Pluma Current Document Path Variable</description>
+    <tag>docpath</tag>
+  </snippet>
+  <snippet id="docname">
+    <text><![CDATA[\$PLUMA_CURRENT_DOCUMENT_NAME]]></text>
+    <description>Pluma Current Document Name Variable</description>
+    <tag>docname</tag>
+  </snippet>
+  <snippet id="docuri">
+    <text><![CDATA[\$PLUMA_CURRENT_DOCUMENT_URI]]></text>
+    <description>Pluma Current Document Uri Variable</description>
+    <tag>docuri</tag>
+  </snippet>
+  <snippet id="docscheme">
+    <text><![CDATA[\$PLUMA_CURRENT_DOCUMENT_SCHEME]]></text>
+    <description>Pluma Current Document Scheme Variable</description>
+    <tag>docscheme</tag>
+  </snippet>
+  <snippet id="docdir">
+    <text><![CDATA[\$PLUMA_CURRENT_DOCUMENT_DIR]]></text>
+    <description>Pluma Current Document Directory Variable</description>
+    <tag>docdir</tag>
+  </snippet>
+  <snippet id="selected">
+    <text><![CDATA[\$PLUMA_SELECTED_TEXT]]></text>
+    <description>Pluma Selected Text Variable</description>
+    <tag>selected</tag>
+  </snippet>
+  <snippet id="curword">
+    <text><![CDATA[\$PLUMA_CURRENT_WORD]]></text>
+    <description>Pluma Current Word Variable</description>
+    <tag>curword</tag>
+  </snippet>
+  <snippet id="curline">
+    <text><![CDATA[\$PLUMA_CURRENT_LINE]]></text>
+    <description>Pluma Current Line Variable</description>
+    <tag>curline</tag>
+  </snippet>
+  <snippet id="curlinenum">
+    <text><![CDATA[\$PLUMA_CURRENT_LINE_NUMBER]]></text>
+    <description>Pluma Current Line Number Variable</description>
+    <tag>curlinenum</tag>
+  </snippet>
+  <snippet id="dropname">
+    <text><![CDATA[\$PLUMA_DROP_DOCUMENT_NAME]]></text>
+    <description>Pluma Drop Document Name Variable</description>
+    <tag>dropname</tag>
+  </snippet>
+  <snippet id="droppath">
+    <text><![CDATA[\$PLUMA_DROP_DOCUMENT_PATH]]></text>
+    <description>Pluma Drop Document Path Variable</description>
+    <tag>droppath</tag>
+  </snippet>
+  <snippet id="dropuri">
+    <text><![CDATA[\$PLUMA_DROP_DOCUMENT_URI]]></text>
+    <description>Pluma Drop Document Uri Variable</description>
+    <tag>dropuri</tag>
+  </snippet>
+  <snippet id="droptype">
+    <text><![CDATA[\$PLUMA_DROP_DOCUMENT_TYPE]]></text>
+    <description>Pluma Drop Document Type Variable</description>
+    <tag>droptype</tag>
+  </snippet>
+</snippets>

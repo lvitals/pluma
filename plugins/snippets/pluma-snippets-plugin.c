@@ -79,7 +79,6 @@ struct _PlumaSnippetsPlugin
     gchar *lua_program;
     gchar *lua_runtime;
     GSimpleActionGroup *action_group;
-    guint completion_timeout_id;
 };
 
 static void window_activatable_iface_init (PlumaWindowActivatableInterface *iface);
@@ -218,6 +217,8 @@ typedef struct {
     GtkListStore *store;
     GtkTreeModelFilter *filter;
     GtkWidget *language_combo;
+    GtkWidget *new_language_entry;
+    GtkWidget *new_language_popover;
     GtkWidget *search_entry;
     GtkWidget *tree;
     GtkWidget *tag;
@@ -406,25 +407,43 @@ manager_save (GtkButton *button, SnippetsManager *manager)
     install_accelerators (manager->plugin);
 }
 
+/* Shared by "Novo" (language = active document's) and the "+" new-language
+ * popover (language = whatever was typed). Returns the new snippet's key
+ * (language\037tag) -- caller owns it. */
+static gchar *
+manager_create_snippet_for_language (SnippetsManager *manager, const gchar *language)
+{
+    gchar *tag = g_strdup ("new-snippet");
+    gchar *key = snippet_key (language, tag);
+    guint suffix = 2;
+    Snippet *snippet;
+
+    while (g_hash_table_contains (manager->plugin->snippets, key)) {
+        g_free (tag); g_free (key);
+        tag = g_strdup_printf ("new-snippet-%u", suffix++);
+        key = snippet_key (language, tag);
+    }
+    snippet = g_new0 (Snippet, 1);
+    snippet->language = g_strdup (language);
+    snippet->tag = tag;
+    snippet->description = g_strdup (_("New snippet"));
+    snippet->text = g_strdup ("$0");
+    snippet->accelerator = g_strdup ("");
+    g_hash_table_insert (manager->plugin->snippets, g_strdup (key), snippet);
+    write_language_file (manager->plugin, language, NULL);
+    manager_populate (manager);
+    manager_populate_language_combo (manager);
+    return key;
+}
+
 static void
 manager_new (GtkButton *button, SnippetsManager *manager)
 {
     PlumaDocument *document = pluma_window_get_active_document (manager->plugin->window);
     GtkSourceLanguage *source_language = document != NULL ? pluma_document_get_language (document) : NULL;
     const gchar *language = source_language != NULL ? gtk_source_language_get_id (source_language) : "global";
-    gchar *tag = g_strdup ("new-snippet"), *key = snippet_key (language, tag);
-    guint suffix = 2;
-    while (g_hash_table_contains (manager->plugin->snippets, key)) {
-        g_free (tag); g_free (key); tag = g_strdup_printf ("new-snippet-%u", suffix++); key = snippet_key (language, tag);
-    }
-    Snippet *snippet = g_new0 (Snippet, 1);
-    snippet->language = g_strdup (language); snippet->tag = tag;
-    snippet->description = g_strdup (_("New snippet")); snippet->text = g_strdup ("$0");
-    snippet->accelerator = g_strdup ("");
-    g_hash_table_insert (manager->plugin->snippets, key, snippet);
-    write_language_file (manager->plugin, language, NULL);
-    manager_populate (manager);
-    manager_populate_language_combo (manager);
+    gchar *key = manager_create_snippet_for_language (manager, language);
+    g_free (key);
 }
 
 static void
@@ -692,6 +711,11 @@ manager_export (GtkButton *button, SnippetsManager *manager)
 static void manager_free (SnippetsManager *manager) {
     g_clear_object (&manager->filter);
     g_clear_object (&manager->store);
+    /* GtkPopover's "relative-to" doesn't parent it into the widget tree, so
+     * it needs an explicit destroy or it dangles as an unowned floating
+     * widget (same gotcha as the earlier preview/help popovers). */
+    if (manager->new_language_popover != NULL)
+        gtk_widget_destroy (manager->new_language_popover);
     g_free (manager->selected_key);
     g_free (manager);
 }
@@ -799,6 +823,146 @@ manager_search_changed (GtkSearchEntry *entry, SnippetsManager *manager)
     gtk_tree_model_filter_refilter (manager->filter);
 }
 
+/* Picks @language in the combo (must already be populated -- called after
+ * manager_populate_language_combo()) so a freshly-created language is
+ * visible immediately instead of the user having to find it themselves. */
+static void
+manager_select_language_in_combo (SnippetsManager *manager, const gchar *language)
+{
+    GtkTreeModel *model = gtk_combo_box_get_model (GTK_COMBO_BOX (manager->language_combo));
+    GtkTreeIter iter;
+    gboolean valid;
+
+    for (valid = gtk_tree_model_get_iter_first (model, &iter); valid;
+         valid = gtk_tree_model_iter_next (model, &iter)) {
+        gchar *text;
+        gboolean match;
+
+        gtk_tree_model_get (model, &iter, 0, &text, -1);
+        match = g_strcmp0 (text, language) == 0;
+        g_free (text);
+        if (match) {
+            gtk_combo_box_set_active_iter (GTK_COMBO_BOX (manager->language_combo), &iter);
+            return;
+        }
+    }
+}
+
+/* Selects the row for @key in the tree view, translating through the
+ * filter/sort model chain -- used to jump straight to a freshly-created
+ * snippet instead of leaving the user to scroll and find it. */
+static void
+manager_select_snippet_key (SnippetsManager *manager, const gchar *key)
+{
+    GtkTreeModel *view_model = gtk_tree_view_get_model (GTK_TREE_VIEW (manager->tree));
+    GtkTreeIter store_iter, filter_iter, view_iter;
+    gboolean valid;
+
+    for (valid = gtk_tree_model_get_iter_first (GTK_TREE_MODEL (manager->store), &store_iter); valid;
+         valid = gtk_tree_model_iter_next (GTK_TREE_MODEL (manager->store), &store_iter)) {
+        gchar *row_key;
+        gboolean match;
+
+        gtk_tree_model_get (GTK_TREE_MODEL (manager->store), &store_iter, MANAGER_COL_KEY, &row_key, -1);
+        match = g_strcmp0 (row_key, key) == 0;
+        g_free (row_key);
+        if (!match)
+            continue;
+
+        if (gtk_tree_model_filter_convert_child_iter_to_iter (manager->filter, &filter_iter, &store_iter) &&
+            gtk_tree_model_sort_convert_child_iter_to_iter (GTK_TREE_MODEL_SORT (view_model), &view_iter, &filter_iter)) {
+            GtkTreePath *path = gtk_tree_model_get_path (view_model, &view_iter);
+            gtk_tree_selection_select_iter (gtk_tree_view_get_selection (GTK_TREE_VIEW (manager->tree)), &view_iter);
+            gtk_tree_view_scroll_to_cell (GTK_TREE_VIEW (manager->tree), path, NULL, TRUE, 0.5, 0.0);
+            gtk_tree_path_free (path);
+        }
+        return;
+    }
+}
+
+static void
+manager_confirm_new_language (SnippetsManager *manager)
+{
+    gchar *language = g_strstrip (g_strdup (gtk_entry_get_text (GTK_ENTRY (manager->new_language_entry))));
+
+    if (*language != '\0') {
+        gchar *key = manager_create_snippet_for_language (manager, language);
+        manager_select_language_in_combo (manager, language);
+        manager_select_snippet_key (manager, key);
+        g_free (key);
+        gtk_entry_set_text (GTK_ENTRY (manager->new_language_entry), "");
+        gtk_widget_hide (manager->new_language_popover);
+    }
+    g_free (language);
+}
+
+static void
+on_new_language_entry_activate (GtkEntry *entry, SnippetsManager *manager)
+{
+    manager_confirm_new_language (manager);
+}
+
+static void
+on_new_language_create_clicked (GtkButton *button, SnippetsManager *manager)
+{
+    manager_confirm_new_language (manager);
+}
+
+static void
+on_new_language_button_clicked (GtkButton *button, SnippetsManager *manager)
+{
+    gtk_popover_set_relative_to (GTK_POPOVER (manager->new_language_popover), GTK_WIDGET (button));
+    gtk_popover_popup (GTK_POPOVER (manager->new_language_popover));
+    gtk_widget_grab_focus (manager->new_language_entry);
+}
+
+/* Entry + autocomplete (real GtkSourceView language ids, plus "global" for
+ * language-agnostic snippets) + a Criar button, in a popover off the "+"
+ * button -- so adding a language doesn't need an already-open document of
+ * that language or a hand-authored XML file (the only two ways that
+ * worked before). */
+static GtkWidget *
+build_new_language_popover (SnippetsManager *manager)
+{
+    GtkWidget *popover = gtk_popover_new (NULL);
+    GtkWidget *box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget *create_button = gtk_button_new_with_mnemonic (_("_Criar"));
+    GtkEntryCompletion *completion = gtk_entry_completion_new ();
+    GtkListStore *store = gtk_list_store_new (1, G_TYPE_STRING);
+    const gchar * const *ids = gtk_source_language_manager_get_language_ids (gtk_source_language_manager_get_default ());
+    GtkTreeIter iter;
+    gint i;
+
+    manager->new_language_entry = gtk_entry_new ();
+    gtk_entry_set_placeholder_text (GTK_ENTRY (manager->new_language_entry), _("Language id, e.g. “python”…"));
+    gtk_entry_set_width_chars (GTK_ENTRY (manager->new_language_entry), 24);
+
+    gtk_list_store_append (store, &iter);
+    gtk_list_store_set (store, &iter, 0, "global", -1);
+    for (i = 0; ids != NULL && ids[i] != NULL; i++) {
+        gtk_list_store_append (store, &iter);
+        gtk_list_store_set (store, &iter, 0, ids[i], -1);
+    }
+    gtk_entry_completion_set_model (completion, GTK_TREE_MODEL (store));
+    gtk_entry_completion_set_text_column (completion, 0);
+    gtk_entry_completion_set_inline_completion (completion, TRUE);
+    gtk_entry_completion_set_popup_completion (completion, TRUE);
+    gtk_entry_set_completion (GTK_ENTRY (manager->new_language_entry), completion);
+    g_object_unref (store);
+    g_object_unref (completion);
+
+    g_signal_connect (manager->new_language_entry, "activate", G_CALLBACK (on_new_language_entry_activate), manager);
+    g_signal_connect (create_button, "clicked", G_CALLBACK (on_new_language_create_clicked), manager);
+
+    gtk_box_pack_start (GTK_BOX (box), manager->new_language_entry, TRUE, TRUE, 0);
+    gtk_box_pack_start (GTK_BOX (box), create_button, FALSE, FALSE, 0);
+    gtk_container_set_border_width (GTK_CONTAINER (box), 6);
+    gtk_container_add (GTK_CONTAINER (popover), box);
+    gtk_widget_show_all (box);
+
+    return popover;
+}
+
 static GtkWidget *
 build_manager_widget (PlumaSnippetsPlugin *self)
 {
@@ -815,6 +979,8 @@ build_manager_widget (PlumaSnippetsPlugin *self)
     GtkWidget *new_button = gtk_button_new_with_mnemonic (_("_Novo"));
     GtkWidget *delete_button = gtk_button_new_with_mnemonic (_("_Remover"));
     GtkWidget *buttons = gtk_grid_new ();
+    GtkWidget *language_box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget *new_language_button = gtk_button_new_from_icon_name ("list-add-symbolic", GTK_ICON_SIZE_BUTTON);
     GtkTreeModel *sortable;
     GtkCellRenderer *renderer;
     guint column;
@@ -827,6 +993,8 @@ build_manager_widget (PlumaSnippetsPlugin *self)
                                          G_TYPE_STRING, G_TYPE_STRING);
 
     manager->language_combo = gtk_combo_box_text_new ();
+    manager->new_language_popover = build_new_language_popover (manager);
+    gtk_widget_set_tooltip_text (new_language_button, _("Add a new language…"));
 
     manager->search_entry = gtk_search_entry_new ();
     gtk_entry_set_placeholder_text (GTK_ENTRY (manager->search_entry),
@@ -857,7 +1025,10 @@ build_manager_widget (PlumaSnippetsPlugin *self)
     gtk_container_add (GTK_CONTAINER (scroll), manager->tree);
     gtk_widget_set_size_request (scroll, 300, 380);
     gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
-    gtk_box_pack_start (GTK_BOX (left), manager->language_combo, FALSE, FALSE, 0);
+    gtk_widget_set_hexpand (manager->language_combo, TRUE);
+    gtk_box_pack_start (GTK_BOX (language_box), manager->language_combo, TRUE, TRUE, 0);
+    gtk_box_pack_start (GTK_BOX (language_box), new_language_button, FALSE, FALSE, 0);
+    gtk_box_pack_start (GTK_BOX (left), language_box, FALSE, FALSE, 0);
     gtk_box_pack_start (GTK_BOX (left), manager->search_entry, FALSE, FALSE, 0);
     gtk_box_pack_start (GTK_BOX (left), scroll, TRUE, TRUE, 0);
     /* 2x2 grid instead of a button box crammed into one row -- each button
@@ -927,6 +1098,7 @@ build_manager_widget (PlumaSnippetsPlugin *self)
     g_signal_connect (gtk_tree_view_get_selection (GTK_TREE_VIEW (manager->tree)), "changed",
                       G_CALLBACK (manager_selection_changed), manager);
     g_signal_connect (manager->language_combo, "changed", G_CALLBACK (manager_language_changed), manager);
+    g_signal_connect (new_language_button, "clicked", G_CALLBACK (on_new_language_button_clicked), manager);
     g_signal_connect (manager->search_entry, "search-changed", G_CALLBACK (manager_search_changed), manager);
     g_signal_connect (manager->save_button, "clicked", G_CALLBACK (manager_save), manager);
     g_signal_connect (manager->cancel_button, "clicked", G_CALLBACK (manager_cancel_edit), manager);
@@ -1407,57 +1579,17 @@ select_placeholder (PlumaSnippetsPlugin *self, gint position)
     return TRUE;
 }
 
-/* GtkSourceView is supposed to invoke completion providers on its own for
- * GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE, but in practice this does
- * not reliably fire for every application/version -- our provider_get_activation()
- * correctly advertises interactive support (confirmed with a debugger: the
- * provider is registered and manual Ctrl+Space activation works), so we
- * also trigger it ourselves as a fallback. Calling gtk_source_completion_start()
- * synchronously from inside the buffer's "changed" handler is reentrant and
- * can wedge GtkSourceCompletion's internal state (breaking even the manual
- * Ctrl+Space trigger afterwards), so this runs from an idle callback queued
- * right after the keystroke instead of directly. A longer timeout was tried
- * first, but under Wayland a completion popup shown too long after its
- * triggering input event can be silently refused by the compositor (popups
- * need to be tied to a recent input serial); an idle callback fires on the
- * very next main loop iteration, staying as close to the keystroke as
- * possible while still breaking the reentrant call chain. */
-static gboolean
-completion_timeout_cb (gpointer data)
-{
-    PlumaSnippetsPlugin *self = data;
-    GtkSourceCompletion *completion;
-    GtkSourceCompletionContext *context;
-    GtkTextBuffer *buffer;
-    GtkTextIter iter;
-    GList *providers;
-
-    self->completion_timeout_id = 0;
-
-    if (self->view == NULL || self->provider == NULL)
-        return G_SOURCE_REMOVE;
-    if (self->active_placeholder >= 0 && self->active_placeholder < (gint) self->placeholders->len)
-        return G_SOURCE_REMOVE; /* a snippet session started in the meantime */
-
-    buffer = gtk_text_view_get_buffer (GTK_TEXT_VIEW (self->view));
-    gtk_text_buffer_get_iter_at_mark (buffer, &iter, gtk_text_buffer_get_insert (buffer));
-    completion = gtk_source_view_get_completion (GTK_SOURCE_VIEW (self->view));
-    context = gtk_source_completion_create_context (completion, &iter);
-    providers = g_list_prepend (NULL, self->provider);
-    gtk_source_completion_start (completion, providers, context);
-    g_list_free (providers);
-
-    return G_SOURCE_REMOVE;
-}
-
-static void
-schedule_interactive_completion (PlumaSnippetsPlugin *self)
-{
-    if (self->completion_timeout_id != 0)
-        g_source_remove (self->completion_timeout_id);
-    self->completion_timeout_id = g_idle_add (completion_timeout_cb, self);
-}
-
+/* Interactive (as-you-type) completion used to auto-trigger on every single
+ * keystroke via an idle callback here. In practice that meant the popup was
+ * visible almost constantly while typing normal text (not just while a
+ * snippet trigger was actually plausible), and it fought with Tab: this
+ * plugin's own Tab handling in key_press() means "expand a matching tag" or
+ * "advance to the next placeholder", but if GtkSourceCompletion's popup
+ * happened to be up at the same time, Tab could instead accept whatever
+ * proposal it had highlighted -- inserting an unrelated snippet's body
+ * mid-edit. Removed entirely: completion is now GTK_SOURCE_COMPLETION_ACTIVATION_USER_REQUESTED
+ * only (Ctrl+Space), and the precise, popup-free "type a known tag, press
+ * Tab" path in key_press() still works exactly as before. */
 static void
 update_mirrors (GtkTextBuffer *buffer, PlumaSnippetsPlugin *self)
 {
@@ -1467,10 +1599,8 @@ update_mirrors (GtkTextBuffer *buffer, PlumaSnippetsPlugin *self)
     guint i;
     if (self->updating_mirrors)
         return;
-    if (self->active_placeholder < 0 || self->active_placeholder >= (gint) self->placeholders->len) {
-        schedule_interactive_completion (self);
+    if (self->active_placeholder < 0 || self->active_placeholder >= (gint) self->placeholders->len)
         return;
-    }
     primary = g_ptr_array_index (self->placeholders, self->active_placeholder);
     gtk_text_buffer_get_iter_at_mark (buffer, &start, primary->start);
     gtk_text_buffer_get_iter_at_mark (buffer, &end, primary->end);
@@ -1512,7 +1642,7 @@ insert_snippet (PlumaSnippetsPlugin *self, GtkTextBuffer *buffer,
                 GtkTextIter *replace_start, GtkTextIter *replace_end, Snippet *snippet)
 {
     Expansion *expanded = expand_text (self, buffer, snippet->text);
-    GtkTextIter insertion = *replace_start;
+    GtkTextIter insertion;
     GtkTextMark *origin;
     guint i;
 
@@ -1520,6 +1650,14 @@ insert_snippet (PlumaSnippetsPlugin *self, GtkTextBuffer *buffer,
     gtk_text_buffer_begin_user_action (buffer);
     if (!gtk_text_iter_equal (replace_start, replace_end))
         gtk_text_buffer_delete (buffer, replace_start, replace_end);
+    /* Re-read *after* the delete: gtk_text_buffer_delete() revalidates
+     * replace_start/replace_end in place to the deletion point, but a copy
+     * taken *before* the call (as this used to do) is exactly the kind of
+     * "outstanding iterator" the buffer invalidates on any mutation --
+     * using it afterwards to create a mark is undefined and could crash
+     * (reported: pluma closing when completing "main" via Tab, with a GTK
+     * "Invalid text buffer iterator" warning in the log right before it). */
+    insertion = *replace_start;
     origin = gtk_text_buffer_create_mark (buffer, NULL, &insertion, TRUE);
     gtk_text_buffer_insert (buffer, &insertion, expanded->text, -1);
     {
@@ -1579,7 +1717,9 @@ completion_word (SnippetsProvider *provider, GtkSourceCompletionContext *context
 static gchar *provider_get_name (GtkSourceCompletionProvider *provider) { return g_strdup (_("Snippets")); }
 static const gchar *provider_get_icon_name (GtkSourceCompletionProvider *provider) { return "format-justify-left"; }
 static GtkSourceCompletionActivation provider_get_activation (GtkSourceCompletionProvider *provider) {
-    return GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE | GTK_SOURCE_COMPLETION_ACTIVATION_USER_REQUESTED;
+    /* Manual only (Ctrl+Space) -- see update_mirrors() for why interactive
+     * (as-you-type) activation was removed. */
+    return GTK_SOURCE_COMPLETION_ACTIVATION_USER_REQUESTED;
 }
 
 /* Returns a match score (lower is better) if every character of @word
@@ -1904,10 +2044,6 @@ set_view (PlumaSnippetsPlugin *self, PlumaView *view)
 {
     if (self->view == view)
         return;
-    if (self->completion_timeout_id != 0) {
-        g_source_remove (self->completion_timeout_id);
-        self->completion_timeout_id = 0;
-    }
     if (self->view != NULL && self->key_handler != 0)
         g_signal_handler_disconnect (self->view, self->key_handler);
     if (self->view != NULL && self->buffer_changed_handler != 0)
