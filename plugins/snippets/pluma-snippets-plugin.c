@@ -4,10 +4,13 @@
 #include <errno.h>
 #include <archive.h>
 #include <archive_entry.h>
+#include <gdk/gdk.h>
+#include <gio/gio.h>
 #include <glib/gi18n-lib.h>
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 #include <libpeas-gtk/peas-gtk-configurable.h>
+#include <gtksourceview/gtksource.h>
 #include <pluma/pluma-document.h>
 #include <pluma/pluma-view.h>
 #include <pluma/pluma-window.h>
@@ -26,6 +29,26 @@ typedef struct
 typedef struct { guint index; glong start; glong end; gboolean mirror; } PlaceholderSpec;
 typedef struct { gchar *text; GArray *placeholders; glong final_cursor; } Expansion;
 typedef struct { guint index; GtkTextMark *start; GtkTextMark *end; } Placeholder;
+
+/* Name of the GtkTextTag used to highlight the currently active snippet
+ * tab-stop, so it reads as "this is an editable snippet field" rather than
+ * an ordinary (and theme/focus-dependent) text selection. */
+#define SNIPPET_PLACEHOLDER_TAG "pluma-snippet-placeholder"
+
+static GtkTextTag *
+get_placeholder_tag (GtkTextBuffer *buffer)
+{
+    GtkTextTagTable *table = gtk_text_buffer_get_tag_table (buffer);
+    GtkTextTag *tag = gtk_text_tag_table_lookup (table, SNIPPET_PLACEHOLDER_TAG);
+
+    if (tag == NULL) {
+        GdkRGBA rgba;
+        gdk_rgba_parse (&rgba, "rgba(97,175,239,0.35)");
+        tag = gtk_text_buffer_create_tag (buffer, SNIPPET_PLACEHOLDER_TAG,
+                                         "background-rgba", &rgba, NULL);
+    }
+    return tag;
+}
 typedef struct _SnippetsProvider SnippetsProvider;
 typedef struct _SnippetsProviderClass SnippetsProviderClass;
 
@@ -55,12 +78,15 @@ struct _PlumaSnippetsPlugin
     gchar *data_dir;
     gchar *lua_program;
     gchar *lua_runtime;
+    GSimpleActionGroup *action_group;
+    guint completion_timeout_id;
 };
 
 static void window_activatable_iface_init (PlumaWindowActivatableInterface *iface);
 static void completion_provider_iface_init (GtkSourceCompletionProviderIface *iface);
 static void configurable_iface_init (PeasGtkConfigurableInterface *iface);
 static void install_accelerators (PlumaSnippetsPlugin *self);
+static gint fuzzy_score (const gchar *word, const gchar *tag);
 
 GType snippets_provider_get_type (void);
 G_DEFINE_DYNAMIC_TYPE_EXTENDED (SnippetsProvider, snippets_provider, G_TYPE_OBJECT, 0,
@@ -190,14 +216,21 @@ enum { MANAGER_COL_LANGUAGE, MANAGER_COL_TAG, MANAGER_COL_DESCRIPTION, MANAGER_C
 typedef struct {
     PlumaSnippetsPlugin *plugin;
     GtkListStore *store;
+    GtkTreeModelFilter *filter;
+    GtkWidget *language_combo;
+    GtkWidget *search_entry;
     GtkWidget *tree;
     GtkWidget *tag;
     GtkWidget *description;
     GtkWidget *accelerator;
     GtkWidget *drop_targets;
-    GtkWidget *text;
+    GtkWidget *text;              /* plain GtkTextView -- follows the GTK theme */
+    GtkWidget *save_button;
+    GtkWidget *cancel_button;
     gchar *selected_key;
 } SnippetsManager;
+
+static void manager_populate_language_combo (SnippetsManager *manager);
 
 static gboolean
 write_language_file (PlumaSnippetsPlugin *self, const gchar *language, GError **error)
@@ -265,6 +298,27 @@ manager_populate (SnippetsManager *manager)
     }
 }
 
+/* Populates the edit fields/editor from @snippet. Shared by selecting a row
+ * and by "Cancelar" (which just re-loads the stored values, discarding
+ * whatever was typed since). */
+static void
+manager_load_snippet_into_form (SnippetsManager *manager, Snippet *snippet)
+{
+    gchar *targets;
+
+    gtk_entry_set_text (GTK_ENTRY (manager->tag), snippet->tag);
+    gtk_entry_set_text (GTK_ENTRY (manager->description), snippet->description != NULL ? snippet->description : "");
+    gtk_entry_set_text (GTK_ENTRY (manager->accelerator), snippet->accelerator != NULL ? snippet->accelerator : "");
+    targets = snippet->drop_targets != NULL ? g_strjoinv (",", snippet->drop_targets) : g_strdup ("");
+    gtk_entry_set_text (GTK_ENTRY (manager->drop_targets), targets);
+    g_free (targets);
+
+    gtk_text_buffer_set_text (gtk_text_view_get_buffer (GTK_TEXT_VIEW (manager->text)), snippet->text, -1);
+
+    gtk_widget_set_sensitive (manager->save_button, TRUE);
+    gtk_widget_set_sensitive (manager->cancel_button, TRUE);
+}
+
 static void
 manager_selection_changed (GtkTreeSelection *selection, SnippetsManager *manager)
 {
@@ -272,20 +326,31 @@ manager_selection_changed (GtkTreeSelection *selection, SnippetsManager *manager
     GtkTreeIter iter;
     gchar *key = NULL;
     Snippet *snippet;
-    if (!gtk_tree_selection_get_selected (selection, &model, &iter))
+
+    if (!gtk_tree_selection_get_selected (selection, &model, &iter)) {
+        g_clear_pointer (&manager->selected_key, g_free);
+        gtk_widget_set_sensitive (manager->save_button, FALSE);
+        gtk_widget_set_sensitive (manager->cancel_button, FALSE);
         return;
+    }
     gtk_tree_model_get (model, &iter, MANAGER_COL_KEY, &key, -1);
     snippet = g_hash_table_lookup (manager->plugin->snippets, key);
-    if (snippet != NULL) {
-        gtk_entry_set_text (GTK_ENTRY (manager->tag), snippet->tag);
-        gtk_entry_set_text (GTK_ENTRY (manager->description), snippet->description != NULL ? snippet->description : "");
-        gtk_entry_set_text (GTK_ENTRY (manager->accelerator), snippet->accelerator != NULL ? snippet->accelerator : "");
-        { gchar *targets = snippet->drop_targets != NULL ? g_strjoinv (",", snippet->drop_targets) : g_strdup ("");
-          gtk_entry_set_text (GTK_ENTRY (manager->drop_targets), targets); g_free (targets); }
-        gtk_text_buffer_set_text (gtk_text_view_get_buffer (GTK_TEXT_VIEW (manager->text)), snippet->text, -1);
-    }
+    if (snippet != NULL)
+        manager_load_snippet_into_form (manager, snippet);
     g_free (manager->selected_key);
     manager->selected_key = key;
+}
+
+static void
+manager_cancel_edit (GtkButton *button, SnippetsManager *manager)
+{
+    Snippet *snippet;
+
+    if (manager->selected_key == NULL)
+        return;
+    snippet = g_hash_table_lookup (manager->plugin->snippets, manager->selected_key);
+    if (snippet != NULL)
+        manager_load_snippet_into_form (manager, snippet);
 }
 
 static void
@@ -359,6 +424,7 @@ manager_new (GtkButton *button, SnippetsManager *manager)
     g_hash_table_insert (manager->plugin->snippets, key, snippet);
     write_language_file (manager->plugin, language, NULL);
     manager_populate (manager);
+    manager_populate_language_combo (manager);
 }
 
 static void
@@ -374,6 +440,7 @@ manager_delete (GtkButton *button, SnippetsManager *manager)
     g_clear_pointer (&manager->selected_key, g_free);
     write_language_file (manager->plugin, language, NULL);
     g_free (language); manager_populate (manager); install_accelerators (manager->plugin);
+    manager_populate_language_combo (manager);
 }
 
 static gboolean
@@ -514,6 +581,7 @@ manager_import (GtkButton *button, SnippetsManager *manager)
                 g_clear_error (&error);
             } else {
                 manager_populate (manager);
+                manager_populate_language_combo (manager);
             }
         } else if (!valid_snippets_document (source)) {
             show_manager_error (manager, _("The selected file is not a valid snippets XML document."));
@@ -530,6 +598,7 @@ manager_import (GtkButton *button, SnippetsManager *manager)
             } else {
                 load_snippet_file (manager->plugin, destination);
                 manager_populate (manager);
+                manager_populate_language_combo (manager);
             }
             g_object_unref (source_file); g_object_unref (destination_file);
             g_free (destination); g_free (base); g_free (directory);
@@ -621,77 +690,302 @@ manager_export (GtkButton *button, SnippetsManager *manager)
 }
 
 static void manager_free (SnippetsManager *manager) {
-    g_clear_object (&manager->store); g_free (manager->selected_key); g_free (manager);
+    g_clear_object (&manager->filter);
+    g_clear_object (&manager->store);
+    g_free (manager->selected_key);
+    g_free (manager);
+}
+
+/* Sorts alphabetically by trigger. Language is no longer a visible column
+ * (it's picked once via the language combo instead of repeated on every
+ * row), so there is nothing else worth sorting by here. */
+static gint
+manager_sort_func (GtkTreeModel *model, GtkTreeIter *a, GtkTreeIter *b, gpointer data)
+{
+    gchar *tag_a, *tag_b;
+    gint result;
+
+    gtk_tree_model_get (model, a, MANAGER_COL_TAG, &tag_a, -1);
+    gtk_tree_model_get (model, b, MANAGER_COL_TAG, &tag_b, -1);
+
+    result = g_strcmp0 (tag_a, tag_b);
+
+    g_free (tag_a); g_free (tag_b);
+    return result;
+}
+
+/* Filters the manager's tree view to the language currently picked in the
+ * combo, further narrowed by whatever's typed in the search box (fuzzy
+ * matching -- same subsequence matching as the editor's autocomplete popup
+ * -- against trigger and description at once). */
+static gboolean
+manager_filter_visible (GtkTreeModel *model, GtkTreeIter *iter, gpointer data)
+{
+    SnippetsManager *manager = data;
+    const gchar *search_text;
+    gchar *selected_language;
+    gchar *language = NULL, *tag = NULL, *description = NULL;
+    gboolean visible;
+
+    selected_language = gtk_combo_box_text_get_active_text (GTK_COMBO_BOX_TEXT (manager->language_combo));
+    if (selected_language == NULL)
+        return FALSE;
+
+    gtk_tree_model_get (model, iter, MANAGER_COL_LANGUAGE, &language, -1);
+    visible = g_strcmp0 (language, selected_language) == 0;
+    g_free (language);
+    g_free (selected_language);
+
+    if (!visible)
+        return FALSE;
+
+    search_text = gtk_entry_get_text (GTK_ENTRY (manager->search_entry));
+    if (search_text == NULL || *search_text == '\0')
+        return TRUE;
+
+    gtk_tree_model_get (model, iter,
+                        MANAGER_COL_TAG, &tag,
+                        MANAGER_COL_DESCRIPTION, &description,
+                        -1);
+
+    visible = (tag != NULL && fuzzy_score (search_text, tag) >= 0) ||
+              (description != NULL && fuzzy_score (search_text, description) >= 0);
+
+    g_free (tag); g_free (description);
+    return visible;
+}
+
+/* (Re)populates the language combo with the distinct languages currently
+ * present in the snippet set, sorted alphabetically, trying to keep
+ * whatever was selected before (falling back to the first entry). */
+static void
+manager_populate_language_combo (SnippetsManager *manager)
+{
+    GHashTableIter iter;
+    gpointer value;
+    GList *languages = NULL, *l;
+    gchar *previous = gtk_combo_box_text_get_active_text (GTK_COMBO_BOX_TEXT (manager->language_combo));
+    gint new_active = 0, i;
+
+    g_hash_table_iter_init (&iter, manager->plugin->snippets);
+    while (g_hash_table_iter_next (&iter, NULL, &value)) {
+        Snippet *snippet = value;
+        if (g_list_find_custom (languages, snippet->language, (GCompareFunc) g_strcmp0) == NULL)
+            languages = g_list_prepend (languages, snippet->language);
+    }
+    languages = g_list_sort (languages, (GCompareFunc) g_strcmp0);
+
+    gtk_combo_box_text_remove_all (GTK_COMBO_BOX_TEXT (manager->language_combo));
+    for (l = languages, i = 0; l != NULL; l = l->next, i++) {
+        gtk_combo_box_text_append_text (GTK_COMBO_BOX_TEXT (manager->language_combo), l->data);
+        if (g_strcmp0 (l->data, previous) == 0)
+            new_active = i;
+    }
+    g_list_free (languages);
+    g_free (previous);
+
+    gtk_combo_box_set_active (GTK_COMBO_BOX (manager->language_combo), new_active);
+}
+
+static void
+manager_language_changed (GtkComboBox *combo, SnippetsManager *manager)
+{
+    gtk_tree_model_filter_refilter (manager->filter);
+}
+
+static void
+manager_search_changed (GtkSearchEntry *entry, SnippetsManager *manager)
+{
+    gtk_tree_model_filter_refilter (manager->filter);
 }
 
 static GtkWidget *
-create_configure_widget (PeasGtkConfigurable *configurable)
+build_manager_widget (PlumaSnippetsPlugin *self)
 {
-    PlumaSnippetsPlugin *self = PLUMA_SNIPPETS_PLUGIN (configurable);
     SnippetsManager *manager = g_new0 (SnippetsManager, 1);
-    GtkWidget *box = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 12);
+    GtkWidget *box = gtk_paned_new (GTK_ORIENTATION_HORIZONTAL);
     GtkWidget *left = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
-    GtkWidget *right = gtk_grid_new ();
+    GtkWidget *right = gtk_box_new (GTK_ORIENTATION_VERTICAL, 6);
+    GtkWidget *fields_grid = gtk_grid_new ();
+    GtkWidget *bottom_bar = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 6);
     GtkWidget *scroll = gtk_scrolled_window_new (NULL, NULL);
-    GtkWidget *button = gtk_button_new_with_mnemonic (_("_Save Snippet"));
-    GtkWidget *import_button = gtk_button_new_with_mnemonic (_("_Import XML"));
-    GtkWidget *export_button = gtk_button_new_with_mnemonic (_("_Export Language"));
-    GtkWidget *new_button = gtk_button_new_with_mnemonic (_("_New"));
-    GtkWidget *delete_button = gtk_button_new_with_mnemonic (_("_Delete"));
-    GtkWidget *buttons = gtk_button_box_new (GTK_ORIENTATION_HORIZONTAL);
+    GtkWidget *text_scroll = gtk_scrolled_window_new (NULL, NULL);
+    GtkWidget *import_button = gtk_button_new_with_mnemonic (_("_Importar"));
+    GtkWidget *export_button = gtk_button_new_with_mnemonic (_("_Exportar"));
+    GtkWidget *new_button = gtk_button_new_with_mnemonic (_("_Novo"));
+    GtkWidget *delete_button = gtk_button_new_with_mnemonic (_("_Remover"));
+    GtkWidget *buttons = gtk_grid_new ();
+    GtkTreeModel *sortable;
     GtkCellRenderer *renderer;
     guint column;
-    const gchar *titles[] = { N_("Language"), N_("Trigger"), N_("Description") };
+    /* Language is picked via the combo below, not repeated on every row. */
+    const gchar *titles[] = { N_("Trigger"), N_("Description") };
+    const gint columns[] = { MANAGER_COL_TAG, MANAGER_COL_DESCRIPTION };
 
     manager->plugin = self;
     manager->store = gtk_list_store_new (MANAGER_N_COLUMNS, G_TYPE_STRING, G_TYPE_STRING,
                                          G_TYPE_STRING, G_TYPE_STRING);
-    manager->tree = gtk_tree_view_new_with_model (GTK_TREE_MODEL (manager->store));
-    for (column = 0; column < 3; column++) {
+
+    manager->language_combo = gtk_combo_box_text_new ();
+
+    manager->search_entry = gtk_search_entry_new ();
+    gtk_entry_set_placeholder_text (GTK_ENTRY (manager->search_entry),
+                                    _("Search by trigger or description…"));
+
+    manager->filter = GTK_TREE_MODEL_FILTER (gtk_tree_model_filter_new (GTK_TREE_MODEL (manager->store), NULL));
+    gtk_tree_model_filter_set_visible_func (manager->filter, manager_filter_visible, manager, NULL);
+
+    sortable = gtk_tree_model_sort_new_with_model (GTK_TREE_MODEL (manager->filter));
+    gtk_tree_sortable_set_default_sort_func (GTK_TREE_SORTABLE (sortable), manager_sort_func, NULL, NULL);
+    gtk_tree_sortable_set_sort_column_id (GTK_TREE_SORTABLE (sortable),
+                                         GTK_TREE_SORTABLE_DEFAULT_SORT_COLUMN_ID, GTK_SORT_ASCENDING);
+
+    manager->tree = gtk_tree_view_new_with_model (sortable);
+    g_object_unref (sortable);
+
+    for (column = 0; column < G_N_ELEMENTS (columns); column++) {
+        GtkTreeViewColumn *view_column;
+
         renderer = gtk_cell_renderer_text_new ();
-        gtk_tree_view_insert_column_with_attributes (GTK_TREE_VIEW (manager->tree), -1,
-                                                     _(titles[column]), renderer, "text", column, NULL);
+        view_column = gtk_tree_view_column_new_with_attributes (_(titles[column]), renderer,
+                                                                "text", columns[column], NULL);
+        gtk_tree_view_column_set_sort_column_id (view_column, columns[column]);
+        gtk_tree_view_column_set_resizable (view_column, TRUE);
+        gtk_tree_view_column_set_expand (view_column, column == 1); /* Description gets the extra space */
+        gtk_tree_view_append_column (GTK_TREE_VIEW (manager->tree), view_column);
     }
     gtk_container_add (GTK_CONTAINER (scroll), manager->tree);
-    gtk_widget_set_size_request (scroll, 360, 320);
+    gtk_widget_set_size_request (scroll, 300, 380);
+    gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_box_pack_start (GTK_BOX (left), manager->language_combo, FALSE, FALSE, 0);
+    gtk_box_pack_start (GTK_BOX (left), manager->search_entry, FALSE, FALSE, 0);
     gtk_box_pack_start (GTK_BOX (left), scroll, TRUE, TRUE, 0);
-    gtk_container_add (GTK_CONTAINER (buttons), import_button);
-    gtk_container_add (GTK_CONTAINER (buttons), export_button);
-    gtk_container_add (GTK_CONTAINER (buttons), new_button);
-    gtk_container_add (GTK_CONTAINER (buttons), delete_button);
+    /* 2x2 grid instead of a button box crammed into one row -- each button
+     * gets a real share of the panel's width instead of being squeezed. */
+    gtk_grid_set_row_spacing (GTK_GRID (buttons), 6);
+    gtk_grid_set_column_spacing (GTK_GRID (buttons), 6);
+    gtk_grid_set_column_homogeneous (GTK_GRID (buttons), TRUE);
+    gtk_widget_set_hexpand (new_button, TRUE);
+    gtk_widget_set_hexpand (delete_button, TRUE);
+    gtk_widget_set_hexpand (import_button, TRUE);
+    gtk_widget_set_hexpand (export_button, TRUE);
+    gtk_grid_attach (GTK_GRID (buttons), new_button, 0, 0, 1, 1);
+    gtk_grid_attach (GTK_GRID (buttons), delete_button, 1, 0, 1, 1);
+    gtk_grid_attach (GTK_GRID (buttons), import_button, 0, 1, 1, 1);
+    gtk_grid_attach (GTK_GRID (buttons), export_button, 1, 1, 1, 1);
     gtk_box_pack_start (GTK_BOX (left), buttons, FALSE, FALSE, 0);
-    gtk_grid_set_row_spacing (GTK_GRID (right), 6);
-    gtk_grid_set_column_spacing (GTK_GRID (right), 6);
+
+    /* --- Right side: just the fields + a big body editor. --- */
+    gtk_grid_set_row_spacing (GTK_GRID (fields_grid), 6);
+    gtk_grid_set_column_spacing (GTK_GRID (fields_grid), 6);
     manager->tag = gtk_entry_new ();
     manager->description = gtk_entry_new ();
     manager->accelerator = gtk_entry_new ();
     manager->drop_targets = gtk_entry_new ();
+    gtk_widget_set_hexpand (manager->tag, TRUE);
+    gtk_widget_set_hexpand (manager->description, TRUE);
+
+    /* Trigger + Description right at the top, next to each other, since
+     * those are what you look at right after picking a row on the left;
+     * Accelerator/Drop targets (rarely used) follow below them. */
+    gtk_grid_attach (GTK_GRID (fields_grid), gtk_label_new (_("Trigger")), 0, 0, 1, 1);
+    gtk_grid_attach (GTK_GRID (fields_grid), manager->tag, 1, 0, 1, 1);
+    gtk_grid_attach (GTK_GRID (fields_grid), gtk_label_new (_("Description")), 2, 0, 1, 1);
+    gtk_grid_attach (GTK_GRID (fields_grid), manager->description, 3, 0, 1, 1);
+    gtk_grid_attach (GTK_GRID (fields_grid), gtk_label_new (_("Accelerator")), 0, 1, 1, 1);
+    gtk_grid_attach (GTK_GRID (fields_grid), manager->accelerator, 1, 1, 1, 1);
+    gtk_grid_attach (GTK_GRID (fields_grid), gtk_label_new (_("Drop targets")), 2, 1, 1, 1);
+    gtk_grid_attach (GTK_GRID (fields_grid), manager->drop_targets, 3, 1, 1, 1);
+    gtk_box_pack_start (GTK_BOX (right), fields_grid, FALSE, FALSE, 0);
+
+    /* Plain GtkTextView -- follows the active GTK theme automatically,
+     * unlike GtkSourceView (which has its own separate style-scheme system
+     * and can end up looking wrong against a dark theme). This is a
+     * snippet-body editor, not a code editor. */
     manager->text = gtk_text_view_new ();
-    gtk_widget_set_hexpand (manager->text, TRUE); gtk_widget_set_vexpand (manager->text, TRUE);
-    gtk_grid_attach (GTK_GRID (right), gtk_label_new (_("Trigger")), 0, 0, 1, 1);
-    gtk_grid_attach (GTK_GRID (right), manager->tag, 1, 0, 1, 1);
-    gtk_grid_attach (GTK_GRID (right), gtk_label_new (_("Description")), 0, 1, 1, 1);
-    gtk_grid_attach (GTK_GRID (right), manager->description, 1, 1, 1, 1);
-    gtk_grid_attach (GTK_GRID (right), gtk_label_new (_("Accelerator")), 0, 2, 1, 1);
-    gtk_grid_attach (GTK_GRID (right), manager->accelerator, 1, 2, 1, 1);
-    gtk_grid_attach (GTK_GRID (right), gtk_label_new (_("Drop targets")), 0, 3, 1, 1);
-    gtk_grid_attach (GTK_GRID (right), manager->drop_targets, 1, 3, 1, 1);
-    gtk_grid_attach (GTK_GRID (right), manager->text, 0, 4, 2, 1);
-    gtk_grid_attach (GTK_GRID (right), button, 1, 5, 1, 1);
-    gtk_box_pack_start (GTK_BOX (box), left, TRUE, TRUE, 0);
-    gtk_box_pack_start (GTK_BOX (box), right, TRUE, TRUE, 0);
+    gtk_text_view_set_wrap_mode (GTK_TEXT_VIEW (manager->text), GTK_WRAP_WORD_CHAR);
+    gtk_text_view_set_monospace (GTK_TEXT_VIEW (manager->text), TRUE);
+
+    gtk_scrolled_window_set_policy (GTK_SCROLLED_WINDOW (text_scroll), GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_shadow_type (GTK_SCROLLED_WINDOW (text_scroll), GTK_SHADOW_IN);
+    gtk_widget_set_hexpand (text_scroll, TRUE); gtk_widget_set_vexpand (text_scroll, TRUE);
+    gtk_container_add (GTK_CONTAINER (text_scroll), manager->text);
+    gtk_box_pack_start (GTK_BOX (right), text_scroll, TRUE, TRUE, 0);
+
+    manager->cancel_button = gtk_button_new_with_mnemonic (_("_Cancelar"));
+    manager->save_button = gtk_button_new_with_mnemonic (_("_Salvar"));
+    gtk_style_context_add_class (gtk_widget_get_style_context (manager->save_button), "suggested-action");
+    gtk_widget_set_sensitive (manager->save_button, FALSE);
+    gtk_widget_set_sensitive (manager->cancel_button, FALSE);
+    gtk_box_pack_end (GTK_BOX (bottom_bar), manager->save_button, FALSE, FALSE, 0);
+    gtk_box_pack_end (GTK_BOX (bottom_bar), manager->cancel_button, FALSE, FALSE, 0);
+    gtk_box_pack_start (GTK_BOX (right), bottom_bar, FALSE, FALSE, 0);
+
+    gtk_paned_pack1 (GTK_PANED (box), left, FALSE, FALSE);
+    gtk_paned_pack2 (GTK_PANED (box), right, TRUE, FALSE);
+    gtk_paned_set_position (GTK_PANED (box), 340);
     g_signal_connect (gtk_tree_view_get_selection (GTK_TREE_VIEW (manager->tree)), "changed",
                       G_CALLBACK (manager_selection_changed), manager);
-    g_signal_connect (button, "clicked", G_CALLBACK (manager_save), manager);
+    g_signal_connect (manager->language_combo, "changed", G_CALLBACK (manager_language_changed), manager);
+    g_signal_connect (manager->search_entry, "search-changed", G_CALLBACK (manager_search_changed), manager);
+    g_signal_connect (manager->save_button, "clicked", G_CALLBACK (manager_save), manager);
+    g_signal_connect (manager->cancel_button, "clicked", G_CALLBACK (manager_cancel_edit), manager);
     g_signal_connect (import_button, "clicked", G_CALLBACK (manager_import), manager);
     g_signal_connect (export_button, "clicked", G_CALLBACK (manager_export), manager);
     g_signal_connect (new_button, "clicked", G_CALLBACK (manager_new), manager);
     g_signal_connect (delete_button, "clicked", G_CALLBACK (manager_delete), manager);
     g_object_set_data_full (G_OBJECT (box), "snippets-manager", manager, (GDestroyNotify) manager_free);
     manager_populate (manager);
+    manager_populate_language_combo (manager);
     gtk_widget_show_all (box);
     return box;
 }
+
+static GtkWidget *
+create_configure_widget (PeasGtkConfigurable *configurable)
+{
+    return build_manager_widget (PLUMA_SNIPPETS_PLUGIN (configurable));
+}
+
+/* Standalone "Tools > Manage Snippets..." dialog, wrapping the same widget
+ * used for the plugin's Preferences page -- that page is easy to miss since
+ * nothing else hints that snippets are editable from there. */
+static void
+show_manager_dialog (PlumaSnippetsPlugin *self)
+{
+    GtkWidget *dialog;
+    GtkWidget *content_area;
+
+    /* No action buttons of its own -- Cancelar/Salvar live inside the
+     * widget itself, and the window manager's own close button is enough
+     * to dismiss the dialog. */
+    dialog = gtk_dialog_new ();
+    gtk_window_set_title (GTK_WINDOW (dialog), _("Manage Snippets"));
+    gtk_window_set_transient_for (GTK_WINDOW (dialog), GTK_WINDOW (self->window));
+    gtk_window_set_destroy_with_parent (GTK_WINDOW (dialog), TRUE);
+    gtk_window_set_default_size (GTK_WINDOW (dialog), 820, 600);
+
+    content_area = gtk_dialog_get_content_area (GTK_DIALOG (dialog));
+    gtk_container_add (GTK_CONTAINER (content_area), build_manager_widget (self));
+
+    /* No button emits "response" anymore, but GtkDialog still turns the
+     * window manager's close button into a GTK_RESPONSE_DELETE_EVENT
+     * response, so this still tears the dialog down correctly. */
+    g_signal_connect (dialog, "response", G_CALLBACK (gtk_widget_destroy), NULL);
+
+    gtk_widget_show (dialog);
+}
+
+static void
+manage_snippets_action_activated (GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    show_manager_dialog (PLUMA_SNIPPETS_PLUGIN (user_data));
+}
+
+static const GActionEntry snippets_action_entries[] =
+{
+    { "manage-snippets", manage_snippets_action_activated, NULL, NULL, NULL, { 0, 0, 0 } }
+};
 
 /* Expand the non-executable subset of the legacy snippet syntax. */
 static gint
@@ -887,6 +1181,25 @@ expand_text (PlumaSnippetsPlugin *self, GtkTextBuffer *buffer, const gchar *sour
                 }
                 if (depth == 0)
                     value = g_strndup (start, q - start);
+            } else if (*q == '|') {
+                /* VSCode-style choice placeholder: ${N|a,b,c|}. We don't have
+                 * an interactive picker at insertion time, so this behaves
+                 * like ${N:a} (defaults to the first choice) -- still a
+                 * normal, editable tab-stop, just pre-filled. */
+                const gchar *start = ++q;
+                const gchar *pipe_end = NULL;
+                while (*q != '\0') {
+                    if (*q == '|' && *(q + 1) == '}') { pipe_end = q; break; }
+                    q++;
+                }
+                if (pipe_end != NULL) {
+                    gchar *choices_str = g_strndup (start, pipe_end - start);
+                    gchar **choices = g_strsplit (choices_str, ",", -1);
+                    value = g_strdup (choices[0] != NULL ? choices[0] : "");
+                    g_strfreev (choices);
+                    g_free (choices_str);
+                    q = pipe_end + 1; /* now pointing at the closing '}' */
+                }
             } else if (*q == '}') {
                 value = g_strdup (g_hash_table_lookup (values, GUINT_TO_POINTER (index)));
             }
@@ -1029,9 +1342,39 @@ placeholder_free (Placeholder *placeholder)
     g_free (placeholder);
 }
 
+/* Removes the placeholder-highlight tag from whichever placeholder is
+ * currently active, if any. Since select_placeholder() always clears the
+ * tag from the previously active range before applying it to the new one,
+ * at most one range is ever tagged at a time. */
+static void
+unhighlight_active_placeholder (PlumaSnippetsPlugin *self)
+{
+    Placeholder *active;
+    GtkTextBuffer *buffer;
+    GtkTextTag *tag;
+    GtkTextIter start, end;
+
+    if (self->active_placeholder < 0 || self->active_placeholder >= (gint) self->placeholders->len)
+        return;
+
+    active = g_ptr_array_index (self->placeholders, self->active_placeholder);
+    buffer = gtk_text_mark_get_buffer (active->start);
+    if (buffer == NULL)
+        return;
+
+    tag = gtk_text_tag_table_lookup (gtk_text_buffer_get_tag_table (buffer), SNIPPET_PLACEHOLDER_TAG);
+    if (tag == NULL)
+        return;
+
+    gtk_text_buffer_get_iter_at_mark (buffer, &start, active->start);
+    gtk_text_buffer_get_iter_at_mark (buffer, &end, active->end);
+    gtk_text_buffer_remove_tag (buffer, tag, &start, &end);
+}
+
 static void
 clear_placeholders (PlumaSnippetsPlugin *self)
 {
+    unhighlight_active_placeholder (self);
     if (self->final_mark != NULL) {
         GtkTextBuffer *buffer = gtk_text_mark_get_buffer (self->final_mark);
         if (buffer != NULL) gtk_text_buffer_delete_mark (buffer, self->final_mark);
@@ -1054,12 +1397,65 @@ select_placeholder (PlumaSnippetsPlugin *self, gint position)
     buffer = gtk_text_mark_get_buffer (placeholder->start);
     if (buffer == NULL)
         return FALSE;
+    unhighlight_active_placeholder (self);
     gtk_text_buffer_get_iter_at_mark (buffer, &start, placeholder->start);
     gtk_text_buffer_get_iter_at_mark (buffer, &end, placeholder->end);
+    gtk_text_buffer_apply_tag (buffer, get_placeholder_tag (buffer), &start, &end);
     gtk_text_buffer_select_range (buffer, &start, &end);
     gtk_text_view_scroll_mark_onscreen (GTK_TEXT_VIEW (self->view), placeholder->start);
     self->active_placeholder = position;
     return TRUE;
+}
+
+/* GtkSourceView is supposed to invoke completion providers on its own for
+ * GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE, but in practice this does
+ * not reliably fire for every application/version -- our provider_get_activation()
+ * correctly advertises interactive support (confirmed with a debugger: the
+ * provider is registered and manual Ctrl+Space activation works), so we
+ * also trigger it ourselves as a fallback. Calling gtk_source_completion_start()
+ * synchronously from inside the buffer's "changed" handler is reentrant and
+ * can wedge GtkSourceCompletion's internal state (breaking even the manual
+ * Ctrl+Space trigger afterwards), so this runs from an idle callback queued
+ * right after the keystroke instead of directly. A longer timeout was tried
+ * first, but under Wayland a completion popup shown too long after its
+ * triggering input event can be silently refused by the compositor (popups
+ * need to be tied to a recent input serial); an idle callback fires on the
+ * very next main loop iteration, staying as close to the keystroke as
+ * possible while still breaking the reentrant call chain. */
+static gboolean
+completion_timeout_cb (gpointer data)
+{
+    PlumaSnippetsPlugin *self = data;
+    GtkSourceCompletion *completion;
+    GtkSourceCompletionContext *context;
+    GtkTextBuffer *buffer;
+    GtkTextIter iter;
+    GList *providers;
+
+    self->completion_timeout_id = 0;
+
+    if (self->view == NULL || self->provider == NULL)
+        return G_SOURCE_REMOVE;
+    if (self->active_placeholder >= 0 && self->active_placeholder < (gint) self->placeholders->len)
+        return G_SOURCE_REMOVE; /* a snippet session started in the meantime */
+
+    buffer = gtk_text_view_get_buffer (GTK_TEXT_VIEW (self->view));
+    gtk_text_buffer_get_iter_at_mark (buffer, &iter, gtk_text_buffer_get_insert (buffer));
+    completion = gtk_source_view_get_completion (GTK_SOURCE_VIEW (self->view));
+    context = gtk_source_completion_create_context (completion, &iter);
+    providers = g_list_prepend (NULL, self->provider);
+    gtk_source_completion_start (completion, providers, context);
+    g_list_free (providers);
+
+    return G_SOURCE_REMOVE;
+}
+
+static void
+schedule_interactive_completion (PlumaSnippetsPlugin *self)
+{
+    if (self->completion_timeout_id != 0)
+        g_source_remove (self->completion_timeout_id);
+    self->completion_timeout_id = g_idle_add (completion_timeout_cb, self);
 }
 
 static void
@@ -1069,9 +1465,12 @@ update_mirrors (GtkTextBuffer *buffer, PlumaSnippetsPlugin *self)
     GtkTextIter start, end;
     gchar *text;
     guint i;
-    if (self->updating_mirrors || self->active_placeholder < 0 ||
-        self->active_placeholder >= (gint) self->placeholders->len)
+    if (self->updating_mirrors)
         return;
+    if (self->active_placeholder < 0 || self->active_placeholder >= (gint) self->placeholders->len) {
+        schedule_interactive_completion (self);
+        return;
+    }
     primary = g_ptr_array_index (self->placeholders, self->active_placeholder);
     gtk_text_buffer_get_iter_at_mark (buffer, &start, primary->start);
     gtk_text_buffer_get_iter_at_mark (buffer, &end, primary->end);
@@ -1180,14 +1579,67 @@ completion_word (SnippetsProvider *provider, GtkSourceCompletionContext *context
 static gchar *provider_get_name (GtkSourceCompletionProvider *provider) { return g_strdup (_("Snippets")); }
 static const gchar *provider_get_icon_name (GtkSourceCompletionProvider *provider) { return "format-justify-left"; }
 static GtkSourceCompletionActivation provider_get_activation (GtkSourceCompletionProvider *provider) {
-    return GTK_SOURCE_COMPLETION_ACTIVATION_USER_REQUESTED;
+    return GTK_SOURCE_COMPLETION_ACTIVATION_INTERACTIVE | GTK_SOURCE_COMPLETION_ACTIVATION_USER_REQUESTED;
 }
 
-static gint proposal_compare (gconstpointer a, gconstpointer b) {
-    gchar *left = gtk_source_completion_proposal_get_text (GTK_SOURCE_COMPLETION_PROPOSAL ((gpointer) a));
-    gchar *right = gtk_source_completion_proposal_get_text (GTK_SOURCE_COMPLETION_PROPOSAL ((gpointer) b));
-    gint result = g_strcmp0 (left, right);
-    g_free (left); g_free (right); return result;
+/* Returns a match score (lower is better) if every character of @word
+ * appears in @tag in order, case-insensitively and not necessarily
+ * contiguous (VSCode-style fuzzy matching), or -1 if @word does not match
+ * @tag at all. Exact prefixes always score best (0); fuzzy-only matches are
+ * penalized by how far into @tag the match starts and by how many
+ * characters had to be skipped over, so tighter/earlier matches rank
+ * higher than scattered ones. */
+static gint
+fuzzy_score (const gchar *word, const gchar *tag)
+{
+    const gchar *w, *t;
+    gint first_match = -1;
+    gint last_match_pos = -1;
+    gint skipped = 0;
+    gint pos;
+
+    if (word == NULL || *word == '\0')
+        return 0;
+    if (tag == NULL || *tag == '\0')
+        return -1;
+    if (g_str_has_prefix (tag, word))
+        return 0;
+
+    w = word;
+    for (t = tag, pos = 0; *t != '\0' && *w != '\0'; t = g_utf8_next_char (t), pos++) {
+        gunichar tc = g_unichar_tolower (g_utf8_get_char (t));
+        gunichar wc = g_unichar_tolower (g_utf8_get_char (w));
+        if (tc == wc) {
+            if (first_match < 0)
+                first_match = pos;
+            else
+                skipped += (pos - last_match_pos - 1);
+            last_match_pos = pos;
+            w = g_utf8_next_char (w);
+        }
+    }
+    if (*w != '\0')
+        return -1; /* not all characters of word were found, in order */
+
+    return 100 + first_match * 5 + skipped;
+}
+
+static gint
+proposal_compare (gconstpointer a, gconstpointer b)
+{
+    gint score_a = GPOINTER_TO_INT (g_object_get_data (G_OBJECT ((gpointer) a), "match-score"));
+    gint score_b = GPOINTER_TO_INT (g_object_get_data (G_OBJECT ((gpointer) b), "match-score"));
+    gchar *left, *right;
+    gint result;
+
+    if (score_a != score_b)
+        return score_a - score_b;
+
+    left = gtk_source_completion_proposal_get_text (GTK_SOURCE_COMPLETION_PROPOSAL ((gpointer) a));
+    right = gtk_source_completion_proposal_get_text (GTK_SOURCE_COMPLETION_PROPOSAL ((gpointer) b));
+    result = g_strcmp0 (left, right);
+    g_free (left); g_free (right);
+    return result;
 }
 
 static void
@@ -1212,15 +1664,26 @@ provider_populate (GtkSourceCompletionProvider *base, GtkSourceCompletionContext
         gsize language_len = separator != NULL ? (gsize) (separator - key) : 0;
         Snippet *snippet = value_ptr;
         GtkSourceCompletionItem *item;
-        if (word != NULL && *word != '\0' && !g_str_has_prefix (tag, word))
+        gint score = fuzzy_score (word, tag);
+        if (word != NULL && *word != '\0' && score < 0)
             continue;
         if (!((strlen (language_id) == language_len && strncmp (key, language_id, language_len) == 0) ||
               (language_len == 6 && strncmp (key, "global", 6) == 0)))
             continue;
-        item = g_object_new (GTK_SOURCE_TYPE_COMPLETION_ITEM,
-                             "label", tag, "text", tag,
-                             "info", snippet->text, NULL);
+        {
+            /* GtkSourceCompletionItem:info is rendered as Pango markup, but
+             * a snippet body is plain text and often contains characters
+             * like '<'/'>'/'&' (e.g. "i < count") that are not valid markup
+             * on their own -- escape it or the info popup silently fails to
+             * show (with a "Failed to set text ... from markup" warning). */
+            gchar *escaped_info = g_markup_escape_text (snippet->text, -1);
+            item = g_object_new (GTK_SOURCE_TYPE_COMPLETION_ITEM,
+                                 "label", tag, "text", tag,
+                                 "info", escaped_info, NULL);
+            g_free (escaped_info);
+        }
         g_object_set_data (G_OBJECT (item), "snippet", snippet);
+        g_object_set_data (G_OBJECT (item), "match-score", GINT_TO_POINTER (score));
         proposals = g_list_prepend (proposals, item);
     }
     proposals = g_list_sort (proposals, proposal_compare);
@@ -1441,6 +1904,10 @@ set_view (PlumaSnippetsPlugin *self, PlumaView *view)
 {
     if (self->view == view)
         return;
+    if (self->completion_timeout_id != 0) {
+        g_source_remove (self->completion_timeout_id);
+        self->completion_timeout_id = 0;
+    }
     if (self->view != NULL && self->key_handler != 0)
         g_signal_handler_disconnect (self->view, self->key_handler);
     if (self->view != NULL && self->buffer_changed_handler != 0)
@@ -1483,6 +1950,20 @@ activate (PlumaWindowActivatable *activatable)
     install_accelerators (self);
     g_free (user_dir);
     g_free (data_dir);
+
+    self->action_group = g_simple_action_group_new ();
+    g_action_map_add_action_entries (G_ACTION_MAP (self->action_group),
+                                     snippets_action_entries,
+                                     G_N_ELEMENTS (snippets_action_entries),
+                                     self);
+    gtk_widget_insert_action_group (GTK_WIDGET (self->window), "plugin-snippets",
+                                    G_ACTION_GROUP (self->action_group));
+    {
+        GMenuItem *item = g_menu_item_new (_("_Manage Snippets…"), "plugin-snippets.manage-snippets");
+        pluma_window_add_menu_item (self->window, "plugin-tools-section", item);
+        g_object_unref (item);
+    }
+
     set_view (self, pluma_window_get_active_view (self->window));
 }
 
@@ -1493,6 +1974,9 @@ static void deactivate (PlumaWindowActivatable *a) {
         gtk_window_remove_accel_group (GTK_WINDOW (self->window), self->accel_group);
         g_clear_object (&self->accel_group);
     }
+    gtk_widget_insert_action_group (GTK_WIDGET (self->window), "plugin-snippets", NULL);
+    pluma_window_remove_menu_items (self->window, "plugin-tools-section", "plugin-snippets.manage-snippets");
+    g_clear_object (&self->action_group);
 }
 static void update_state (PlumaWindowActivatable *a) {
     PlumaSnippetsPlugin *self = PLUMA_SNIPPETS_PLUGIN (a);
@@ -1528,6 +2012,7 @@ dispose (GObject *object)
     g_clear_pointer (&self->data_dir, g_free);
     g_clear_pointer (&self->lua_program, g_free);
     g_clear_pointer (&self->lua_runtime, g_free);
+    g_clear_object (&self->action_group);
     G_OBJECT_CLASS (pluma_snippets_plugin_parent_class)->dispose (object);
 }
 

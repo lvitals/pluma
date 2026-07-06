@@ -40,7 +40,9 @@
 
 #include <pluma/pluma-utils.h>
 #include <pluma/pluma-debug.h>
+#include <pluma/pluma-document.h>
 
+#include <gio/gio.h>
 #include <gtk/gtk.h>
 #include <gdk/gdkkeysyms.h>
 #include <glib/gi18n.h>
@@ -63,6 +65,9 @@ struct _PlumaTaglistPluginPanelPrivate
 	TagGroup *selected_tag_group;
 
 	gchar *data_dir;
+
+	gulong active_tab_changed_id;
+	gulong active_tab_state_changed_id;
 };
 
 G_DEFINE_DYNAMIC_TYPE_EXTENDED (PlumaTaglistPluginPanel,
@@ -77,6 +82,96 @@ enum
 	PROP_WINDOW,
 };
 
+/* Maps a document's filename extension onto the prefix of the matching
+ * TagGroup::name (see the "name" attributes in *.tags.xml.in). There is no
+ * tag list for non-markup languages like C, Java, Perl or Lua -- inserting
+ * an opening/closing "tag" is not a concept those languages have. */
+static const struct { const gchar *ext; const gchar *group_prefix; } tag_group_for_extension[] = {
+	{ "html",  "XHTML" },
+	{ "htm",   "XHTML" },
+	{ "xhtml", "XHTML" },
+	{ "tex",   "Latex" },
+	{ "latex", "Latex" },
+	{ "xsl",   "XSLT" },
+	{ "xslt",  "XSLT" },
+	{ "xul",   "XUL" },
+	{ NULL, NULL }
+};
+
+/* Auto-selects the tag group whose markup language matches the given
+ * document's filename extension, if any. Leaves the combo box untouched
+ * when the document has no matching group (e.g. it is unsaved, or it is
+ * a language such as C/Java/Perl/Lua that has no tag list). */
+static void
+select_tag_group_for_document (PlumaTaglistPluginPanel *panel,
+			       PlumaDocument           *document)
+{
+	GFile *location;
+	gchar *basename;
+	const gchar *ext;
+	const gchar *group_prefix = NULL;
+	GList *l;
+	gint index;
+	gint i;
+
+	if (taglist == NULL || document == NULL)
+		return;
+
+	location = pluma_document_get_location (document);
+	if (location == NULL)
+		return;
+
+	basename = g_file_get_basename (location);
+	g_object_unref (location);
+
+	ext = strrchr (basename, '.');
+	if (ext != NULL)
+	{
+		ext++; /* skip the dot */
+
+		for (i = 0; tag_group_for_extension[i].ext != NULL; i++)
+		{
+			if (g_ascii_strcasecmp (ext, tag_group_for_extension[i].ext) == 0)
+			{
+				group_prefix = tag_group_for_extension[i].group_prefix;
+				break;
+			}
+		}
+	}
+
+	g_free (basename);
+
+	if (group_prefix == NULL)
+		return;
+
+	index = 0;
+	for (l = taglist->tag_groups; l != NULL; l = g_list_next (l), index++)
+	{
+		TagGroup *group = (TagGroup *) l->data;
+
+		if (g_str_has_prefix ((gchar *) group->name, group_prefix))
+		{
+			gtk_combo_box_set_active (GTK_COMBO_BOX (panel->priv->tag_groups_combo), index);
+			return;
+		}
+	}
+}
+
+static void
+active_tab_changed_cb (PlumaWindow             *window,
+		       PlumaTab                *tab,
+		       PlumaTaglistPluginPanel *panel)
+{
+	select_tag_group_for_document (panel, pluma_window_get_active_document (window));
+}
+
+static void
+active_tab_state_changed_cb (PlumaWindow             *window,
+			     PlumaTaglistPluginPanel *panel)
+{
+	select_tag_group_for_document (panel, pluma_window_get_active_document (window));
+}
+
 static void
 set_window (PlumaTaglistPluginPanel *panel,
 	    PlumaWindow             *window)
@@ -86,7 +181,12 @@ set_window (PlumaTaglistPluginPanel *panel,
 
 	panel->priv->window = window;
 
-	/* TODO */
+	panel->priv->active_tab_changed_id =
+		g_signal_connect (window, "active-tab-changed",
+				  G_CALLBACK (active_tab_changed_cb), panel);
+	panel->priv->active_tab_state_changed_id =
+		g_signal_connect (window, "active-tab-state-changed",
+				  G_CALLBACK (active_tab_state_changed_cb), panel);
 }
 
 static void
@@ -133,6 +233,14 @@ static void
 pluma_taglist_plugin_panel_finalize (GObject *object)
 {
 	PlumaTaglistPluginPanel *panel = PLUMA_TAGLIST_PLUGIN_PANEL (object);
+
+	if (panel->priv->window != NULL)
+	{
+		if (panel->priv->active_tab_changed_id != 0)
+			g_signal_handler_disconnect (panel->priv->window, panel->priv->active_tab_changed_id);
+		if (panel->priv->active_tab_state_changed_id != 0)
+			g_signal_handler_disconnect (panel->priv->window, panel->priv->active_tab_state_changed_id);
+	}
 
 	g_free (panel->priv->data_dir);
 
@@ -595,6 +703,8 @@ draw_event_cb (GtkWidget      *panel,
 
 	/* And populate combo box */
 	populate_tag_groups_combo (PLUMA_TAGLIST_PLUGIN_PANEL (panel));
+
+	select_tag_group_for_document (ppanel, pluma_window_get_active_document (ppanel->priv->window));
 
 	/* We need to manage only the first draw -> disconnect */
 	g_signal_handlers_disconnect_by_func (panel, draw_event_cb, NULL);
