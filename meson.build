@@ -1,6 +1,6 @@
 project('pluma', 'c',
   version: '1.28.1',
-  meson_version: '>= 0.56.0',
+  meson_version: '>= 0.58.0',
   default_options: [
     'warning_level=1',
     'c_std=gnu99',
@@ -61,19 +61,19 @@ m_dep = cc.find_library('m', required: false)
 # components during configuration instead of failing later at runtime.
 ctags_program = find_program('ctags', required: false)
 if not ctags_program.found()
-  warning('ctags not found: the Source Code Browser plugin will be unavailable. Install a package that provides the ctags executable.')
+  warning('ctags not found: the Source Code Browser plugin will be unavailable. Install a package that provides the ctags executable (typically ctags or universal-ctags).')
 endif
 
 ripgrep_program = find_program('rg', required: false)
 if not ripgrep_program.found()
-  warning('ripgrep not found: project search will use the slower grep fallback. Install a package that provides the rg executable for best performance.')
+  warning('ripgrep not found: project search will use the slower grep fallback. Install a package that provides the ripgrep/rg executable (typically ripgrep or rg).')
 endif
 
 enable_git = get_option('git')
 if enable_git
   git_program = find_program('git', required: false)
   if not git_program.found()
-    warning('git not found: integrated source control features will be unavailable. Install a package that provides the git executable.')
+    warning('git not found: integrated source control features will be unavailable. Install a package that provides the git executable (typically git).')
     enable_git = false
   endif
 else
@@ -81,16 +81,16 @@ else
 endif
 
 optional_enchant_backends = {
-  'aspell': 'aspell',
-  'hspell': 'hspell',
-  'hunspell-1.7': 'hunspell',
-  'nuspell': 'nuspell',
-  'voikko': 'libvoikko',
+  'aspell': ['Aspell', 'aspell or libaspell'],
+  'hspell': ['Hspell', 'hspell or libhspell'],
+  'hunspell-1.7': ['Hunspell', 'hunspell or libhunspell'],
+  'nuspell': ['Nuspell', 'nuspell or libnuspell'],
+  'voikko': ['Voikko', 'libvoikko or voikko'],
 }
-foreach library_name, package_name : optional_enchant_backends
+foreach library_name, info : optional_enchant_backends
   backend_library = cc.find_library(library_name, required: false)
   if not backend_library.found()
-    warning('@0@ not found: Enchant cannot load this spell-checking backend. Install a package that provides the @1@ backend.'.format(library_name, package_name))
+    warning('@0@ not found: Enchant cannot load this spell-checking backend. Install the package providing the @1@ backend/library (typically @2@).'.format(library_name, info[0], info[1]))
   endif
 endforeach
 
@@ -264,6 +264,7 @@ conf_data_xml.set('GETTEXT_PACKAGE', meson.project_name())
 conf_data_xml.set('VERSION', meson.project_version())
 conf_data_xml.set('PACKAGE_VERSION', meson.project_version())
 conf_data_xml.set('PACKAGE_URL', 'http://mate-desktop.org')
+conf_data_xml.set('PACKAGE_BUGREPORT', 'https://github.com/mate-desktop/pluma/issues')
 conf_data_xml.set('FULL_LIBEXECDIR', full_libexecdir)
 conf_data_xml.set('TOOLBAR_STYLE', 'PLUMA_TOOLBAR_SYSTEM')
 
