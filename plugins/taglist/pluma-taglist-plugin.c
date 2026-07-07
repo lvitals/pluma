@@ -123,7 +123,7 @@ pluma_taglist_plugin_activate (PlumaWindowActivatable *activatable)
 	pluma_panel_add_item_with_icon (right_panel,
 					priv->taglist_panel,
 					_("Tags"),
-					"list-add");
+					"list-add-symbolic");
 }
 
 static void

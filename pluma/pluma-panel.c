@@ -292,7 +292,7 @@ set_gtk_image_from_gtk_image (GtkImage *image,
 		break;
 	default:
 		gtk_image_set_from_icon_name (image,
-		                              "text-x-generic",
+		                              "text-x-generic-symbolic",
 		                              GTK_ICON_SIZE_MENU);
 	}
 }
@@ -633,7 +633,7 @@ build_vertical_panel (PlumaPanel *panel)
 			    0);
 
 	panel->priv->title_image =
-				gtk_image_new_from_icon_name ("text-x-generic",
+				gtk_image_new_from_icon_name ("text-x-generic-symbolic",
 				                              GTK_ICON_SIZE_MENU);
 	gtk_box_pack_start (GTK_BOX (icon_name_hbox),
 			    panel->priv->title_image,
@@ -800,7 +800,7 @@ pluma_panel_add_item (PlumaPanel  *panel,
 	if (image == NULL)
 	{
 		/* default to empty */
-		data->icon = gtk_image_new_from_icon_name ("text-x-generic",
+		data->icon = gtk_image_new_from_icon_name ("text-x-generic-symbolic",
 		                                           GTK_ICON_SIZE_MENU);
 	}
 	else

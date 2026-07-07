@@ -140,7 +140,7 @@ class PythonConsoleConfigWidget(object):
         # Set icon in dialog close button.
         try:
             actionarea = widget.get_toplevel().get_action_area()
-            image = Gtk.Image.new_from_icon_name("window-close",
+            image = Gtk.Image.new_from_icon_name("window-close-symbolic",
                                                  Gtk.IconSize.BUTTON)
             for button in actionarea.get_children():
                 button.set_image(image)

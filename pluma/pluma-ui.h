@@ -54,25 +54,25 @@ static const GtkActionEntry pluma_always_sensitive_menu_entries[] =
 	{ "Help", NULL, N_("_Help"), NULL, NULL, NULL },
 
 	/* File menu */
-	{ "FileNew", "document-new", N_("_New"), "<control>N",
+	{ "FileNew", "document-new-symbolic", N_("_New"), "<control>N",
 	  N_("Create a new document"), G_CALLBACK (_pluma_cmd_file_new) },
-	{ "FileOpen", "document-open", N_("_Open..."), "<control>O",
+	{ "FileOpen", "document-open-symbolic", N_("_Open..."), "<control>O",
 	  N_("Open a file"), G_CALLBACK (_pluma_cmd_file_open) },
-	{ "FileOpenFolder", "folder-open", N_("Open _Folder..."), NULL,
+	{ "FileOpenFolder", "folder-open-symbolic", N_("Open _Folder..."), NULL,
 	  N_("Open a folder"), G_CALLBACK (_pluma_cmd_file_open_folder) },
 
 	/* Edit menu */
-	{ "EditPreferences", "preferences-desktop", N_("Pr_eferences"), NULL,
+	{ "EditPreferences", "preferences-system-symbolic", N_("Pr_eferences"), NULL,
 	  N_("Configure the application"), G_CALLBACK (_pluma_cmd_edit_preferences) },
 
 	/* Help menu */
-	{"HelpContents", "help-browser", N_("_Contents"), "F1",
+	{"HelpContents", "help-browser-symbolic", N_("_Contents"), "F1",
 	 N_("Open the pluma manual"), G_CALLBACK (_pluma_cmd_help_contents) },
-	{ "HelpAbout", "help-about", N_("_About"), NULL,
+	{ "HelpAbout", "help-about-symbolic", N_("_About"), NULL,
 	 N_("About this application"), G_CALLBACK (_pluma_cmd_help_about) },
 
 	/* Fullscreen toolbar */
-	{ "LeaveFullscreen", "view-restore", N_("_Leave Fullscreen"),
+	{ "LeaveFullscreen", "view-restore-symbolic", N_("_Leave Fullscreen"),
 	  NULL, N_("Leave fullscreen mode"),
 	  G_CALLBACK (_pluma_cmd_view_leave_fullscreen_mode) }
 };
@@ -80,37 +80,37 @@ static const GtkActionEntry pluma_always_sensitive_menu_entries[] =
 static const GtkActionEntry pluma_menu_entries[] =
 {
 	/* File menu */
-	{ "FileSave", "document-save", N_("_Save"), "<control>S",
+	{ "FileSave", "document-save-symbolic", N_("_Save"), "<control>S",
 	  N_("Save the current file"), G_CALLBACK (_pluma_cmd_file_save) },
-	{ "FileSaveAs", "document-save-as", N_("Save _As..."), "<shift><control>S",
+	{ "FileSaveAs", "document-save-as-symbolic", N_("Save _As..."), "<shift><control>S",
 	  N_("Save the current file with a different name"), G_CALLBACK (_pluma_cmd_file_save_as) },
-	{ "FileRevert", "document-revert", N_("_Revert"), NULL,
+	{ "FileRevert", "document-revert-symbolic", N_("_Revert"), NULL,
 	  N_("Revert to a saved version of the file"), G_CALLBACK (_pluma_cmd_file_revert) },
-	{ "FilePrintPreview", "document-print-preview", N_("Print Previe_w"),"<control><shift>P",
+	{ "FilePrintPreview", "document-print-preview-symbolic", N_("Print Previe_w"),"<control><shift>P",
 	  N_("Print preview"), G_CALLBACK (_pluma_cmd_file_print_preview) },
-	 { "FilePrint", "document-print", N_("_Print..."), "<control>P",
+	 { "FilePrint", "document-print-symbolic", N_("_Print..."), "<control>P",
 	  N_("Print the current page"), G_CALLBACK (_pluma_cmd_file_print) },
 
 	/* Edit menu */
-	{ "EditUndo", "edit-undo", N_("_Undo"), "<control>Z",
+	{ "EditUndo", "edit-undo-symbolic", N_("_Undo"), "<control>Z",
 	  N_("Undo the last action"), G_CALLBACK (_pluma_cmd_edit_undo) },
-	{ "EditRedo", "edit-redo", N_("_Redo"), "<shift><control>Z",
+	{ "EditRedo", "edit-redo-symbolic", N_("_Redo"), "<shift><control>Z",
 	  N_("Redo the last undone action"), G_CALLBACK (_pluma_cmd_edit_redo) },
-	{ "EditCut", "edit-cut", N_("Cu_t"), "<control>X",
+	{ "EditCut", "edit-cut-symbolic", N_("Cu_t"), "<control>X",
 	  N_("Cut the selection"), G_CALLBACK (_pluma_cmd_edit_cut) },
-	{ "EditCopy", "edit-copy", N_("_Copy"), "<control>C",
+	{ "EditCopy", "edit-copy-symbolic", N_("_Copy"), "<control>C",
 	  N_("Copy the selection"), G_CALLBACK (_pluma_cmd_edit_copy) },
-	{ "EditPaste", "edit-paste", N_("_Paste"), "<control>V",
+	{ "EditPaste", "edit-paste-symbolic", N_("_Paste"), "<control>V",
 	  N_("Paste the clipboard"), G_CALLBACK (_pluma_cmd_edit_paste) },
-	{ "EditDelete", "edit-delete", N_("_Delete"), NULL,
+	{ "EditDelete", "edit-delete-symbolic", N_("_Delete"), NULL,
 	  N_("Delete the selected text"), G_CALLBACK (_pluma_cmd_edit_delete) },
-	{ "EditSelectAll", "edit-select-all", N_("Select _All"), "<control>A",
+	{ "EditSelectAll", "edit-select-all-symbolic", N_("Select _All"), "<control>A",
 	  N_("Select the entire document"), G_CALLBACK (_pluma_cmd_edit_select_all) },
-	{ "EditZoomIn", "zoom-in", N_("Zoom _In"), "<control>plus",
+	{ "EditZoomIn", "zoom-in-symbolic", N_("Zoom _In"), "<control>plus",
 	  N_("Increase the text size"), G_CALLBACK (_pluma_cmd_edit_zoom_in) },
-	{ "EditZoomOut", "zoom-out", N_("Zoom _Out"), "<control>minus",
+	{ "EditZoomOut", "zoom-out-symbolic", N_("Zoom _Out"), "<control>minus",
 	  N_("Decrease the text size"), G_CALLBACK (_pluma_cmd_edit_zoom_out) },
-	{ "EditZoomReset", "zoom-original", N_("_Reset Zoom"), "<control>equal",
+	{ "EditZoomReset", "zoom-original-symbolic", N_("_Reset Zoom"), "<control>equal",
 	  N_("Reset the text size"), G_CALLBACK (_pluma_cmd_edit_zoom_reset) },
 	{ "ChangeCase", NULL, N_("C_hange Case"), NULL, NULL, NULL },
 	{ "CloseMultipleTabs", NULL, N_("Close _Multiple Tabs"), NULL, NULL, NULL },
@@ -127,27 +127,27 @@ static const GtkActionEntry pluma_menu_entries[] =
 	{ "ViewHighlightMode", NULL, N_("_Highlight Mode"), NULL, NULL, NULL },
 
 	/* Search menu */
-	{ "SearchFind", "edit-find", N_("_Find..."), "<control>F",
+	{ "SearchFind", "edit-find-symbolic", N_("_Find..."), "<control>F",
 	  N_("Search for text"), G_CALLBACK (_pluma_cmd_search_find) },
-	{ "SearchFindInFiles", "edit-find", N_("Find in Fi_les"), "<shift><control>F",
+	{ "SearchFindInFiles", "edit-find-symbolic", N_("Find in Fi_les"), "<shift><control>F",
 	  N_("Search for text in project files"), G_CALLBACK (_pluma_cmd_search_find_in_files) },
 	{ "SearchFindNext", NULL, N_("Find Ne_xt"), "<control>G",
 	  N_("Search forwards for the same text"), G_CALLBACK (_pluma_cmd_search_find_next) },
 	{ "SearchFindPrevious", NULL, N_("Find Pre_vious"), "<shift><control>G",
 	  N_("Search backwards for the same text"), G_CALLBACK (_pluma_cmd_search_find_prev) },
-	{ "SearchReplace", "edit-find-replace", N_("_Replace..."), "<control>H",
+	{ "SearchReplace", "edit-find-replace-symbolic", N_("_Replace..."), "<control>H",
 	  N_("Search for and replace text"), G_CALLBACK (_pluma_cmd_search_replace) },
 	{ "SearchClearHighlight", NULL, N_("_Clear Highlight"), "<shift><control>K",
 	  N_("Clear highlighting of search matches"), G_CALLBACK (_pluma_cmd_search_clear_highlight) },
-	{ "SearchGoToLine", "go-jump", N_("Go to _Line..."), "<control>I",
+	{ "SearchGoToLine", "go-jump-symbolic", N_("Go to _Line..."), "<control>I",
 	  N_("Go to a specific line"), G_CALLBACK (_pluma_cmd_search_goto_line) },
-	{ "SearchIncrementalSearch", "edit-find", N_("_Incremental Search..."), "<control>K",
+	{ "SearchIncrementalSearch", "edit-find-symbolic", N_("_Incremental Search..."), "<control>K",
 	  N_("Incrementally search for text"), G_CALLBACK (_pluma_cmd_search_incremental_search) },
 
 	/* Documents menu */
-	{ "FileSaveAll", "document-save", N_("_Save All"), "<shift><control>L",
+	{ "FileSaveAll", "document-save-symbolic", N_("_Save All"), "<shift><control>L",
 	  N_("Save all open files"), G_CALLBACK (_pluma_cmd_file_save_all) },
-	{ "FileCloseAll", "window-close", N_("_Close All"), "<shift><control>W",
+	{ "FileCloseAll", "window-close-symbolic", N_("_Close All"), "<shift><control>W",
 	  N_("Close all open files"), G_CALLBACK (_pluma_cmd_file_close_all) },
 	{ "FileCloseTabsLeft", NULL, N_("Close Tabs to the _Left"), NULL,
 	  N_("Close all tabs to the left of the current tab"), G_CALLBACK (_pluma_cmd_file_close_tabs_left) },
@@ -166,14 +166,14 @@ static const GtkActionEntry pluma_menu_entries[] =
 /* separate group, needs to be sensitive on OS X even when there are no tabs */
 static const GtkActionEntry pluma_close_menu_entries[] =
 {
-	{ "FileClose", "window-close", N_("_Close"), "<control>W",
+	{ "FileClose", "window-close-symbolic", N_("_Close"), "<control>W",
 	  N_("Close the current file"), G_CALLBACK (_pluma_cmd_file_close) }
 };
 
 /* separate group, should be sensitive even when there are no tabs */
 static const GtkActionEntry pluma_quit_menu_entries[] =
 {
-	{ "FileQuit", "application-exit", N_("_Quit"), "<control>Q",
+	{ "FileQuit", "application-exit-symbolic", N_("_Quit"), "<control>Q",
 	  N_("Quit the program"), G_CALLBACK (_pluma_cmd_file_quit) }
 };
 
@@ -186,7 +186,7 @@ static const GtkActionEntry pluma_quit_menu_entries[] =
  * FullscreenToolBar, which is still GtkUIManager-based. */
 static const GtkToggleActionEntry pluma_always_sensitive_toggle_menu_entries[] =
 {
-	{ "ViewFullscreen", "view-fullscreen", N_("_Fullscreen"), "F11",
+	{ "ViewFullscreen", "view-fullscreen-symbolic", N_("_Fullscreen"), "F11",
 	  N_("Edit text in fullscreen"),
 	  G_CALLBACK (_pluma_cmd_view_toggle_fullscreen_mode), FALSE }
 };

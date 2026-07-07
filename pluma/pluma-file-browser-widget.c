@@ -858,36 +858,36 @@ static GtkActionEntry toplevel_actions[] =
 
 static const GtkActionEntry tree_actions_selection[] =
 {
-	{"FileMoveToTrash", "mate-stock-trash", N_("_Move to Trash"), NULL,
+	{"FileMoveToTrash", "user-trash-symbolic", N_("_Move to Trash"), NULL,
 	 N_("Move selected file or folder to trash"),
 	 G_CALLBACK (on_action_file_move_to_trash)},
-	{"FileDelete", "edit-delete", N_("_Delete"), NULL,
+	{"FileDelete", "edit-delete-symbolic", N_("_Delete"), NULL,
 	 N_("Delete selected file or folder"),
 	 G_CALLBACK (on_action_file_delete)}
 };
 
 static const GtkActionEntry tree_actions_file_selection[] =
 {
-	{"FileOpen", "document-open", N_("_Open"), NULL,
+	{"FileOpen", "document-open-symbolic", N_("_Open"), NULL,
 	 N_("Open selected file"),
 	 G_CALLBACK (on_action_file_open)}
 };
 
 static const GtkActionEntry tree_actions[] =
 {
-	{"DirectoryUp", "go-up", N_("Up"), NULL,
+	{"DirectoryUp", "go-up-symbolic", N_("Up"), NULL,
 	 N_("Open the parent folder"), G_CALLBACK (on_action_directory_up)},
-	{"QuickSearch", "edit-find", N_("Quick Open"), NULL,
+	{"QuickSearch", "edit-find-symbolic", N_("Quick Open"), NULL,
 	 N_("Find a file by name in the current folder"),
 	 G_CALLBACK (on_action_quick_search)}
 };
 
 static const GtkActionEntry tree_actions_single_most_selection[] =
 {
-	{"DirectoryNew", "list-add", N_("_New Folder"), NULL,
+	{"DirectoryNew", "list-add-symbolic", N_("_New Folder"), NULL,
 	 N_("Add new empty folder"),
 	 G_CALLBACK (on_action_directory_new)},
-	{"FileNew", "document-new", N_("New F_ile"), NULL,
+	{"FileNew", "document-new-symbolic", N_("New F_ile"), NULL,
 	 N_("Add new empty file"), G_CALLBACK (on_action_file_new)}
 };
 
@@ -896,25 +896,25 @@ static const GtkActionEntry tree_actions_single_selection[] =
 	{"FileRename", NULL, N_("_Rename"), NULL,
 	 N_("Rename selected file or folder"),
 	 G_CALLBACK (on_action_file_rename)},
-	{"FileCopyPath", "edit-copy", N_("Copy _Path"), "<control><alt>C",
+	{"FileCopyPath", "edit-copy-symbolic", N_("Copy _Path"), "<control><alt>C",
 	 N_("Copy the selected file or folder path"),
 	 G_CALLBACK (on_action_copy_path)},
-	{"FileCopyRelativePath", "edit-copy", N_("Copy _Relative Path"), "<control><shift><alt>C",
+	{"FileCopyRelativePath", "edit-copy-symbolic", N_("Copy _Relative Path"), "<control><shift><alt>C",
 	 N_("Copy the selected file or folder path relative to the current folder"),
 	 G_CALLBACK (on_action_copy_relative_path)}
 };
 
 static const GtkActionEntry tree_actions_sensitive[] =
 {
-	{"DirectoryPrevious", "go-previous", N_("_Previous Location"),
+	{"DirectoryPrevious", "go-previous-symbolic", N_("_Previous Location"),
 	 NULL,
 	 N_("Go to the previous visited location"),
 	 G_CALLBACK (on_action_directory_previous)},
-	{"DirectoryNext", "go-next", N_("_Next Location"), NULL,
+	{"DirectoryNext", "go-next-symbolic", N_("_Next Location"), NULL,
 	 N_("Go to the next visited location"), G_CALLBACK (on_action_directory_next)},
-	{"DirectoryRefresh", "view-refresh", N_("Re_fresh View"), NULL,
+	{"DirectoryRefresh", "view-refresh-symbolic", N_("Re_fresh View"), NULL,
 	 N_("Refresh the view"), G_CALLBACK (on_action_directory_refresh)},
-	{"DirectoryOpen", "document-open", N_("_View Folder"), NULL,
+	{"DirectoryOpen", "document-open-symbolic", N_("_View Folder"), NULL,
 	 N_("View folder in file manager"),
 	 G_CALLBACK (on_action_directory_open)}
 };
@@ -932,7 +932,7 @@ static const GtkToggleActionEntry tree_actions_toggle[] =
 
 static const GtkActionEntry bookmark_actions[] =
 {
-	{"BookmarkOpen", "document-open", N_("_View Folder"), NULL,
+	{"BookmarkOpen", "document-open-symbolic", N_("_View Folder"), NULL,
 	 N_("View folder in file manager"), G_CALLBACK (on_action_bookmark_open)}
 };
 
@@ -1057,7 +1057,7 @@ create_toolbar (PlumaFileBrowserWidget * obj,
 
 	gtk_widget_show (obj->priv->location_previous_menu);
 
-	widget = GTK_WIDGET (gtk_menu_tool_button_new (gtk_image_new_from_icon_name ("go-previous",
+	widget = GTK_WIDGET (gtk_menu_tool_button_new (gtk_image_new_from_icon_name ("go-previous-symbolic",
 										     GTK_ICON_SIZE_MENU),
 						       _("Previous location")));
 
@@ -1083,7 +1083,7 @@ create_toolbar (PlumaFileBrowserWidget * obj,
 
 	gtk_widget_show (obj->priv->location_next_menu);
 
-	widget = GTK_WIDGET (gtk_menu_tool_button_new (gtk_image_new_from_icon_name ("go-next",
+	widget = GTK_WIDGET (gtk_menu_tool_button_new (gtk_image_new_from_icon_name ("go-next-symbolic",
 										     GTK_ICON_SIZE_MENU),
 						       _("Next location")));
 
@@ -1428,7 +1428,7 @@ quick_search_refilter (PlumaFileBrowserWidget *obj)
 
 		gtk_list_store_append (obj->priv->quick_search_store, &iter);
 		gtk_list_store_set (obj->priv->quick_search_store, &iter,
-		                    QUICK_SEARCH_COLUMN_ICON, "text-x-generic",
+		                    QUICK_SEARCH_COLUMN_ICON, "text-x-generic-symbolic",
 		                    QUICK_SEARCH_COLUMN_PATH, match->file->relative_path,
 		                    QUICK_SEARCH_COLUMN_URI, match->file->uri,
 		                    -1);

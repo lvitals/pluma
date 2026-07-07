@@ -131,9 +131,9 @@ pluma_statusbar_init (PlumaStatusbar *statusbar)
 	hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
 	gtk_container_add (GTK_CONTAINER (statusbar->priv->state_frame), hbox);
 
-	statusbar->priv->load_image = gtk_image_new_from_icon_name ("document-open", GTK_ICON_SIZE_MENU);
-	statusbar->priv->save_image = gtk_image_new_from_icon_name ("document-save", GTK_ICON_SIZE_MENU);
-	statusbar->priv->print_image = gtk_image_new_from_icon_name ("document-print", GTK_ICON_SIZE_MENU);
+	statusbar->priv->load_image = gtk_image_new_from_icon_name ("document-open-symbolic", GTK_ICON_SIZE_MENU);
+	statusbar->priv->save_image = gtk_image_new_from_icon_name ("document-save-symbolic", GTK_ICON_SIZE_MENU);
+	statusbar->priv->print_image = gtk_image_new_from_icon_name ("document-print-symbolic", GTK_ICON_SIZE_MENU);
 
 	gtk_widget_show (hbox);
 
@@ -154,7 +154,7 @@ pluma_statusbar_init (PlumaStatusbar *statusbar)
 	statusbar->priv->error_frame = gtk_frame_new (NULL);
 	gtk_frame_set_shadow_type (GTK_FRAME (statusbar->priv->error_frame), GTK_SHADOW_IN);
 
-	error_image = gtk_image_new_from_icon_name ("dialog-error", GTK_ICON_SIZE_MENU);
+	error_image = gtk_image_new_from_icon_name ("dialog-error-symbolic", GTK_ICON_SIZE_MENU);
 	gtk_widget_set_margin_start (error_image, 4);
 	gtk_widget_set_margin_end (error_image, 4);
 	gtk_widget_set_margin_top (error_image, 0);

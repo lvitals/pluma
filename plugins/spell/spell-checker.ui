@@ -5,27 +5,27 @@
   <requires lib="gtk+" version="3.22"/>
   <object class="GtkImage" id="add_word_image">
     <property name="can_focus">False</property>
-    <property name="icon_name">list-add</property>
+    <property name="icon_name">list-add-symbolic</property>
   </object>
   <object class="GtkImage" id="change_all_image">
     <property name="can_focus">False</property>
-    <property name="icon_name">gtk-convert</property>
+    <property name="icon_name">view-refresh-symbolic</property>
   </object>
   <object class="GtkImage" id="change_image">
     <property name="can_focus">False</property>
-    <property name="icon_name">gtk-convert</property>
+    <property name="icon_name">view-refresh-symbolic</property>
   </object>
   <object class="GtkImage" id="check_word_image">
     <property name="can_focus">False</property>
-    <property name="icon_name">tools-check-spelling</property>
+    <property name="icon_name">tools-check-spelling-symbolic</property>
   </object>
   <object class="GtkImage" id="ignore_all_image">
     <property name="can_focus">False</property>
-    <property name="icon_name">go-bottom</property>
+    <property name="icon_name">go-bottom-symbolic</property>
   </object>
   <object class="GtkImage" id="ignore_image">
     <property name="can_focus">False</property>
-    <property name="icon_name">go-down</property>
+    <property name="icon_name">go-down-symbolic</property>
   </object>
   <object class="GtkWindow" id="check_spelling_window">
     <property name="visible">True</property>

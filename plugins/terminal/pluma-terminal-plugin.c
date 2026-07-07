@@ -222,7 +222,7 @@ static void activate (PlumaWindowActivatable *activatable) {
     create_terminal_panel (self); reconfigure_terminal (self); spawn_terminal (self);
     self->profile_changed = g_signal_connect (self->profile_settings, "changed", G_CALLBACK (settings_changed), self);
     self->font_changed = g_signal_connect (self->interface_settings, "changed::monospace-font-name", G_CALLBACK (settings_changed), self);
-    pluma_panel_add_item_with_icon (pluma_window_get_bottom_panel (self->window), self->panel, _("Terminal"), "utilities-terminal");
+    pluma_panel_add_item_with_icon (pluma_window_get_bottom_panel (self->window), self->panel, _("Terminal"), "utilities-terminal-symbolic");
 }
 static void deactivate (PlumaWindowActivatable *activatable) {
     PlumaTerminalPlugin *self = PLUMA_TERMINAL_PLUGIN (activatable);

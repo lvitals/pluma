@@ -9,32 +9,32 @@
         <item>
           <attribute name="label" translatable="yes">_New</attribute>
           <attribute name="action">win.new</attribute>
-          <attribute name="icon">document-new</attribute>
+          <attribute name="icon">document-new-symbolic</attribute>
           <attribute name="accel">&lt;Control&gt;n</attribute>
         </item>
         <item>
           <attribute name="label" translatable="yes">_Open…</attribute>
           <attribute name="action">win.open</attribute>
-          <attribute name="icon">document-open</attribute>
+          <attribute name="icon">document-open-symbolic</attribute>
           <attribute name="accel">&lt;Control&gt;o</attribute>
         </item>
         <item>
           <attribute name="label" translatable="yes">Open _Folder…</attribute>
           <attribute name="action">win.open-folder</attribute>
-          <attribute name="icon">folder-open</attribute>
+          <attribute name="icon">folder-open-symbolic</attribute>
         </item>
       </section>
       <section>
         <item>
           <attribute name="label" translatable="yes">_Save</attribute>
           <attribute name="action">win.save</attribute>
-          <attribute name="icon">document-save</attribute>
+          <attribute name="icon">document-save-symbolic</attribute>
           <attribute name="accel">&lt;Control&gt;s</attribute>
         </item>
         <item>
           <attribute name="label" translatable="yes">Save _As…</attribute>
           <attribute name="action">win.save-as</attribute>
-          <attribute name="icon">document-save-as</attribute>
+          <attribute name="icon">document-save-as-symbolic</attribute>
           <attribute name="accel">&lt;Control&gt;&lt;Shift&gt;s</attribute>
         </item>
         <item>
@@ -45,20 +45,20 @@
         <item>
           <attribute name="label" translatable="yes">_Revert</attribute>
           <attribute name="action">win.revert</attribute>
-          <attribute name="icon">document-revert</attribute>
+          <attribute name="icon">document-revert-symbolic</attribute>
         </item>
       </section>
       <section>
         <item>
           <attribute name="label" translatable="yes">Print Previe_w</attribute>
           <attribute name="action">win.print-preview</attribute>
-          <attribute name="icon">document-print-preview</attribute>
+          <attribute name="icon">document-print-preview-symbolic</attribute>
           <attribute name="accel">&lt;Control&gt;&lt;Shift&gt;p</attribute>
         </item>
         <item>
           <attribute name="label" translatable="yes">_Print…</attribute>
           <attribute name="action">win.print</attribute>
-          <attribute name="icon">document-print</attribute>
+          <attribute name="icon">document-print-symbolic</attribute>
           <attribute name="accel">&lt;Control&gt;p</attribute>
         </item>
       </section>
@@ -67,7 +67,7 @@
         <item>
           <attribute name="label" translatable="yes">_Close</attribute>
           <attribute name="action">win.close</attribute>
-          <attribute name="icon">window-close</attribute>
+          <attribute name="icon">window-close-symbolic</attribute>
           <attribute name="accel">&lt;Control&gt;w</attribute>
         </item>
         <item>
@@ -78,7 +78,7 @@
         <item>
           <attribute name="label" translatable="yes">_Quit</attribute>
           <attribute name="action">app.quit</attribute>
-          <attribute name="icon">application-exit</attribute>
+          <attribute name="icon">application-exit-symbolic</attribute>
           <attribute name="accel">&lt;Control&gt;q</attribute>
         </item>
       </section>

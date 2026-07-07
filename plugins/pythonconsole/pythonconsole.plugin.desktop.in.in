@@ -5,7 +5,7 @@ IAge=2
 Name=Python Console
 Description=Interactive Python console standing in the bottom panel
 # Translators: Do NOT translate or transliterate this text (this is an icon file name)!
-Icon=text-x-python
+Icon=utilities-terminal-symbolic
 Authors=Steve Frécinaux <steve@istique.net>
 Copyright=Copyright © 2006 Steve Frécinaux
 Website=@PACKAGE_URL@

@@ -6,17 +6,17 @@
   <object class="GtkImage" id="image1">
     <property name="visible">True</property>
     <property name="can_focus">False</property>
-    <property name="icon_name">help-browser</property>
+    <property name="icon_name">help-browser-symbolic</property>
   </object>
   <object class="GtkImage" id="image2">
     <property name="visible">True</property>
     <property name="can_focus">False</property>
-    <property name="icon_name">process-stop</property>
+    <property name="icon_name">window-close-symbolic</property>
   </object>
   <object class="GtkImage" id="image3">
     <property name="visible">True</property>
     <property name="can_focus">False</property>
-    <property name="icon_name">gtk-ok</property>
+    <property name="icon_name">emblem-ok-symbolic</property>
   </object>
   <object class="GtkDialog" id="encodings-dialog">
     <property name="width_request">650</property>

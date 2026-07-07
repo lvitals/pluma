@@ -501,7 +501,7 @@ build_single_doc_dialog (PlumaCloseConfirmationDialog *dlg)
 	doc = PLUMA_DOCUMENT (dlg->priv->unsaved_documents->data);
 
 	/* Image */
-	image = gtk_image_new_from_icon_name ("dialog-warning",
+	image = gtk_image_new_from_icon_name ("dialog-warning-symbolic",
 					  GTK_ICON_SIZE_DIALOG);
 	gtk_widget_set_halign (image, GTK_ALIGN_START);
 	gtk_widget_set_valign (image, GTK_ALIGN_END);
@@ -694,7 +694,7 @@ build_multiple_docs_dialog (PlumaCloseConfirmationDialog *dlg)
 			    hbox, TRUE, TRUE, 0);
 
 	/* Image */
-	image = gtk_image_new_from_icon_name ("dialog-warning",
+	image = gtk_image_new_from_icon_name ("dialog-warning-symbolic",
 					  GTK_ICON_SIZE_DIALOG);
 	gtk_widget_set_halign (image, GTK_ALIGN_CENTER);
 	gtk_widget_set_valign (image, GTK_ALIGN_START);

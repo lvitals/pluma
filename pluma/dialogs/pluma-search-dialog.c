@@ -400,11 +400,11 @@ pluma_search_dialog_init (PlumaSearchDialog *dlg)
 				       dlg->priv->replace_entry);
 
 	dlg->priv->find_button = gtk_button_new_with_mnemonic (_("_Find"));
-	gtk_button_set_image (GTK_BUTTON (dlg->priv->find_button), gtk_image_new_from_icon_name ("edit-find", GTK_ICON_SIZE_BUTTON));
+	gtk_button_set_image (GTK_BUTTON (dlg->priv->find_button), gtk_image_new_from_icon_name ("edit-find-symbolic", GTK_ICON_SIZE_BUTTON));
 
 	dlg->priv->replace_all_button = gtk_button_new_with_mnemonic (_("Replace _All"));
 	dlg->priv->replace_button = pluma_gtk_button_new_with_icon (_("_Replace"),
-								    "edit-find-replace");
+								    "edit-find-replace-symbolic");
 
 	gtk_dialog_add_action_widget (GTK_DIALOG (dlg),
 				      dlg->priv->replace_all_button,

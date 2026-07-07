@@ -110,7 +110,7 @@ function ConfigWidget:on_widget_config_parent_set(widget, old_parent)
         return
     end
 
-    local image = Gtk.Image.new_from_icon_name('window-close', Gtk.IconSize.BUTTON)
+    local image = Gtk.Image.new_from_icon_name('window-close-symbolic', Gtk.IconSize.BUTTON)
     for _, button in ipairs(actionarea:get_children()) do
         button:set_image(image)
         -- set_property() wants a pre-boxed GObject.Value; attribute-style

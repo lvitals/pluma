@@ -218,7 +218,7 @@ pluma_file_browser_utils_confirmation_dialog (PlumaWindow * window,
 
 	/* Add a cancel button */
 	button = gtk_button_new_with_mnemonic (_("_Cancel"));
-	gtk_button_set_image (GTK_BUTTON (button), gtk_image_new_from_icon_name ("process-stop", GTK_ICON_SIZE_BUTTON));
+	gtk_button_set_image (GTK_BUTTON (button), gtk_image_new_from_icon_name ("process-stop-symbolic", GTK_ICON_SIZE_BUTTON));
 
 	gtk_widget_show (button);
 
@@ -229,7 +229,7 @@ pluma_file_browser_utils_confirmation_dialog (PlumaWindow * window,
 
 	/* Add delete button */
 	button = gtk_button_new_with_mnemonic (_("_Delete"));
-	gtk_button_set_image (GTK_BUTTON (button), gtk_image_new_from_icon_name ("edit-delete", GTK_ICON_SIZE_BUTTON));
+	gtk_button_set_image (GTK_BUTTON (button), gtk_image_new_from_icon_name ("user-trash-symbolic", GTK_ICON_SIZE_BUTTON));
 
 	gtk_widget_show (button);
 	gtk_widget_set_can_default (button, TRUE);

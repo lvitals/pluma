@@ -87,7 +87,7 @@ static const GActionEntry modern_action_entries[] =
 static const GtkActionEntry action_entries[] =
 {
 	{ "Sort",
-	  "view-sort-ascending",
+	  "view-sort-ascending-symbolic",
 	  N_("S_ort..."),
 	  NULL,
 	  N_("Sort the current document or selection"),

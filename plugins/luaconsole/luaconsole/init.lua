@@ -16,7 +16,7 @@ local Pluma = lgi.Pluma
 local Console = require('luaconsole.console')
 local ConfigWidget = require('luaconsole.config').ConfigWidget
 
-local LUA_ICON = 'text-x-script'
+local LUA_ICON = 'utilities-terminal-symbolic'
 
 local LuaConsolePlugin = GObject.Object:derive('LuaConsolePlugin',
     { Pluma.WindowActivatable, PeasGtk.Configurable })

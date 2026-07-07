@@ -1724,7 +1724,7 @@ customize_for_search_mode (PlumaView *view)
     {
         gtk_entry_set_icon_from_icon_name (GTK_ENTRY (view->priv->search_entry),
                                            GTK_ENTRY_ICON_PRIMARY,
-                                           "edit-find");
+                                           "edit-find-symbolic");
 
         gtk_widget_set_tooltip_text (view->priv->search_entry,
                                      _("String you want to search for"));
@@ -1733,7 +1733,7 @@ customize_for_search_mode (PlumaView *view)
     {
         gtk_entry_set_icon_from_icon_name (GTK_ENTRY (view->priv->search_entry),
                                            GTK_ENTRY_ICON_PRIMARY,
-                                           "go-jump");
+                                           "go-jump-symbolic");
 
         gtk_widget_set_tooltip_text (view->priv->search_entry,
                                      _("Line you want to move the cursor to"));

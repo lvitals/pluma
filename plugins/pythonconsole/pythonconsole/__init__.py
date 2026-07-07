@@ -31,7 +31,7 @@ from .console import PythonConsole
 from .config import PythonConsoleConfigWidget
 from .config import PythonConsoleConfig
 
-PYTHON_ICON = 'text-x-python'
+PYTHON_ICON = 'utilities-terminal-symbolic'
 
 class PythonConsolePlugin(GObject.Object, Pluma.WindowActivatable, PeasGtk.Configurable):
     __gtype_name__ = "PythonConsolePlugin"
