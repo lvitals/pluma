@@ -3,6 +3,7 @@ DIST_SUBDIRS =		\
 	externaltools	\
 	luaconsole	\
 	lualoader	\
+	markdown-preview \
 	modelines	\
 	pythonconsole	\
 	snippets	\
@@ -18,6 +19,7 @@ SUBDIRS = 		\
 	docinfo		\
 	externaltools	\
 	luaconsole	\
+	markdown-preview \
 	modelines	\
 	pythonconsole	\
 	snippets	\

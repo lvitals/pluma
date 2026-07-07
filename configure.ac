@@ -373,6 +373,9 @@ plugins/terminal/pluma-terminal.metainfo.xml.in
 plugins/time/Makefile
 plugins/time/org.mate.pluma.plugins.time.gschema.xml
 plugins/time/time.plugin.desktop.in
+plugins/markdown-preview/Makefile
+plugins/markdown-preview/markdown-preview.plugin.desktop.in
+plugins/markdown-preview/pluma-markdown-preview.metainfo.xml.in
 plugins/trailsave/Makefile
 plugins/trailsave/trailsave.plugin.desktop.in
 po/Makefile.in
