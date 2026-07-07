@@ -369,7 +369,7 @@ activate (PlumaWindowActivatable *activatable)
 
     g_signal_connect (self->container, "style-updated", G_CALLBACK (style_updated_cb), self);
 
-    pluma_panel_add_item_with_icon (panel, self->preview, _("Markdown Preview"), "text-x-markdown");
+    pluma_panel_add_item_with_icon (panel, self->preview, _("Markdown Preview"), "text-x-generic-symbolic");
     gtk_widget_show_all (self->preview);
     load_welcome (self);
 
