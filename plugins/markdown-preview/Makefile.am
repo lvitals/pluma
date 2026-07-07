@@ -3,7 +3,17 @@
 plugindir = $(PLUMA_PLUGINS_LIBS_DIR)
 AM_CPPFLAGS = -I$(top_srcdir) $(PLUMA_CFLAGS) $(WARN_CFLAGS)
 plugin_LTLIBRARIES = libmarkdown-preview.la
-libmarkdown_preview_la_SOURCES = pluma-markdown-preview-plugin.c pluma-markdown-preview-plugin.h
+libmarkdown_preview_la_SOURCES = \
+	pluma-markdown-preview-plugin.c \
+	pluma-markdown-preview-plugin.h \
+	markdown-ast.c \
+	markdown-ast.h \
+	markdown-inline.c \
+	markdown-inline.h \
+	markdown-parser.c \
+	markdown-parser.h \
+	markdown-renderer-gtk.c \
+	markdown-renderer-gtk.h
 libmarkdown_preview_la_LDFLAGS = $(PLUGIN_LIBTOOL_FLAGS)
 libmarkdown_preview_la_LIBADD = $(PLUMA_LIBS)
 

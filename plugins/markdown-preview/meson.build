@@ -1,5 +1,11 @@
 shared_module('markdown-preview',
-  sources: files('pluma-markdown-preview-plugin.c'),
+  sources: files(
+    'pluma-markdown-preview-plugin.c',
+    'markdown-ast.c',
+    'markdown-inline.c',
+    'markdown-parser.c',
+    'markdown-renderer-gtk.c'
+  ),
   dependencies: pluma_deps,
   include_directories: [include_directories('../..'), include_directories('../../pluma')],
   install: true,
