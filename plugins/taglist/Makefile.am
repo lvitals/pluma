@@ -6,6 +6,7 @@ taglistdir = $(PLUMA_PLUGINS_DATA_DIR)/taglist
 taglist_in_files = \
 	HTML.tags.xml.in		\
 	Latex.tags.xml.in		\
+	Markdown.tags.xml.in		\
 	XSLT.tags.xml.in		\
 	XUL.tags.xml.in
 

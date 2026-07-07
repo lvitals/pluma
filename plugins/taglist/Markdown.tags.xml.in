@@ -1,0 +1,382 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<TagList xmlns="http://pluma.sourceforge.net/some-location">
+<TagGroup name="Markdown" sort="true">
+  <!-- Callouts (GitHub Flavored Markdown) -->
+  <Tag name="Callout: Caution">
+    <Begin>&gt; [!CAUTION]&#10;&gt; </Begin>
+  </Tag>
+  <Tag name="Callout: Important">
+    <Begin>&gt; [!IMPORTANT]&#10;&gt; </Begin>
+  </Tag>
+  <Tag name="Callout: Note">
+    <Begin>&gt; [!NOTE]&#10;&gt; </Begin>
+  </Tag>
+  <Tag name="Callout: Tip">
+    <Begin>&gt; [!TIP]&#10;&gt; </Begin>
+  </Tag>
+  <Tag name="Callout: Warning">
+    <Begin>&gt; [!WARNING]&#10;&gt; </Begin>
+  </Tag>
+
+  <!-- Code Block Blocks -->
+  <Tag name="Code: Block (Bash)">
+    <Begin>```bash&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (C)">
+    <Begin>```c&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (C++)">
+    <Begin>```cpp&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (CSS)">
+    <Begin>```css&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (Diff)">
+    <Begin>```diff&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (Go)">
+    <Begin>```go&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (HTML)">
+    <Begin>```html&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (INI)">
+    <Begin>```ini&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (Java)">
+    <Begin>```java&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (JavaScript)">
+    <Begin>```javascript&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (JSON)">
+    <Begin>```json&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (Lua)">
+    <Begin>```lua&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (Markdown)">
+    <Begin>```markdown&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (Mermaid)">
+    <Begin>```mermaid&#10;graph TD;&#10;  A--&gt;B;&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (Plain Text)">
+    <Begin>```text&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (PlantUML)">
+    <Begin>```plantuml&#10;@startuml&#10;</Begin>
+    <End>&#10;@enduml&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (Python)">
+    <Begin>```python&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (Rust)">
+    <Begin>```rust&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (Shell)">
+    <Begin>```sh&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (SQL)">
+    <Begin>```sql&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (TOML)">
+    <Begin>```toml&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (TypeScript)">
+    <Begin>```typescript&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (XML)">
+    <Begin>```xml&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block (YAML)">
+    <Begin>```yaml&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Block Generic">
+    <Begin>```&#10;</Begin>
+    <End>&#10;```</End>
+  </Tag>
+  <Tag name="Code: Inline">
+    <Begin>`</Begin>
+    <End>`</End>
+  </Tag>
+
+  <!-- Comments -->
+  <Tag name="Comment: HTML Comment">
+    <Begin>&lt;!-- </Begin>
+    <End> --&gt;</End>
+  </Tag>
+
+  <!-- Definition Lists -->
+  <Tag name="Definition: Item">
+    <Begin>Term&#10;: </Begin>
+  </Tag>
+
+  <!-- Emojis -->
+  <Tag name="Emoji: Check">
+    <Begin>:white_check_mark:</Begin>
+  </Tag>
+  <Tag name="Emoji: Rocket">
+    <Begin>:rocket:</Begin>
+  </Tag>
+  <Tag name="Emoji: Smile">
+    <Begin>:smile:</Begin>
+  </Tag>
+  <Tag name="Emoji: Warning">
+    <Begin>:warning:</Begin>
+  </Tag>
+
+  <!-- Text Emphasis -->
+  <Tag name="Emphasis: Bold">
+    <Begin>**</Begin>
+    <End>**</End>
+  </Tag>
+  <Tag name="Emphasis: Bold + Italic">
+    <Begin>***</Begin>
+    <End>***</End>
+  </Tag>
+  <Tag name="Emphasis: Italic">
+    <Begin>*</Begin>
+    <End>*</End>
+  </Tag>
+  <Tag name="Emphasis: Nested Bold">
+    <Begin>*italic with **bold** text*</Begin>
+  </Tag>
+  <Tag name="Emphasis: Nested Italic">
+    <Begin>**bold with *italic* text**</Begin>
+  </Tag>
+  <Tag name="Emphasis: Strikethrough">
+    <Begin>~~</Begin>
+    <End>~~</End>
+  </Tag>
+
+  <!-- Footnotes -->
+  <Tag name="Footnote: Definition">
+    <Begin>[^1]: </Begin>
+  </Tag>
+  <Tag name="Footnote: Reference">
+    <Begin>[^1]</Begin>
+  </Tag>
+
+  <!-- Front Matter -->
+  <Tag name="Front Matter: YAML">
+    <Begin>---&#10;title: "Title"&#10;layout: post&#10;---&#10;</Begin>
+  </Tag>
+
+  <!-- Headings -->
+  <Tag name="Heading: Level 1">
+    <Begin># </Begin>
+  </Tag>
+  <Tag name="Heading: Level 2">
+    <Begin>## </Begin>
+  </Tag>
+  <Tag name="Heading: Level 3">
+    <Begin>### </Begin>
+  </Tag>
+  <Tag name="Heading: Level 4">
+    <Begin>#### </Begin>
+  </Tag>
+  <Tag name="Heading: Level 5">
+    <Begin>##### </Begin>
+  </Tag>
+  <Tag name="Heading: Level 6">
+    <Begin>###### </Begin>
+  </Tag>
+  <Tag name="Heading: With Anchor">
+    <Begin># Heading Title {#custom-id}</Begin>
+  </Tag>
+  <Tag name="Heading: With Text Example">
+    <Begin># Heading 1&#10;&#10;This is an example paragraph.&#10;</Begin>
+  </Tag>
+
+  <!-- HTML Elements -->
+  <Tag name="HTML: Anchor">
+    <Begin>&lt;a href=""&gt;</Begin>
+    <End>&lt;/a&gt;</End>
+  </Tag>
+  <Tag name="HTML: Audio">
+    <Begin>&lt;audio src="" controls&gt;&lt;/audio&gt;</Begin>
+  </Tag>
+  <Tag name="HTML: Break &lt;br&gt;">
+    <Begin>&lt;br /&gt;</Begin>
+  </Tag>
+  <Tag name="HTML: Details">
+    <Begin>&lt;details&gt;&#10;  &lt;summary&gt;Details Summary&lt;/summary&gt;&#10;  </Begin>
+    <End>&#10;&lt;/details&gt;</End>
+  </Tag>
+  <Tag name="HTML: Div">
+    <Begin>&lt;div class=""&gt;</Begin>
+    <End>&lt;/div&gt;</End>
+  </Tag>
+  <Tag name="HTML: Keyboard &lt;kbd&gt;">
+    <Begin>&lt;kbd&gt;</Begin>
+    <End>&lt;/kbd&gt;</End>
+  </Tag>
+  <Tag name="HTML: Mark">
+    <Begin>&lt;mark&gt;</Begin>
+    <End>&lt;/mark&gt;</End>
+  </Tag>
+  <Tag name="HTML: Span">
+    <Begin>&lt;span class=""&gt;</Begin>
+    <End>&lt;/span&gt;</End>
+  </Tag>
+  <Tag name="HTML: Subscript &lt;sub&gt;">
+    <Begin>&lt;sub&gt;</Begin>
+    <End>&lt;/sub&gt;</End>
+  </Tag>
+  <Tag name="HTML: Superscript &lt;sup&gt;">
+    <Begin>&lt;sup&gt;</Begin>
+    <End>&lt;/sup&gt;</End>
+  </Tag>
+  <Tag name="HTML: Video">
+    <Begin>&lt;video src="" controls width="320"&gt;&lt;/video&gt;</Begin>
+  </Tag>
+
+  <!-- Images -->
+  <Tag name="Image: Inline Image">
+    <Begin>![Alt Text](</Begin>
+    <End>)</End>
+  </Tag>
+  <Tag name="Image: Reference Definition">
+    <Begin>[ref_id]: </Begin>
+    <End> "Title"</End>
+  </Tag>
+  <Tag name="Image: Reference Image">
+    <Begin>![Alt Text][ref_id]</Begin>
+  </Tag>
+
+  <!-- Links -->
+  <Tag name="Link: Auto Link">
+    <Begin>&lt;http://</Begin>
+    <End>&gt;</End>
+  </Tag>
+  <Tag name="Link: Email Link">
+    <Begin>&lt;mailto:</Begin>
+    <End>&gt;</End>
+  </Tag>
+  <Tag name="Link: Link">
+    <Begin>[</Begin>
+    <End>](url)</End>
+  </Tag>
+  <Tag name="Link: Reference Definition">
+    <Begin>[ref_id]: </Begin>
+    <End> "Title"</End>
+  </Tag>
+  <Tag name="Link: Reference Link">
+    <Begin>[Link Text][ref_id]</Begin>
+  </Tag>
+
+  <!-- Lists -->
+  <Tag name="List: Blockquote">
+    <Begin>&gt; </Begin>
+  </Tag>
+  <Tag name="List: Blockquote (Double Nested)">
+    <Begin>&gt;&gt; </Begin>
+  </Tag>
+  <Tag name="List: Blockquote (Triple Nested)">
+    <Begin>&gt;&gt;&gt; </Begin>
+  </Tag>
+  <Tag name="List: Checked Task Item">
+    <Begin>- [x] </Begin>
+  </Tag>
+  <Tag name="List: Nested Ordered List">
+    <Begin>1. Parent&#10;   1. </Begin>
+  </Tag>
+  <Tag name="List: Nested Task List">
+    <Begin>- [ ] Parent&#10;  - [ ] Child</Begin>
+  </Tag>
+  <Tag name="List: Nested Unordered List">
+    <Begin>- Parent&#10;  - </Begin>
+  </Tag>
+  <Tag name="List: Numbered Item marker">
+    <Begin>1. </Begin>
+  </Tag>
+  <Tag name="List: Ordered List">
+    <Begin>1. Item 1&#10;2. Item 2&#10;</Begin>
+  </Tag>
+  <Tag name="List: Task List">
+    <Begin>- [ ] Item 1&#10;- [ ] Item 2&#10;</Begin>
+  </Tag>
+  <Tag name="List: Unordered List">
+    <Begin>- Item 1&#10;- Item 2&#10;</Begin>
+  </Tag>
+
+  <!-- Math -->
+  <Tag name="Math: Block Math">
+    <Begin>$$&#10;</Begin>
+    <End>&#10;$$</End>
+  </Tag>
+  <Tag name="Math: Inline Math">
+    <Begin>$</Begin>
+    <End>$</End>
+  </Tag>
+
+  <!-- Rules -->
+  <Tag name="Rule: Horizontal Asterisks (***)">
+    <Begin>***&#10;</Begin>
+  </Tag>
+  <Tag name="Rule: Horizontal Hyphens (---)">
+    <Begin>---&#10;</Begin>
+  </Tag>
+  <Tag name="Rule: Horizontal Underscores (___)">
+    <Begin>___&#10;</Begin>
+  </Tag>
+
+  <!-- Tables -->
+  <Tag name="Table: 3 Columns Grid">
+    <Begin>| Header 1 | Header 2 | Header 3 |&#10;| --- | --- | --- |&#10;| Cell 1 | Cell 2 | Cell 3 |&#10;</Begin>
+  </Tag>
+  <Tag name="Table: 4 Columns Grid">
+    <Begin>| Header 1 | Header 2 | Header 3 | Header 4 |&#10;| --- | --- | --- | --- |&#10;| Cell 1 | Cell 2 | Cell 3 | Cell 4 |&#10;</Begin>
+  </Tag>
+  <Tag name="Table: Alignment Center">
+    <Begin>| Header |&#10;| :---: |&#10;| Centered |&#10;</Begin>
+  </Tag>
+  <Tag name="Table: Alignment Left">
+    <Begin>| Header |&#10;| :--- |&#10;| Left aligned |&#10;</Begin>
+  </Tag>
+  <Tag name="Table: Alignment Right">
+    <Begin>| Header |&#10;| ---: |&#10;| Right aligned |&#10;</Begin>
+  </Tag>
+  <Tag name="Table: Simple Grid">
+    <Begin>| Column 1 | Column 2 |&#10;| --- | --- |&#10;| Cell 1 | Cell 2 |&#10;</Begin>
+  </Tag>
+
+  <!-- Utilities -->
+  <Tag name="Utility: Empty Line">
+    <Begin>&#10;</Begin>
+  </Tag>
+  <Tag name="Utility: Escape Character">
+    <Begin>\</Begin>
+  </Tag>
+  <Tag name="Utility: Line Break">
+    <Begin>  &#10;</Begin>
+  </Tag>
+  <Tag name="Utility: Table of Contents [TOC]">
+    <Begin>[TOC]&#10;</Begin>
+  </Tag>
+</TagGroup>
+</TagList>
