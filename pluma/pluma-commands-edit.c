@@ -38,6 +38,7 @@
 #include <gtk/gtk.h>
 
 #include "pluma-commands.h"
+#include "pluma-comment.h"
 #include "pluma-window.h"
 #include "pluma-debug.h"
 #include "pluma-view.h"
@@ -300,6 +301,40 @@ _pluma_cmd_edit_title_case (GSimpleAction *action,
 	pluma_view_title_case_selection (active_view);
 
 	gtk_widget_grab_focus (GTK_WIDGET (active_view));
+}
+
+void
+_pluma_cmd_edit_toggle_line_comment (GSimpleAction *action,
+                                     GVariant      *parameter,
+                                     gpointer       user_data)
+{
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
+	PlumaView *active_view;
+
+	pluma_debug (DEBUG_COMMANDS);
+
+	pluma_comment_toggle_line_comment (pluma_window_get_active_document (window));
+
+	active_view = pluma_window_get_active_view (window);
+	if (active_view != NULL)
+		gtk_widget_grab_focus (GTK_WIDGET (active_view));
+}
+
+void
+_pluma_cmd_edit_toggle_block_comment (GSimpleAction *action,
+                                      GVariant      *parameter,
+                                      gpointer       user_data)
+{
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
+	PlumaView *active_view;
+
+	pluma_debug (DEBUG_COMMANDS);
+
+	pluma_comment_toggle_block_comment (pluma_window_get_active_document (window));
+
+	active_view = pluma_window_get_active_view (window);
+	if (active_view != NULL)
+		gtk_widget_grab_focus (GTK_WIDGET (active_view));
 }
 
 void

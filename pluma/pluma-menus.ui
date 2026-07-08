@@ -112,6 +112,10 @@
           </section>
         </submenu>
       </section>
+      <section>
+        <item><attribute name="label" translatable="yes">Toggle Line Co_mment</attribute><attribute name="action">win.toggle-line-comment</attribute><attribute name="accel">&lt;Control&gt;m</attribute></item>
+        <item><attribute name="label" translatable="yes">Toggle Block _Comment</attribute><attribute name="action">win.toggle-block-comment</attribute><attribute name="accel">&lt;Control&gt;&lt;Shift&gt;m</attribute></item>
+      </section>
       <section id="plugin-edit-section"/>
       <section>
         <item><attribute name="label" translatable="yes">Pr_eferences</attribute><attribute name="action">win.preferences</attribute></item>

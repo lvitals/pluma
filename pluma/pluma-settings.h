@@ -111,6 +111,8 @@ GSList *                pluma_settings_get_writable_vfs_schemes (GSettings *sett
 #define PLUMA_SETTINGS_DISPLAY_LINE_NUMBERS         "display-line-numbers"
 #define PLUMA_SETTINGS_HIGHLIGHT_CURRENT_LINE       "highlight-current-line"
 #define PLUMA_SETTINGS_BRACKET_MATCHING             "bracket-matching"
+#define PLUMA_SETTINGS_BRACKET_COMPLETION           "bracket-completion"
+#define PLUMA_SETTINGS_SMART_INDENTATION_BACKSPACE  "smart-indentation-backspace"
 #define PLUMA_SETTINGS_DISPLAY_RIGHT_MARGIN         "display-right-margin"
 #define PLUMA_SETTINGS_RIGHT_MARGIN_POSITION        "right-margin-position"
 #define PLUMA_SETTINGS_WRITABLE_VFS_SCHEMES         "writable-vfs-schemes"

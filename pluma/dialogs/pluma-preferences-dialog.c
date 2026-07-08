@@ -101,9 +101,13 @@ struct _PlumaPreferencesDialogPrivate
 	GtkWidget	*tabs_width_spinbutton;
 	GtkWidget	*insert_spaces_checkbutton;
 	GtkWidget	*tabs_width_hbox;
+	GtkWidget	*smart_backspace_checkbutton;
 
 	/* Auto indentation */
 	GtkWidget	*auto_indent_checkbutton;
+
+	/* Automatic completion */
+	GtkWidget	*bracket_completion_checkbutton;
 
 	/* Draw spaces... */
 	GtkWidget       *draw_spaces_checkbutton;
@@ -329,8 +333,18 @@ setup_editor_page (PlumaPreferencesDialog *dlg)
 			 "active",
 			 G_SETTINGS_BIND_GET | G_SETTINGS_BIND_SET);
 	g_settings_bind (dlg->priv->editor_settings,
+			 PLUMA_SETTINGS_SMART_INDENTATION_BACKSPACE,
+			 dlg->priv->smart_backspace_checkbutton,
+			 "active",
+			 G_SETTINGS_BIND_GET | G_SETTINGS_BIND_SET);
+	g_settings_bind (dlg->priv->editor_settings,
 			 PLUMA_SETTINGS_AUTO_INDENT,
 			 dlg->priv->auto_indent_checkbutton,
+			 "active",
+			 G_SETTINGS_BIND_GET | G_SETTINGS_BIND_SET);
+	g_settings_bind (dlg->priv->editor_settings,
+			 PLUMA_SETTINGS_BRACKET_COMPLETION,
+			 dlg->priv->bracket_completion_checkbutton,
 			 "active",
 			 G_SETTINGS_BIND_GET | G_SETTINGS_BIND_SET);
 	g_settings_bind (dlg->priv->editor_settings,
@@ -1263,6 +1277,8 @@ pluma_preferences_dialog_init (PlumaPreferencesDialog *dlg)
 		"tabs_width_spinbutton", &dlg->priv->tabs_width_spinbutton,
 		"tabs_width_hbox", &dlg->priv->tabs_width_hbox,
 		"insert_spaces_checkbutton", &dlg->priv->insert_spaces_checkbutton,
+		"smart_backspace_checkbutton", &dlg->priv->smart_backspace_checkbutton,
+		"bracket_completion_checkbutton", &dlg->priv->bracket_completion_checkbutton,
 
 		"auto_indent_checkbutton", &dlg->priv->auto_indent_checkbutton,
 

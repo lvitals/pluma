@@ -775,6 +775,7 @@ static const gchar * const document_action_names[] = {
     "undo", "redo", "cut", "copy", "paste", "delete", "select-all",
     "zoom-in", "zoom-out", "zoom-reset",
     "uppercase", "lowercase", "invert-case", "title-case",
+    "toggle-line-comment", "toggle-block-comment",
     "find", "find-in-files", "find-next", "find-previous", "replace",
     "clear-highlight", "goto-line", "incremental-search",
     NULL

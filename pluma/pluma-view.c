@@ -45,6 +45,8 @@
 #include <glib/gi18n.h>
 
 #include "pluma-view.h"
+#include "pluma-bracket-completion.h"
+#include "pluma-smart-backspace.h"
 #include "pluma-view-activatable.h"
 #include "pluma-plugins-engine.h"
 #include "pluma-debug.h"
@@ -107,6 +109,8 @@ struct _PlumaViewPrivate
     PangoFontDescription *font_desc;
 
     PeasExtensionSet     *extensions;
+
+    PlumaBracketCompletion *bracket_completion;
 };
 
 /* The search entry completion is shared among all the views */
@@ -175,6 +179,13 @@ static void     search_highlight_updated_cb  (PlumaDocument    *doc,
 static void    pluma_view_delete_from_cursor (GtkTextView     *text_view,
                                               GtkDeleteType    type,
                                               gint             count);
+
+static gboolean pluma_view_key_press_event   (GtkWidget      *widget,
+                                              GdkEventKey    *event);
+
+static void     pluma_view_event_after       (GtkWidget      *widget,
+                                              GdkEvent       *event,
+                                              gpointer        user_data);
 
 G_DEFINE_TYPE_WITH_PRIVATE (PlumaView, pluma_view, GTK_SOURCE_TYPE_VIEW)
 
@@ -252,6 +263,7 @@ pluma_view_class_init (PlumaViewClass *klass)
     widget_class->focus_out_event = pluma_view_focus_out;
     widget_class->draw = pluma_view_draw;
     widget_class->scroll_event = pluma_view_scroll_event;
+    widget_class->key_press_event = pluma_view_key_press_event;
 
     /*
      * Override the gtk_text_view_drag_motion and drag_drop
@@ -375,6 +387,8 @@ current_buffer_removed (PlumaView *view)
 {
     if (view->priv->current_buffer)
     {
+        pluma_bracket_completion_detach (view->priv->bracket_completion);
+
         g_signal_handlers_disconnect_by_func (view->priv->current_buffer,
                                               document_read_only_notify_handler,
                                               view);
@@ -401,6 +415,8 @@ on_notify_buffer_cb (PlumaView  *view,
         return;
 
     view->priv->current_buffer = g_object_ref (buffer);
+    pluma_bracket_completion_attach (view->priv->bracket_completion, buffer);
+
     g_signal_connect (buffer,
                       "notify::read-only",
                       G_CALLBACK (document_read_only_notify_handler),
@@ -413,6 +429,31 @@ on_notify_buffer_cb (PlumaView  *view,
                       "search_highlight_updated",
                       G_CALLBACK (search_highlight_updated_cb),
                       view);
+}
+
+static gboolean
+pluma_view_key_press_event (GtkWidget   *widget,
+                            GdkEventKey *event)
+{
+    PlumaView *view = PLUMA_VIEW (widget);
+
+    if (pluma_bracket_completion_key_press (view->priv->bracket_completion, event))
+        return TRUE;
+
+    if (pluma_smart_backspace_key_press (view, view->priv->editor_settings, event))
+        return TRUE;
+
+    return GTK_WIDGET_CLASS (pluma_view_parent_class)->key_press_event (widget, event);
+}
+
+static void
+pluma_view_event_after (GtkWidget *widget,
+                        GdkEvent  *event,
+                        gpointer   user_data)
+{
+    PlumaView *view = PLUMA_VIEW (widget);
+
+    pluma_bracket_completion_event_after (view->priv->bracket_completion, event);
 }
 
 #ifdef GTK_SOURCE_VERSION_3_24
@@ -589,6 +630,8 @@ pluma_view_init (PlumaView *view)
 
     view->priv->typeselect_flush_timeout = 0;
     view->priv->wrap_around = TRUE;
+    view->priv->bracket_completion =
+            pluma_bracket_completion_new (view, view->priv->editor_settings);
 
     /* Drag and drop support */
     tl = gtk_drag_dest_get_target_list (GTK_WIDGET (view));
@@ -607,6 +650,11 @@ pluma_view_init (PlumaView *view)
     g_signal_connect (view,
                       "notify::buffer",
                       G_CALLBACK (on_notify_buffer_cb),
+                      NULL);
+
+    g_signal_connect (view,
+                      "event-after",
+                      G_CALLBACK (pluma_view_event_after),
                       NULL);
 }
 
@@ -647,6 +695,7 @@ pluma_view_dispose (GObject *object)
 
     g_clear_object (&view->priv->css_provider);
     g_clear_pointer (&view->priv->font_desc, pango_font_description_free);
+    g_clear_pointer (&view->priv->bracket_completion, pluma_bracket_completion_free);
 
     (* G_OBJECT_CLASS (pluma_view_parent_class)->dispose) (object);
 }

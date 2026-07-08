@@ -146,6 +146,12 @@ void		_pluma_cmd_edit_invert_case			(GSimpleAction *action,
 void		_pluma_cmd_edit_title_case			(GSimpleAction *action,
 							 GVariant      *parameter,
 							 gpointer       user_data);
+void		_pluma_cmd_edit_toggle_line_comment		(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_toggle_block_comment		(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
 void		_pluma_cmd_edit_select_all			(GSimpleAction *action,
 							 GVariant      *parameter,
 							 gpointer       user_data);

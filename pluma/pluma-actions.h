@@ -78,6 +78,8 @@ static const GActionEntry pluma_window_action_entries[] =
 	{ "lowercase",         _pluma_cmd_edit_lower_case },
 	{ "invert-case",       _pluma_cmd_edit_invert_case },
 	{ "title-case",        _pluma_cmd_edit_title_case },
+	{ "toggle-line-comment", _pluma_cmd_edit_toggle_line_comment },
+	{ "toggle-block-comment", _pluma_cmd_edit_toggle_block_comment },
 	{ "preferences",       _pluma_cmd_edit_preferences },
 
 	/* View menu */
@@ -128,6 +130,8 @@ static const gchar * const select_all_accels[]        = { "<Control>a", NULL };
 static const gchar * const zoom_in_accels[]           = { "<Control>plus", NULL };
 static const gchar * const zoom_out_accels[]          = { "<Control>minus", NULL };
 static const gchar * const zoom_reset_accels[]        = { "<Control>equal", NULL };
+static const gchar * const toggle_line_comment_accels[] = { "<Control>m", NULL };
+static const gchar * const toggle_block_comment_accels[] = { "<Control><Shift>m", NULL };
 static const gchar * const find_accels[]              = { "<Control>f", NULL };
 static const gchar * const find_in_files_accels[]     = { "<Control><Shift>f", NULL };
 static const gchar * const find_next_accels[]         = { "<Control>g", NULL };
@@ -166,6 +170,8 @@ static const PlumaActionAccel pluma_window_action_accels[] =
 	{ "zoom-in",           zoom_in_accels },
 	{ "zoom-out",          zoom_out_accels },
 	{ "zoom-reset",        zoom_reset_accels },
+	{ "toggle-line-comment", toggle_line_comment_accels },
+	{ "toggle-block-comment", toggle_block_comment_accels },
 	{ "find",              find_accels },
 	{ "find-in-files",     find_in_files_accels },
 	{ "find-next",         find_next_accels },

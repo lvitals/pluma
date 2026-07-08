@@ -42,7 +42,9 @@ BUILT_SOURCES = 			\
 
 NOINST_H_FILES =			\
 	pluma-action-migration.h	\
+	pluma-bracket-completion.h	\
 	pluma-close-button.h		\
+	pluma-comment.h			\
 	pluma-dirs.h			\
 	pluma-document-input-stream.h	\
 	pluma-document-loader.h		\
@@ -73,6 +75,7 @@ NOINST_H_FILES =			\
 	pluma-project-search-panel.h	\
 	pluma-session.h			\
 	pluma-settings.h		\
+	pluma-smart-backspace.h	\
 	pluma-smart-charset-converter.h	\
 	pluma-style-scheme-manager.h	\
 	pluma-tab-label.h		\
@@ -119,7 +122,9 @@ libpluma_c_files = 			\
 	pluma-app.c			\
 	pluma-app-activatable.c 	\
 	pluma-application.c		\
+	pluma-bracket-completion.c	\
 	pluma-close-button.c		\
+	pluma-comment.c			\
 	pluma-commands-documents.c	\
 	pluma-commands-edit.c		\
 	pluma-commands-file.c		\
@@ -162,6 +167,7 @@ libpluma_c_files = 			\
 	pluma-project-search-panel.c	\
 	pluma-session.c			\
 	pluma-settings.c		\
+	pluma-smart-backspace.c	\
 	pluma-smart-charset-converter.c	\
 	pluma-statusbar.c		\
 	pluma-status-combo-box.c	\

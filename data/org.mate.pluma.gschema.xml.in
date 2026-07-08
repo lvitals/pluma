@@ -100,6 +100,16 @@
       <summary>Highlight Matching Bracket</summary>
       <description>Whether pluma should highlight the bracket matching the selected one.</description>
     </key>
+    <key name="bracket-completion" type="b">
+      <default>false</default>
+      <summary>Automatic Bracket Completion</summary>
+      <description>Whether pluma should automatically close brackets, parentheses, quotes and similar pairs as they are typed.</description>
+    </key>
+    <key name="smart-indentation-backspace" type="b">
+      <default>false</default>
+      <summary>Smart Indentation Backspace</summary>
+      <description>Whether pluma should delete a full indentation level with a single Backspace when spaces are used instead of tabs.</description>
+    </key>
     <key name="display-right-margin" type="b">
       <default>false</default>
       <summary>Display Right Margin</summary>
