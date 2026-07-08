@@ -551,9 +551,31 @@ static const GActionEntry quick_open_action_entries[] =
 #define QUICK_OPEN_DETAILED_ACTION_NAME QUICK_OPEN_ACTION_PREFIX ".quick-open"
 
 static void
+set_quick_open_accel (PlumaWindow *window)
+{
+	GtkApplication *application = gtk_window_get_application (GTK_WINDOW (window));
+
+	if (application != NULL)
+	{
+		const gchar * const accels[] = { "<Control><Alt>p", NULL };
+
+		gtk_application_set_accels_for_action (application, QUICK_OPEN_DETAILED_ACTION_NAME, accels);
+	}
+}
+
+static void
+on_quick_open_application_notify (GtkWindow *window, GParamSpec *pspec, gpointer user_data)
+{
+	if (gtk_window_get_application (window) != NULL)
+	{
+		set_quick_open_accel (PLUMA_WINDOW (window));
+		g_signal_handlers_disconnect_by_func (window, on_quick_open_application_notify, user_data);
+	}
+}
+
+static void
 add_quick_open_ui (PlumaFileBrowserPanel *priv)
 {
-	GtkApplication *application;
 	GMenuItem *item;
 
 	priv->quick_open_action_group =
@@ -564,13 +586,15 @@ add_quick_open_ui (PlumaFileBrowserPanel *priv)
 	                                            QUICK_OPEN_ACTION_PREFIX,
 	                                            priv->quick_open_action_group);
 
-	application = gtk_window_get_application (GTK_WINDOW (priv->window));
-	if (application != NULL)
-	{
-		const gchar * const accels[] = { "<Control><Alt>p", NULL };
-
-		gtk_application_set_accels_for_action (application, QUICK_OPEN_DETAILED_ACTION_NAME, accels);
-	}
+	/* The panel is constructed before the window is attached to the
+	 * GtkApplication (pluma_app_create_window() runs before
+	 * gtk_application_add_window()), so gtk_window_get_application() can
+	 * still be NULL here; defer setting the accelerator until it isn't. */
+	if (gtk_window_get_application (GTK_WINDOW (priv->window)) != NULL)
+		set_quick_open_accel (priv->window);
+	else
+		g_signal_connect (priv->window, "notify::application",
+		                  G_CALLBACK (on_quick_open_application_notify), NULL);
 
 	item = g_menu_item_new (_("_Quick Open..."), QUICK_OPEN_DETAILED_ACTION_NAME);
 	if (!pluma_window_add_menu_item (priv->window, "plugin-search-section", item))
@@ -759,6 +783,19 @@ file_browser_escape_key_press (GtkWidget *widget, GdkEventKey *event, gpointer d
 	return GDK_EVENT_STOP;
 }
 
+static void
+on_widget_application_notify (GtkWindow *window, GParamSpec *pspec, gpointer user_data)
+{
+	GtkApplication *application = gtk_window_get_application (window);
+
+	if (application != NULL)
+	{
+		pluma_file_browser_widget_install_modern_actions (PLUMA_FILE_BROWSER_WIDGET (user_data),
+		                                                  application);
+		g_signal_handlers_disconnect_by_func (window, on_widget_application_notify, user_data);
+	}
+}
+
 GtkWidget *
 pluma_file_browser_panel_new (PlumaWindow *window)
 {
@@ -778,6 +815,9 @@ pluma_file_browser_panel_new (PlumaWindow *window)
 		GtkApplication *application = gtk_window_get_application (GTK_WINDOW (window));
 		if (application != NULL)
 			pluma_file_browser_widget_install_modern_actions (priv->tree_widget, application);
+		else
+			g_signal_connect (window, "notify::application",
+			                  G_CALLBACK (on_widget_application_notify), priv->tree_widget);
 	}
 
 	priv->settings = g_settings_new (FILE_BROWSER_SCHEMA);

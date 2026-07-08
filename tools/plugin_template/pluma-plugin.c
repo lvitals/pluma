@@ -26,6 +26,9 @@
 #include <pluma/pluma-window.h>
 #include <pluma/pluma-window-activatable.h>
 #include <pluma/pluma-debug.h>
+##ifdef WITH_MENU
+#include <pluma/pluma-action-migration.h>
+##endif
 ##ifdef WITH_CONFIGURE_DIALOG
 #include <libpeas-gtk/peas-gtk-configurable.h>
 ##endif
@@ -38,8 +41,13 @@ struct _##(PLUGIN_ID.camel)PluginPrivate
 {
 	PlumaWindow        *window;
 
-	GtkActionGroup   *action_group;
-	guint             ui_id;
+##ifdef WITH_MENU
+	/* "##(PLUGIN_MODULE)" is the action-group prefix used by
+	 * gtk_widget_insert_action_group() below; actions added here are
+	 * reachable as "##(PLUGIN_MODULE).<name>" from menu items and
+	 * gtk_application_set_accels_for_action(). */
+	GSimpleActionGroup *action_group;
+##endif
 };
 
 enum {
@@ -55,18 +63,12 @@ G_DEFINE_DYNAMIC_TYPE_EXTENDED (##(PLUGIN_ID.camel)Plugin,
                                 G_IMPLEMENT_INTERFACE_DYNAMIC (PLUMA_TYPE_WINDOW_ACTIVATABLE,
                                                                pluma_window_activatable_iface_init))
 ##ifdef WITH_MENU
-/* UI string. See pluma-ui.xml for reference */
-const gchar submenu[] =
-"<ui>"
-"  <menubar name='MenuBar'>"
-"    <!-- Put your menu entries here -->"
-"  </menubar>"
-"</ui>";
-
-/* UI actions */
-static const GtkActionEntry action_entries[] =
+/* Forward-declare your action callbacks above this table, with signature
+ * (GSimpleAction *action, GVariant *parameter, gpointer user_data); cast
+ * user_data back with ##(PLUGIN_ID.upper)_PLUGIN (user_data). */
+static const GActionEntry action_entries[] =
 	{
-		/* Put your actions here */
+		/* { "my-action", my_action_activated }, */
 	};
 ##endif
 
@@ -100,11 +102,9 @@ static void
 		plugin->priv->window = NULL;
 	}
 
-	if (plugin->priv->action_group)
-	{
-		g_object_unref (plugin->priv->action_group);
-		plugin->priv->action_group = NULL;
-	}
+##ifdef WITH_MENU
+	g_clear_object (&plugin->priv->action_group);
+##endif
 
 	G_OBJECT_CLASS (##(PLUGIN_ID.lower)_plugin_parent_class)->dispose (object);
 }
@@ -115,7 +115,7 @@ update_ui (##(PLUGIN_ID.camel)PluginPrivate *data)
 ##ifdef WITH_MENU
 	PlumaWindow *window;
 	PlumaView *view;
-	GtkAction *action;
+	GAction *action;
 ##endif
 
 	pluma_debug (DEBUG_PLUGINS);
@@ -126,11 +126,12 @@ update_ui (##(PLUGIN_ID.camel)PluginPrivate *data)
 
 	pluma_debug_message (DEBUG_PLUGINS, "View: %p", view);
 
-	action = gtk_action_group_get_action (data->action_group,
-                                              "##(PLUGIN_ID.camel)PluginActions");
-	gtk_action_set_sensitive (action,
-                                  (view != NULL) &&
-                                  gtk_text_view_get_editable (GTK_TEXT_VIEW (view)));
+	/* Repeat per action name if you added more than one. */
+	action = g_action_map_lookup_action (G_ACTION_MAP (data->action_group), "my-action");
+	if (action != NULL)
+		g_simple_action_set_enabled (G_SIMPLE_ACTION (action),
+		                             (view != NULL) &&
+		                             gtk_text_view_get_editable (GTK_TEXT_VIEW (view)));
 ##endif
 }
 
@@ -141,8 +142,7 @@ static void
 ##ifdef WITH_MENU
 	##(PLUGIN_ID.camel)PluginPrivate *data;
 	PlumaWindow *window;
-	GtkUIManager *manager;
-	GError *error = NULL;
+	GMenuItem *item;
 ##endif
 
 	pluma_debug (DEBUG_PLUGINS);
@@ -151,27 +151,24 @@ static void
 	data = ##(PLUGIN_ID.upper)_PLUGIN (activatable)->priv;
 	window = PLUMA_WINDOW (data->window);
 
-	manager = pluma_window_get_ui_manager (window);
+	/* Registers a "##(PLUGIN_MODULE).<name>" GAction for each entry above,
+	 * reachable from menu items and gtk_application_set_accels_for_action()
+	 * (use the application from gtk_window_get_application(GTK_WINDOW(window)),
+	 * deferring via the window's "notify::application" signal if it is
+	 * still NULL at this point -- see pluma-spell-plugin.c for a worked
+	 * example of that deferral). */
+	data->action_group = pluma_action_migration_create_plugin_group (
+		action_entries, G_N_ELEMENTS (action_entries), activatable);
+	gtk_widget_insert_action_group (GTK_WIDGET (window), "##(PLUGIN_MODULE)",
+	                                G_ACTION_GROUP (data->action_group));
 
-	data->action_group = gtk_action_group_new ("##(PLUGIN_ID.camel)PluginActions");
-	gtk_action_group_set_translation_domain (data->action_group,
-                                                 GETTEXT_PACKAGE);
-	gtk_action_group_add_actions (data->action_group,
-                                      action_entries,
-                                      G_N_ELEMENTS (action_entries),
-                                      window);
+	/* Repeat per action to add more than one menu item. Valid section ids
+	 * are declared in pluma-menus.ui: "plugin-tools-section",
+	 * "plugin-edit-section", "plugin-search-section". */
+	item = g_menu_item_new (_("My Action"), "##(PLUGIN_MODULE).my-action");
+	pluma_window_add_menu_item (window, "plugin-tools-section", item);
+	g_object_unref (item);
 
-	gtk_ui_manager_insert_action_group (manager, data->action_group, -1);
-
-	data->ui_id = gtk_ui_manager_add_ui_from_string (manager,
-                                                         submenu,
-                                                         -1,
-                                                         &error);
-	if (data->ui_id == 0)
-	{
-		g_warning ("%s", error->message);
-		return;
-	}
 	update_ui (data);
 ##endif
 }
@@ -182,7 +179,6 @@ static void
 ##ifdef WITH_MENU
 	##(PLUGIN_ID.camel)PluginPrivate *data;
 	PlumaWindow *window;
-	GtkUIManager *manager;
 ##endif
 
 	pluma_debug (DEBUG_PLUGINS);
@@ -191,10 +187,9 @@ static void
 	data = ##(PLUGIN_ID.upper)_PLUGIN (activatable)->priv;
 	window = PLUMA_WINDOW (data->window);
 
-	manager = pluma_window_get_ui_manager (window);
-
-	gtk_ui_manager_remove_ui (manager, data->ui_id);
-	gtk_ui_manager_remove_action_group (manager, data->action_group);
+	pluma_window_remove_menu_items (window, "plugin-tools-section", "##(PLUGIN_MODULE).my-action");
+	gtk_widget_insert_action_group (GTK_WIDGET (window), "##(PLUGIN_MODULE)", NULL);
+	g_clear_object (&data->action_group);
 ##endif
 }
 
