@@ -45,9 +45,10 @@
 
 void
 _pluma_cmd_view_show_toolbar (GSimpleAction *action,
-			      GVariant      *state,
-			      PlumaWindow   *window)
+                             GVariant      *state,
+                             gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	gboolean visible;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -64,9 +65,10 @@ _pluma_cmd_view_show_toolbar (GSimpleAction *action,
 
 void
 _pluma_cmd_view_show_statusbar (GSimpleAction *action,
-				GVariant      *state,
-				PlumaWindow   *window)
+                               GVariant      *state,
+                               gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	gboolean visible;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -83,9 +85,10 @@ _pluma_cmd_view_show_statusbar (GSimpleAction *action,
 
 void
 _pluma_cmd_view_show_side_pane (GSimpleAction *action,
-				GVariant      *state,
-				PlumaWindow   *window)
+                               GVariant      *state,
+                               gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	gboolean visible;
 	PlumaPanel *panel;
 
@@ -110,9 +113,10 @@ _pluma_cmd_view_show_side_pane (GSimpleAction *action,
 
 void
 _pluma_cmd_view_show_bottom_pane (GSimpleAction *action,
-				  GVariant      *state,
-				  PlumaWindow   *window)
+                                 GVariant      *state,
+                                 gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	gboolean visible;
 	PlumaPanel *panel;
 
@@ -137,9 +141,10 @@ _pluma_cmd_view_show_bottom_pane (GSimpleAction *action,
 
 void
 _pluma_cmd_view_show_right_pane (GSimpleAction *action,
-				 GVariant      *state,
-				 PlumaWindow   *window)
+                                GVariant      *state,
+                                gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	gboolean visible;
 	PlumaPanel *panel;
 
@@ -163,9 +168,11 @@ _pluma_cmd_view_show_right_pane (GSimpleAction *action,
 }
 
 void
-_pluma_cmd_view_toggle_fullscreen_mode (GtkAction *action,
-					PlumaWindow *window)
+_pluma_cmd_view_toggle_fullscreen_mode (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	pluma_debug (DEBUG_COMMANDS);
 
 	if (_pluma_window_is_fullscreen (window))
@@ -175,20 +182,15 @@ _pluma_cmd_view_toggle_fullscreen_mode (GtkAction *action,
 }
 
 void
-_pluma_cmd_view_leave_fullscreen_mode (GtkAction *action,
-				       PlumaWindow *window)
+_pluma_cmd_view_leave_fullscreen_mode (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
-	GtkAction *view_action;
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 
-	view_action = gtk_action_group_get_action (window->priv->always_sensitive_action_group,
-						   "ViewFullscreen");
-	g_signal_handlers_block_by_func
-		(view_action, G_CALLBACK (_pluma_cmd_view_toggle_fullscreen_mode),
-		 window);
-	gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (view_action),
-				      FALSE);
+	pluma_debug (DEBUG_COMMANDS);
+
+	/* _pluma_window_unfullscreen() keeps the "fullscreen" GAction's state
+	 * in sync (see pluma-window.c); no need to touch it here. */
 	_pluma_window_unfullscreen (window);
-	g_signal_handlers_unblock_by_func
-		(view_action, G_CALLBACK (_pluma_cmd_view_toggle_fullscreen_mode),
-		 window);
 }

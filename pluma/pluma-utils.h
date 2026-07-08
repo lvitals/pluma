@@ -42,11 +42,12 @@
 
 G_BEGIN_DECLS
 
-/* useful macro */
-#define GBOOLEAN_TO_POINTER(i) (GINT_TO_POINTER ((i) ? 2 : 1))
-#define GPOINTER_TO_BOOLEAN(i) ((gboolean) ((GPOINTER_TO_INT(i) == 2) ? TRUE : FALSE))
-
-#define IS_VALID_BOOLEAN(v) (((v == TRUE) || (v == FALSE)) ? TRUE : FALSE)
+/* Un-prefixed macro names are indistinguishable, to g-ir-scanner's
+ * namespace heuristics, from foreign symbols; the "PLUMA_" prefix avoids
+ * that (see pluma_utils_menu_popup_at_treeview_selection() and
+ * pluma_utils_utf8_caselessnmatch() above, renamed for the same reason). */
+#define PLUMA_BOOLEAN_TO_POINTER(i) (GINT_TO_POINTER ((i) ? 2 : 1))
+#define PLUMA_POINTER_TO_BOOLEAN(i) ((gboolean) ((GPOINTER_TO_INT(i) == 2) ? TRUE : FALSE))
 
 enum { PLUMA_ALL_WORKSPACES = 0xffffffff };
 
@@ -59,7 +60,7 @@ void		 pluma_utils_menu_position_under_widget (GtkMenu  *menu,
 							 gboolean *push_in,
 							 gpointer  user_data);
 
-void		 menu_popup_at_treeview_selection	(GtkWidget *menu,
+void		 pluma_utils_menu_popup_at_treeview_selection	(GtkWidget *menu,
 							 GtkWidget *treeview);
 
 GtkWidget	*pluma_gtk_button_new_with_icon		(const gchar *label,
@@ -79,7 +80,7 @@ gchar		*pluma_utils_str_middle_truncate	(const gchar *string,
 gchar		*pluma_utils_str_end_truncate		(const gchar *string,
 							 guint        truncate_length);
 
-gboolean	 g_utf8_caselessnmatch			(const char *s1,
+gboolean	 pluma_utils_utf8_caselessnmatch			(const char *s1,
 							 const char *s2,
 							 gssize n1,
 							 gssize n2);

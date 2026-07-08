@@ -38,8 +38,6 @@
 #include <pluma/pluma-debug.h>
 #include <pluma/pluma-utils.h>
 
-#define MENU_PATH "/MenuBar/ToolsMenu/ToolsOps_2"
-
 static void pluma_window_activatable_iface_init (PlumaWindowActivatableInterface *iface);
 
 typedef struct
@@ -63,9 +61,7 @@ struct _PlumaDocInfoPluginPrivate
 {
 	PlumaWindow *window;
 
-	GtkActionGroup *ui_action_group;
 	GSimpleActionGroup *modern_action_group;
-	guint ui_id;
 
 	DocInfoDialog *dialog;
 };
@@ -357,8 +353,7 @@ selectioninfo_real (PlumaDocument *doc,
 }
 
 static void
-docinfo_cb (GtkAction	*action,
-	    PlumaDocInfoPlugin *plugin)
+docinfo_cb (PlumaDocInfoPlugin *plugin)
 {
 	PlumaDocInfoPluginPrivate *data;
 	PlumaWindow *window;
@@ -435,20 +430,10 @@ docinfo_dialog_response_cb (GtkDialog	*widget,
 	}
 }
 
-static const GtkActionEntry action_entries[] =
-{
-	{ "DocumentStatistics",
-	  NULL,
-	  N_("_Document Statistics"),
-	  NULL,
-	  N_("Get statistical information on the current document"),
-	  G_CALLBACK (docinfo_cb) }
-};
-
 static void
 docinfo_action_activated (GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
-	docinfo_cb (NULL, PLUMA_DOCINFO_PLUGIN (user_data));
+	docinfo_cb (PLUMA_DOCINFO_PLUGIN (user_data));
 }
 
 static const GActionEntry modern_action_entries[] =
@@ -467,8 +452,6 @@ update_ui (PlumaDocInfoPluginPrivate *data)
 	window = PLUMA_WINDOW (data->window);
 	view = pluma_window_get_active_view (window);
 
-	gtk_action_group_set_sensitive (data->ui_action_group,
-					(view != NULL));
 	if (data->modern_action_group != NULL)
 	{
 		GAction *action = g_action_map_lookup_action (G_ACTION_MAP (data->modern_action_group), "statistics");
@@ -504,11 +487,6 @@ pluma_docinfo_plugin_dispose (GObject *object)
 		plugin->priv->window = NULL;
 	}
 
-	if (plugin->priv->ui_action_group != NULL)
-	{
-		g_object_unref (plugin->priv->ui_action_group);
-		plugin->priv->ui_action_group = NULL;
-	}
 	g_clear_object (&plugin->priv->modern_action_group);
 
 	G_OBJECT_CLASS (pluma_docinfo_plugin_parent_class)->dispose (object);
@@ -560,7 +538,6 @@ pluma_docinfo_plugin_activate (PlumaWindowActivatable *activatable)
 	PlumaDocInfoPlugin *plugin;
 	PlumaDocInfoPluginPrivate *data;
 	PlumaWindow *window;
-	GtkUIManager *manager;
 
 	pluma_debug (DEBUG_PLUGINS);
 
@@ -569,29 +546,6 @@ pluma_docinfo_plugin_activate (PlumaWindowActivatable *activatable)
 	window = PLUMA_WINDOW (data->window);
 
 	data->dialog = NULL;
-	data->ui_action_group = gtk_action_group_new ("PlumaDocInfoPluginActions");
-
-	gtk_action_group_set_translation_domain (data->ui_action_group,
-						 GETTEXT_PACKAGE);
-	gtk_action_group_add_actions (data->ui_action_group,
-				      action_entries,
-				      G_N_ELEMENTS (action_entries),
-				      plugin);
-
-	manager = pluma_window_get_ui_manager (window);
-	gtk_ui_manager_insert_action_group (manager,
-					    data->ui_action_group,
-					    -1);
-
-	data->ui_id = gtk_ui_manager_new_merge_id (manager);
-
-	gtk_ui_manager_add_ui (manager,
-			       data->ui_id,
-			       MENU_PATH,
-			       "DocumentStatistics",
-			       "DocumentStatistics",
-			       GTK_UI_MANAGER_MENUITEM,
-			       FALSE);
 
 	data->modern_action_group = g_simple_action_group_new ();
 	g_action_map_add_action_entries (G_ACTION_MAP (data->modern_action_group),
@@ -614,19 +568,12 @@ pluma_docinfo_plugin_deactivate (PlumaWindowActivatable *activatable)
 {
 	PlumaDocInfoPluginPrivate *data;
 	PlumaWindow *window;
-	GtkUIManager *manager;
 
 	pluma_debug (DEBUG_PLUGINS);
 
 	data = PLUMA_DOCINFO_PLUGIN (activatable)->priv;
 	window = PLUMA_WINDOW (data->window);
 
-	manager = pluma_window_get_ui_manager (window);
-
-	gtk_ui_manager_remove_ui (manager,
-				  data->ui_id);
-	gtk_ui_manager_remove_action_group (manager,
-				    data->ui_action_group);
 	gtk_widget_insert_action_group (GTK_WIDGET (window), "plugin-docinfo", NULL);
 	pluma_window_remove_menu_items (window, "plugin-tools-section",
 	                                "plugin-docinfo.statistics");

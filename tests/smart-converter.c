@@ -32,19 +32,6 @@
 #define TEXT_TO_CONVERT "this is some text to make the tests"
 #define TEXT_TO_GUESS "hello \xe6\x96\x87 world"
 
-static void
-print_hex (gchar *ptr, gint len)
-{
-	gint i;
-
-	for (i = 0; i < len; ++i)
-	{
-		g_printf ("\\x%02x", (unsigned char)ptr[i]);
-	}
-
-	g_printf ("\n");
-}
-
 static gchar *
 get_encoded_text (const gchar         *text,
                   gsize                nread,
@@ -122,7 +109,7 @@ get_encoded_text (const gchar         *text,
 }
 
 static GSList *
-get_all_encodings ()
+get_all_encodings (void)
 {
 	GSList *encs = NULL;
 	gint i = 0;
@@ -241,7 +228,7 @@ do_test_roundtrip (const char *str, const char *charset)
 		res = g_input_stream_read (in, p, n, NULL, &err);
 		g_assert_no_error (err);
 		if (res == 0)
-		break;
+			break;
 
 		p += res;
 		n -= res;
@@ -256,7 +243,7 @@ do_test_roundtrip (const char *str, const char *charset)
 }
 
 static void
-test_utf8_utf8 ()
+test_utf8_utf8 (void)
 {
 	gchar *aux;
 
@@ -274,7 +261,7 @@ test_utf8_utf8 ()
 }
 
 static void
-test_xxx_xxx ()
+test_xxx_xxx (void)
 {
 	GSList *encs, *l;
 
@@ -291,7 +278,7 @@ test_xxx_xxx ()
 }
 
 static void
-test_empty ()
+test_empty (void)
 {
 	const PlumaEncoding *guessed;
 	gchar *out;
@@ -312,7 +299,7 @@ test_empty ()
 }
 
 static void
-test_guessed ()
+test_guessed (void)
 {
 	GSList *encs = NULL;
 	gchar *aux, *aux2, *fail;
@@ -351,7 +338,7 @@ int main (int   argc,
 	g_test_init (&argc, &argv, NULL);
 
 	g_test_add_func ("/smart-converter/utf8-utf8", test_utf8_utf8);
-	//g_test_add_func ("/smart-converter/xxx-xxx", test_xxx_xxx);
+	g_test_add_func ("/smart-converter/xxx-xxx", test_xxx_xxx);
 	g_test_add_func ("/smart-converter/guessed", test_guessed);
 	g_test_add_func ("/smart-converter/empty", test_empty);
 

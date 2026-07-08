@@ -71,7 +71,7 @@ noinst_h_files = [
   'pluma-style-scheme-manager.h',
   'pluma-tab-label.h',
   'plumatextregion.h',
-  'pluma-ui.h',
+  'pluma-actions.h',
   'pluma-window-private.h',
 ]
 
@@ -214,7 +214,6 @@ install_headers(inst_h_files, subdir: 'pluma')
 
 # UI and metadata files
 install_data([
-    'pluma-ui.xml',
     'pluma-menus.ui',
     'pluma-print-preferences.ui',
     'pluma-file-browser-widget-ui.xml',

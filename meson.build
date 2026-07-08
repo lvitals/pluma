@@ -205,7 +205,6 @@ conf_data.set('TOOLBAR_STYLE', 'PLUMA_TOOLBAR_SYSTEM')
 
 if build_lualoader
   conf_data.set('HAVE_LUA', 1)
-  conf_data.set_quoted('LUA_VERSION', '5.1')
   conf_data.set('HAVE_BUNDLED_LUA_LOADER', 1)
 endif
 

@@ -1568,7 +1568,7 @@ pluma_document_load_real (PlumaDocument       *doc,
 
 /**
  * pluma_document_load:
- * @doc: the #PlumaDocument.
+ * @document: the #PlumaDocument.
  * @uri: the uri where to load the document from.
  * @encoding: the #PlumaEncoding to encode the document.
  * @line_pos: the line to show.
@@ -1577,17 +1577,17 @@ pluma_document_load_real (PlumaDocument       *doc,
  * Load a document. This results in the "load" signal to be emitted.
  */
 void
-pluma_document_load (PlumaDocument       *doc,
+pluma_document_load (PlumaDocument       *document,
 		     const gchar         *uri,
 		     const PlumaEncoding *encoding,
 		     gint                 line_pos,
 		     gboolean             create)
 {
-	g_return_if_fail (PLUMA_IS_DOCUMENT (doc));
+	g_return_if_fail (PLUMA_IS_DOCUMENT (document));
 	g_return_if_fail (uri != NULL);
 	g_return_if_fail (pluma_utils_is_valid_uri (uri));
 
-	g_signal_emit (doc, document_signals[LOAD], 0, uri, encoding, line_pos, create);
+	g_signal_emit (document, document_signals[LOAD], 0, uri, encoding, line_pos, create);
 }
 
 /**

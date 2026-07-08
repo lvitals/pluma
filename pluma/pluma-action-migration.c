@@ -4,6 +4,14 @@
 
 #include "pluma-action-migration.h"
 
+/* This file is the temporary bridge between the legacy GtkAction/
+ * GtkActionGroup/GtkToggleAction API and GAction/GSimpleAction. Its whole
+ * purpose is to call the deprecated GTK3 action API, so the deprecation
+ * warnings are expected here and silenced locally rather than project-wide.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 typedef struct
 {
 	GtkAction *legacy_action;
@@ -170,3 +178,5 @@ pluma_action_migration_load_menu (const gchar *filename,
 	g_object_unref (builder);
 	return menu;
 }
+
+#pragma GCC diagnostic pop

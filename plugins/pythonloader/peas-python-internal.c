@@ -68,7 +68,6 @@ peas_python_internal_setup (gboolean already_initialized)
   PyObject *builtins_module, *globals, *result;
   PyObject *code = NULL, *failed_method = NULL;
   gboolean success = FALSE;
-  char *localedir = NULL;
 
 #define goto_error_if_failed(cond) \
   G_STMT_START { \

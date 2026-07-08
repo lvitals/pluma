@@ -44,9 +44,11 @@
 #include "pluma-debug.h"
 
 void
-_pluma_cmd_file_print_preview (GtkAction   *action,
-			       PlumaWindow *window)
+_pluma_cmd_file_print_preview (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaTab *tab;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -59,9 +61,11 @@ _pluma_cmd_file_print_preview (GtkAction   *action,
 }
 
 void
-_pluma_cmd_file_print (GtkAction   *action,
-		       PlumaWindow *window)
+_pluma_cmd_file_print (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaTab *tab;
 
 	pluma_debug (DEBUG_COMMANDS);

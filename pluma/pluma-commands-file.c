@@ -68,9 +68,11 @@ static void tab_state_changed_while_saving (PlumaTab    *tab,
 					    PlumaWindow *window);
 
 void
-_pluma_cmd_file_new (GtkAction   *action,
-		     PlumaWindow *window)
+_pluma_cmd_file_new (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	pluma_debug (DEBUG_COMMANDS);
 
 	pluma_window_create_tab (window, TRUE);
@@ -338,14 +340,14 @@ pluma_commands_load_uri (PlumaWindow         *window,
 
 /**
  * pluma_commands_load_uris:
- * @window:
- * @uris:
- * @encoding:
- * @line_pos:
+ * @window: a #PlumaWindow
+ * @uris: (element-type utf8): a list of URIs to load
+ * @encoding: (nullable): the #PlumaEncoding to use, or %NULL to auto-detect
+ * @line_pos: the line to show
  *
  * Ignore non-existing URIs
  *
- * Returns:
+ * Returns: the number of documents actually loaded
  */
 gint
 pluma_commands_load_uris (PlumaWindow         *window,
@@ -475,9 +477,11 @@ open_dialog_response_cb (PlumaFileChooserDialog *dialog,
 }
 
 void
-_pluma_cmd_file_open (GtkAction   *action,
-		      PlumaWindow *window)
+_pluma_cmd_file_open (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	GtkWidget *open_dialog;
 	gpointer data;
 	PlumaDocument *doc;
@@ -589,9 +593,11 @@ open_folder_dialog_response_cb (GtkFileChooser *dialog,
 }
 
 void
-_pluma_cmd_file_open_folder (GtkAction   *action,
-                             PlumaWindow *window)
+_pluma_cmd_file_open_folder (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	GtkWidget *dialog;
 	GFile *default_path;
 
@@ -798,7 +804,7 @@ save_next_tab:
 	{
 		tab = PLUMA_TAB (tabs_to_save_as->data);
 
-		if (GPOINTER_TO_BOOLEAN (g_object_get_data (G_OBJECT (tab),
+		if (PLUMA_POINTER_TO_BOOLEAN (g_object_get_data (G_OBJECT (tab),
 							    PLUMA_IS_CLOSING_TAB)) == TRUE)
 		{
 			g_object_set_data (G_OBJECT (tab),
@@ -990,9 +996,11 @@ file_save (PlumaTab    *tab,
 }
 
 void
-_pluma_cmd_file_save (GtkAction   *action,
-		     PlumaWindow *window)
+_pluma_cmd_file_save (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaTab *tab;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -1005,9 +1013,11 @@ _pluma_cmd_file_save (GtkAction   *action,
 }
 
 void
-_pluma_cmd_file_save_as (GtkAction   *action,
-			PlumaWindow *window)
+_pluma_cmd_file_save_as (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaTab *tab;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -1159,9 +1169,11 @@ pluma_commands_save_all_documents (PlumaWindow *window)
 }
 
 void
-_pluma_cmd_file_save_all (GtkAction   *action,
-			 PlumaWindow *window)
+_pluma_cmd_file_save_all (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	pluma_commands_save_all_documents (window);
 }
 
@@ -1348,9 +1360,11 @@ revert_dialog (PlumaWindow   *window,
 }
 
 void
-_pluma_cmd_file_revert (GtkAction   *action,
-		       PlumaWindow *window)
+_pluma_cmd_file_revert (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaTab       *tab;
 	PlumaDocument  *doc;
 	GtkWidget      *dialog;
@@ -1413,7 +1427,7 @@ really_close_tab (PlumaTab *tab)
 	{
 		gboolean is_quitting;
 
-		is_quitting = GPOINTER_TO_BOOLEAN (g_object_get_data (G_OBJECT (window),
+		is_quitting = PLUMA_POINTER_TO_BOOLEAN (g_object_get_data (G_OBJECT (window),
 								      PLUMA_IS_QUITTING));
 
 		if (is_quitting)
@@ -1585,7 +1599,7 @@ save_and_close_all_documents (const GList  *docs,
 				{
 					g_object_set_data (G_OBJECT (t),
 							   PLUMA_IS_CLOSING_TAB,
-							   GBOOLEAN_TO_POINTER (TRUE));
+							   PLUMA_BOOLEAN_TO_POINTER (TRUE));
 
 					tabs_to_save_as = g_slist_prepend (tabs_to_save_as,
 									   t);
@@ -1669,7 +1683,7 @@ close_all_tabs (PlumaWindow *window)
 	/* There is no document to save -> close all tabs */
 	pluma_window_close_all_tabs (window);
 
-	is_quitting = GPOINTER_TO_BOOLEAN (g_object_get_data (G_OBJECT (window),
+	is_quitting = PLUMA_POINTER_TO_BOOLEAN (g_object_get_data (G_OBJECT (window),
 							      PLUMA_IS_QUITTING));
 
 	if (is_quitting)
@@ -1714,7 +1728,7 @@ close_confirmation_dialog_response_handler (PlumaCloseConfirmationDialog *dlg,
 
 	pluma_debug (DEBUG_COMMANDS);
 
-	is_closing_all = GPOINTER_TO_BOOLEAN (g_object_get_data (G_OBJECT (window),
+	is_closing_all = PLUMA_POINTER_TO_BOOLEAN (g_object_get_data (G_OBJECT (window),
 					    			 PLUMA_IS_CLOSING_ALL));
 
 	gtk_widget_hide (GTK_WIDGET (dlg));
@@ -1787,7 +1801,7 @@ close_confirmation_dialog_response_handler (PlumaCloseConfirmationDialog *dlg,
 			/* Reset is_quitting flag */
 			g_object_set_data (G_OBJECT (window),
 					   PLUMA_IS_QUITTING,
-					   GBOOLEAN_TO_POINTER (FALSE));
+					   PLUMA_BOOLEAN_TO_POINTER (FALSE));
 
 			break;
 	}
@@ -1845,11 +1859,11 @@ _pluma_cmd_file_close_tab (PlumaTab    *tab,
 
 	g_object_set_data (G_OBJECT (window),
 			   PLUMA_IS_CLOSING_ALL,
-			   GBOOLEAN_TO_POINTER (FALSE));
+			   PLUMA_BOOLEAN_TO_POINTER (FALSE));
 
 	g_object_set_data (G_OBJECT (window),
 			   PLUMA_IS_QUITTING,
-			   GBOOLEAN_TO_POINTER (FALSE));
+			   PLUMA_BOOLEAN_TO_POINTER (FALSE));
 
 	g_object_set_data (G_OBJECT (window),
 	                   PLUMA_IS_QUITTING_ALL,
@@ -1861,9 +1875,11 @@ _pluma_cmd_file_close_tab (PlumaTab    *tab,
 }
 
 void
-_pluma_cmd_file_close (GtkAction   *action,
-		      PlumaWindow *window)
+_pluma_cmd_file_close (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaTab *active_tab;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -1895,11 +1911,11 @@ file_close_all (PlumaWindow *window,
 
 	g_object_set_data (G_OBJECT (window),
 			   PLUMA_IS_CLOSING_ALL,
-			   GBOOLEAN_TO_POINTER (TRUE));
+			   PLUMA_BOOLEAN_TO_POINTER (TRUE));
 
 	g_object_set_data (G_OBJECT (window),
 			   PLUMA_IS_QUITTING,
-			   GBOOLEAN_TO_POINTER (is_quitting));
+			   PLUMA_BOOLEAN_TO_POINTER (is_quitting));
 
 	unsaved_docs = pluma_window_get_unsaved_documents (window);
 
@@ -1950,9 +1966,11 @@ file_close_all (PlumaWindow *window,
 }
 
 void
-_pluma_cmd_file_close_all (GtkAction   *action,
-			  PlumaWindow *window)
+_pluma_cmd_file_close_all (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	pluma_debug (DEBUG_COMMANDS);
 
 	g_return_if_fail (!(pluma_window_get_state (window) &
@@ -1981,10 +1999,10 @@ file_close_tabs (PlumaWindow *window,
 
 	g_object_set_data (G_OBJECT (window),
 	                   PLUMA_IS_CLOSING_ALL,
-	                   GBOOLEAN_TO_POINTER (TRUE));
+	                   PLUMA_BOOLEAN_TO_POINTER (TRUE));
 	g_object_set_data (G_OBJECT (window),
 	                   PLUMA_IS_QUITTING,
-	                   GBOOLEAN_TO_POINTER (FALSE));
+	                   PLUMA_BOOLEAN_TO_POINTER (FALSE));
 	g_object_set_data_full (G_OBJECT (window),
 	                        PLUMA_LIST_OF_TABS_TO_CLOSE,
 	                        g_list_copy ((GList *) tabs),
@@ -2068,30 +2086,38 @@ close_tabs_relative_to_active (PlumaWindow  *window,
 }
 
 void
-_pluma_cmd_file_close_tabs_left (GtkAction   *action,
-				 PlumaWindow *window)
+_pluma_cmd_file_close_tabs_left (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	close_tabs_relative_to_active (window, CLOSE_TABS_LEFT);
 }
 
 void
-_pluma_cmd_file_close_tabs_right (GtkAction   *action,
-				  PlumaWindow *window)
+_pluma_cmd_file_close_tabs_right (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	close_tabs_relative_to_active (window, CLOSE_TABS_RIGHT);
 }
 
 void
-_pluma_cmd_file_close_other_tabs (GtkAction   *action,
-				  PlumaWindow *window)
+_pluma_cmd_file_close_other_tabs (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	close_tabs_relative_to_active (window, CLOSE_TABS_OTHER);
 }
 
 void
-_pluma_cmd_file_quit (GtkAction   *action,
-		     PlumaWindow *window)
+_pluma_cmd_file_quit (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	pluma_debug (DEBUG_COMMANDS);
 
 	g_return_if_fail (!(pluma_window_get_state (window) &

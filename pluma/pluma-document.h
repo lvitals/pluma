@@ -195,7 +195,7 @@ gchar		*pluma_document_get_mime_type 	(PlumaDocument       *doc);
 
 gboolean	 pluma_document_get_readonly 	(PlumaDocument       *doc);
 
-void		 pluma_document_load 		(PlumaDocument       *doc,
+void		 pluma_document_load 		(PlumaDocument       *document,
 						 const gchar         *uri,
 						 const PlumaEncoding *encoding,
 						 gint                 line_pos,

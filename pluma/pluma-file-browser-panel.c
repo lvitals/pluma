@@ -44,6 +44,15 @@
 #include "pluma-file-browser-messages.h"
 #include "pluma-action-migration.h"
 
+/* This panel still wires legacy GtkActionGroup/GtkToggleAction based
+ * widgets (via pluma-file-browser-widget.c) into the window, and mirrors
+ * them into GAction via pluma-action-migration.c. It is a designated
+ * legacy/compatibility area, so deprecation warnings are expected here and
+ * silenced locally rather than project-wide.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #define FILE_BROWSER_SCHEMA 		"org.mate.pluma.plugins.filebrowser"
 #define FILE_BROWSER_ONLOAD_SCHEMA 	"org.mate.pluma.plugins.filebrowser.on-load"
 #define CAJA_SCHEMA					"org.mate.caja.preferences"
@@ -61,8 +70,7 @@ typedef struct
 	gulong                   merge_id;
 	GtkActionGroup          *action_group;
 	GtkActionGroup          *single_selection_action_group;
-	GtkActionGroup          *quick_open_action_group;
-	guint                    quick_open_merge_id;
+	GSimpleActionGroup      *quick_open_action_group;
 	gboolean                 auto_root;
 	gulong                   end_loading_handle;
 	gboolean                 confirm_trash;
@@ -521,9 +529,11 @@ static GtkActionEntry extra_single_selection_actions[] = {
 };
 
 static void
-on_action_quick_open (GtkAction             *action,
-		      PlumaFileBrowserPanel *priv)
+on_action_quick_open (GSimpleAction *action,
+		      GVariant      *parameter,
+		      gpointer       user_data)
 {
+	PlumaFileBrowserPanel *priv = user_data;
 	PlumaPanel *side_panel;
 
 	side_panel = pluma_window_get_side_panel (priv->window);
@@ -532,66 +542,50 @@ on_action_quick_open (GtkAction             *action,
 	pluma_file_browser_widget_show_quick_search (priv->tree_widget);
 }
 
-static const GtkActionEntry quick_open_actions[] =
+static const GActionEntry quick_open_action_entries[] =
 {
-	{"FileBrowserQuickOpen", "edit-find", N_("_Quick Open..."), "<control><alt>P",
-	 N_("Find a file by name in the current file browser folder"),
-	 G_CALLBACK (on_action_quick_open)}
+	{ "quick-open", on_action_quick_open }
 };
 
-#define QUICK_OPEN_UI ""                         \
-"<ui>"                                           \
-"  <menubar name=\"MenuBar\">"                  \
-"    <menu name=\"SearchMenu\" action=\"Search\">" \
-"      <placeholder name=\"SearchOps_1\">"     \
-"        <menuitem action=\"FileBrowserQuickOpen\"/>" \
-"      </placeholder>"                           \
-"    </menu>"                                    \
-"  </menubar>"                                   \
-"</ui>"
+#define QUICK_OPEN_ACTION_PREFIX "file-browser-quick-open"
+#define QUICK_OPEN_DETAILED_ACTION_NAME QUICK_OPEN_ACTION_PREFIX ".quick-open"
 
 static void
 add_quick_open_ui (PlumaFileBrowserPanel *priv)
 {
-	GtkUIManager *manager;
-	GError *error = NULL;
+	GtkApplication *application;
+	GMenuItem *item;
 
-	manager = pluma_window_get_ui_manager (priv->window);
-	priv->quick_open_action_group = gtk_action_group_new ("FileBrowserQuickOpenActions");
-	gtk_action_group_set_translation_domain (priv->quick_open_action_group, NULL);
-	gtk_action_group_add_actions (priv->quick_open_action_group,
-	                              quick_open_actions,
-	                              G_N_ELEMENTS (quick_open_actions),
-	                              priv);
-	gtk_ui_manager_insert_action_group (manager, priv->quick_open_action_group, 0);
-	priv->quick_open_merge_id = gtk_ui_manager_add_ui_from_string (manager,
-	                                                              QUICK_OPEN_UI,
-	                                                              -1,
-	                                                              &error);
-	if (error != NULL)
+	priv->quick_open_action_group =
+		pluma_action_migration_create_plugin_group (quick_open_action_entries,
+		                                            G_N_ELEMENTS (quick_open_action_entries),
+		                                            priv);
+	pluma_action_migration_insert_plugin_group (GTK_WIDGET (priv->window),
+	                                            QUICK_OPEN_ACTION_PREFIX,
+	                                            priv->quick_open_action_group);
+
+	application = gtk_window_get_application (GTK_WINDOW (priv->window));
+	if (application != NULL)
 	{
-		g_warning ("Unable to add Quick Open UI: %s", error->message);
-		g_error_free (error);
+		const gchar * const accels[] = { "<Control><Alt>p", NULL };
+
+		gtk_application_set_accels_for_action (application, QUICK_OPEN_DETAILED_ACTION_NAME, accels);
 	}
+
+	item = g_menu_item_new (_("_Quick Open..."), QUICK_OPEN_DETAILED_ACTION_NAME);
+	if (!pluma_window_add_menu_item (priv->window, "plugin-search-section", item))
+		g_warning ("Unable to add Quick Open menu item");
+	g_object_unref (item);
 }
 
 static void
 remove_quick_open_ui (PlumaFileBrowserPanel *priv)
 {
-	GtkUIManager *manager = pluma_window_get_ui_manager (priv->window);
-
-	/* The window UI manager can already be disposed when the side panel's
-	 * destroy signal runs. In that case it has removed its merged UI and
-	 * action groups itself; only release our reference below. */
-	if (GTK_IS_UI_MANAGER (manager))
-	{
-		if (priv->quick_open_merge_id != 0)
-			gtk_ui_manager_remove_ui (manager, priv->quick_open_merge_id);
-		if (priv->quick_open_action_group != NULL)
-			gtk_ui_manager_remove_action_group (manager, priv->quick_open_action_group);
-	}
-
-	priv->quick_open_merge_id = 0;
+	pluma_window_remove_menu_items (priv->window, "plugin-search-section",
+	                                QUICK_OPEN_DETAILED_ACTION_NAME);
+	pluma_action_migration_insert_plugin_group (GTK_WIDGET (priv->window),
+	                                            QUICK_OPEN_ACTION_PREFIX,
+	                                            NULL);
 	g_clear_object (&priv->quick_open_action_group);
 }
 
@@ -1241,5 +1235,7 @@ on_confirm_delete_cb (PlumaFileBrowserWidget *widget,
 
 	return result;
 }
+
+#pragma GCC diagnostic pop
 
 // ex:ts=8:noet:

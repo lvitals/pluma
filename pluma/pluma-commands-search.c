@@ -53,8 +53,11 @@
 #define PLUMA_LAST_SEARCH_DATA_KEY	"pluma-last-search-data-key"
 
 void
-_pluma_cmd_search_find_in_files (GtkAction *action, PlumaWindow *window)
+_pluma_cmd_search_find_in_files (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	gint previous_id;
 	/* Matches the label passed to pluma_panel_add_item_with_icon() for the
 	 * Search item in create_side_panel() -- see _pluma_panel_get_active_item_id()
@@ -411,7 +414,7 @@ do_replace (PlumaSearchDialog *dialog,
 		if(!match_regex)
 		{
 		need_refind = (match_case && (strcmp (selected_text,unescaped_search_text) != 0))
-			       || (!match_case && !g_utf8_caselessnmatch (selected_text,
+			       || (!match_case && !pluma_utils_utf8_caselessnmatch (selected_text,
                                                                           unescaped_search_text,
                                                                           strlen (selected_text),
                                                                           strlen (unescaped_search_text)) != 0);
@@ -599,9 +602,11 @@ create_dialog (PlumaWindow *window, gboolean show_replace)
 }
 
 void
-_pluma_cmd_search_find (GtkAction   *action,
-			PlumaWindow *window)
+_pluma_cmd_search_find (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	gpointer data;
 	GtkWidget *search_dialog;
 	PlumaDocument *doc;
@@ -673,9 +678,11 @@ _pluma_cmd_search_find (GtkAction   *action,
 }
 
 void
-_pluma_cmd_search_replace (GtkAction   *action,
-			   PlumaWindow *window)
+_pluma_cmd_search_replace (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	gpointer data;
 	GtkWidget *replace_dialog;
 	PlumaDocument *doc;
@@ -768,27 +775,33 @@ do_find_again (PlumaWindow *window,
 }
 
 void
-_pluma_cmd_search_find_next (GtkAction   *action,
-			     PlumaWindow *window)
+_pluma_cmd_search_find_next (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	pluma_debug (DEBUG_COMMANDS);
 
 	do_find_again (window, FALSE);
 }
 
 void
-_pluma_cmd_search_find_prev (GtkAction   *action,
-			     PlumaWindow *window)
+_pluma_cmd_search_find_prev (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	pluma_debug (DEBUG_COMMANDS);
 
 	do_find_again (window, TRUE);
 }
 
 void
-_pluma_cmd_search_clear_highlight (GtkAction   *action,
-				   PlumaWindow *window)
+_pluma_cmd_search_clear_highlight (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaDocument *doc;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -800,9 +813,11 @@ _pluma_cmd_search_clear_highlight (GtkAction   *action,
 }
 
 void
-_pluma_cmd_search_goto_line (GtkAction   *action,
-			     PlumaWindow *window)
+_pluma_cmd_search_goto_line (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -825,9 +840,11 @@ _pluma_cmd_search_goto_line (GtkAction   *action,
 }
 
 void
-_pluma_cmd_search_incremental_search (GtkAction   *action,
-				      PlumaWindow *window)
+_pluma_cmd_search_incremental_search (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);

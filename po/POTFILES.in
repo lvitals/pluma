@@ -45,8 +45,7 @@ pluma/pluma-statusbar.c
 pluma/pluma-style-scheme-manager.c
 pluma/pluma-tab.c
 pluma/pluma-tab-label.c
-pluma/pluma-ui.h
-pluma/pluma-ui.xml
+pluma/pluma-menus.ui
 pluma/pluma-utils.c
 pluma/pluma-view.c
 pluma/pluma-window.c

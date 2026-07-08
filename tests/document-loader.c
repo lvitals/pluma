@@ -138,7 +138,7 @@ test_loader (const gchar *filename,
 }
 
 static void
-test_end_line_stripping ()
+test_end_line_stripping (void)
 {
 	test_loader ("document-loader.txt",
 	             "hello world\n",
@@ -197,7 +197,7 @@ test_end_line_stripping ()
 }
 
 static void
-test_end_new_line_detection ()
+test_end_new_line_detection (void)
 {
 	test_loader ("document-loader.txt",
 	             "hello world\n",
@@ -216,7 +216,7 @@ test_end_new_line_detection ()
 }
 
 static void
-test_begin_new_line_detection ()
+test_begin_new_line_detection (void)
 {
 	test_loader ("document-loader.txt",
 	             "\nhello world",

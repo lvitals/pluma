@@ -45,8 +45,11 @@
 #include "pluma-help.h"
 #include "pluma-dirs.h"
 
-void _pluma_cmd_help_contents(GtkAction* action, PlumaWindow* window)
+void _pluma_cmd_help_contents (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	pluma_debug(DEBUG_COMMANDS);
 
 	pluma_help_display(GTK_WINDOW(window), NULL, NULL);
@@ -55,8 +58,12 @@ void _pluma_cmd_help_contents(GtkAction* action, PlumaWindow* window)
 #define ABOUT_GROUP "About"
 #define EMAILIFY(string) (g_strdelimit ((string), "%", '@'))
 
-void _pluma_cmd_help_about(GtkAction* action, PlumaWindow* window)
+void _pluma_cmd_help_about (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
+
 	static const gchar* documenters[] = {
 		N_("MATE Documentation Team"),
 		N_("GNOME Documentation Team"),

@@ -44,7 +44,7 @@
 #include <gtksourceview/gtksource.h>
 #include <libpeas/peas-extension-set.h>
 
-#include "pluma-ui.h"
+#include "pluma-actions.h"
 #include "pluma-action-migration.h"
 #include "pluma-window.h"
 #include "pluma-window-private.h"
@@ -311,12 +311,6 @@ pluma_window_dispose (GObject *object)
 #endif
     }
 
-    if (window->priv->manager != NULL)
-    {
-        g_object_unref (window->priv->manager);
-        window->priv->manager = NULL;
-    }
-
     g_clear_object (&window->priv->modern_menu_builder);
     window->priv->modern_recent_section = NULL;
     window->priv->modern_documents_section = NULL;
@@ -395,13 +389,12 @@ static gboolean
 file_chord_timeout_cb (gpointer user_data)
 {
     PlumaWindow *window = PLUMA_WINDOW (user_data);
-    GtkAction *action;
+    GAction *action;
 
     window->priv->file_chord_timeout_id = 0;
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "SearchIncrementalSearch");
+    action = g_action_map_lookup_action (G_ACTION_MAP (window), "incremental-search");
     if (action != NULL)
-        gtk_action_activate (action);
+        g_action_activate (action, NULL);
 
     return G_SOURCE_REMOVE;
 }
@@ -451,10 +444,9 @@ pluma_window_key_press_event (GtkWidget   *widget,
         if (modifiers == GDK_CONTROL_MASK &&
             (event->keyval == GDK_KEY_o || event->keyval == GDK_KEY_O))
         {
-            GtkAction *action = gtk_action_group_get_action (PLUMA_WINDOW (window)->priv->always_sensitive_action_group,
-                                                              "FileOpenFolder");
+            GAction *action = g_action_map_lookup_action (G_ACTION_MAP (window), "open-folder");
             if (action != NULL)
-                gtk_action_activate (action);
+                g_action_activate (action, NULL);
             g_object_unref (settings);
             return TRUE;
         }
@@ -646,63 +638,6 @@ pluma_window_class_init (PlumaWindowClass *klass)
 }
 
 static void
-menu_item_select_cb (GtkMenuItem *proxy,
-                     PlumaWindow *window)
-{
-    GtkAction *action;
-    char *message;
-
-    action = gtk_activatable_get_related_action (GTK_ACTIVATABLE (proxy));
-    g_return_if_fail (action != NULL);
-
-    g_object_get (G_OBJECT (action), "tooltip", &message, NULL);
-    if (message)
-    {
-        gtk_statusbar_push (GTK_STATUSBAR (window->priv->statusbar),
-                            window->priv->tip_message_cid, message);
-        g_free (message);
-    }
-}
-
-static void
-menu_item_deselect_cb (GtkMenuItem *proxy,
-                       PlumaWindow *window)
-{
-    gtk_statusbar_pop (GTK_STATUSBAR (window->priv->statusbar),
-               window->priv->tip_message_cid);
-}
-
-static void
-connect_proxy_cb (GtkUIManager *manager,
-                  GtkAction *action,
-                  GtkWidget *proxy,
-                  PlumaWindow *window)
-{
-    if (GTK_IS_MENU_ITEM (proxy))
-    {
-        g_signal_connect (proxy, "select",
-                          G_CALLBACK (menu_item_select_cb), window);
-        g_signal_connect (proxy, "deselect",
-                          G_CALLBACK (menu_item_deselect_cb), window);
-    }
-}
-
-static void
-disconnect_proxy_cb (GtkUIManager *manager,
-                     GtkAction    *action,
-                     GtkWidget    *proxy,
-                     PlumaWindow  *window)
-{
-    if (GTK_IS_MENU_ITEM (proxy))
-    {
-        g_signal_handlers_disconnect_by_func
-            (proxy, G_CALLBACK (menu_item_select_cb), window);
-        g_signal_handlers_disconnect_by_func
-            (proxy, G_CALLBACK (menu_item_deselect_cb), window);
-    }
-}
-
-static void
 apply_toolbar_style (PlumaWindow *window,
                      GtkWidget   *toolbar)
 {
@@ -731,6 +666,50 @@ apply_toolbar_style (PlumaWindow *window,
                                    GTK_TOOLBAR_BOTH_HORIZ);
             break;
     }
+}
+
+/* GtkToolButton has never implemented GtkActionable in GTK3 (unlike
+ * GtkButton, GtkMenuItem, GtkModelButton...), so there is no direct way to
+ * bind a toolbar button to a win.* GAction the way pluma-menus.ui binds
+ * menu items. Wiring "clicked" to g_action_group_activate_action() and
+ * binding the button's "sensitive" property to the action's "enabled"
+ * property is the standard replacement for the old
+ * gtk_activatable_set_related_action() pattern. */
+static void
+toolbar_button_clicked (GtkToolButton *button,
+                        gpointer       user_data)
+{
+    PlumaWindow *window = PLUMA_WINDOW (user_data);
+    const gchar *action_name = g_object_get_data (G_OBJECT (button), "pluma-action-name");
+
+    g_action_group_activate_action (G_ACTION_GROUP (window), action_name, NULL);
+}
+
+static GtkToolItem *
+create_toolbar_button (PlumaWindow *window,
+                       const gchar *action_name,
+                       const gchar *icon_name,
+                       const gchar *label,
+                       const gchar *tooltip,
+                       gboolean     is_important)
+{
+    GtkWidget *icon = gtk_image_new_from_icon_name (icon_name, GTK_ICON_SIZE_MENU);
+    GtkToolItem *item = gtk_tool_button_new (icon, label);
+    GAction *action = g_action_map_lookup_action (G_ACTION_MAP (window), action_name);
+
+    gtk_tool_item_set_is_important (item, is_important);
+    if (tooltip != NULL)
+        gtk_tool_item_set_tooltip_text (item, tooltip);
+
+    g_object_set_data_full (G_OBJECT (item), "pluma-action-name",
+                            g_strdup (action_name), g_free);
+    g_signal_connect (item, "clicked", G_CALLBACK (toolbar_button_clicked), window);
+
+    if (action != NULL)
+        g_object_bind_property (action, "enabled", item, "sensitive",
+                                G_BINDING_SYNC_CREATE);
+
+    return item;
 }
 
 /* Toolbar, statusbar and the three side panels are fully native GActions
@@ -783,6 +762,55 @@ get_view_toggle_action_state (PlumaWindow *window,
     active = g_variant_get_boolean (state);
     g_variant_unref (state);
     return active;
+}
+
+/* win.* actions that only make sense while at least one tab is open (most
+ * of Edit/Search/Documents). Used by set_sensitivity_according_to_window_state()
+ * to bulk enable/disable them, replacing the old GtkActionGroup-wide
+ * sensitivity toggle. */
+static const gchar * const document_action_names[] = {
+    "save", "save-as", "save-all", "revert", "print-preview", "print",
+    "close-all", "close-tabs-left", "close-tabs-right", "close-other-tabs",
+    "previous-document", "next-document", "move-to-new-window",
+    "undo", "redo", "cut", "copy", "paste", "delete", "select-all",
+    "zoom-in", "zoom-out", "zoom-reset",
+    "uppercase", "lowercase", "invert-case", "title-case",
+    "find", "find-in-files", "find-next", "find-previous", "replace",
+    "clear-highlight", "goto-line", "incremental-search",
+    NULL
+};
+
+/* create_window_actions() is deferred until the window is attached to a
+ * GtkApplication (see the "notify::application" dance there), so win.*
+ * actions do not exist yet during the earliest part of window construction.
+ * Every per-action sensitivity update below goes through this helper so a
+ * lookup miss during that window is a silent no-op instead of a
+ * g_simple_action_set_enabled() CRITICAL on a NULL/non-GSimpleAction. */
+static void
+set_action_enabled (PlumaWindow *window,
+                    const gchar *name,
+                    gboolean     enabled)
+{
+    GAction *action = g_action_map_lookup_action (G_ACTION_MAP (window), name);
+
+    if (action != NULL)
+        g_simple_action_set_enabled (G_SIMPLE_ACTION (action), enabled);
+}
+
+static void
+set_actions_enabled (PlumaWindow          *window,
+                     const gchar * const  *names,
+                     gboolean              enabled)
+{
+    gsize i;
+
+    for (i = 0; names[i] != NULL; i++)
+    {
+        GAction *action = g_action_map_lookup_action (G_ACTION_MAP (window), names[i]);
+
+        if (action != NULL)
+            g_simple_action_set_enabled (G_SIMPLE_ACTION (action), enabled);
+    }
 }
 
 /* GSimpleAction does not toggle its own boolean state automatically on
@@ -852,7 +880,6 @@ update_next_prev_doc_sensitivity (PlumaWindow *window,
 {
     gint         tab_number;
     GtkNotebook *notebook;
-    GtkAction   *action;
 
     pluma_debug (DEBUG_WINDOW);
 
@@ -861,13 +888,9 @@ update_next_prev_doc_sensitivity (PlumaWindow *window,
     tab_number = gtk_notebook_page_num (notebook, GTK_WIDGET (tab));
     g_return_if_fail (tab_number >= 0);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "DocumentsPreviousDocument");
-    gtk_action_set_sensitive (action, tab_number != 0);
+        set_action_enabled (window, "previous-document", tab_number != 0);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "DocumentsNextDocument");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "next-document",
                               tab_number < gtk_notebook_get_n_pages (notebook) - 1);
 }
 
@@ -875,7 +898,6 @@ static void
 update_next_prev_doc_sensitivity_per_window (PlumaWindow *window)
 {
     PlumaTab  *tab;
-    GtkAction *action;
 
     pluma_debug (DEBUG_WINDOW);
 
@@ -887,13 +909,9 @@ update_next_prev_doc_sensitivity_per_window (PlumaWindow *window)
         return;
     }
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "DocumentsPreviousDocument");
-    gtk_action_set_sensitive (action, FALSE);
+        set_action_enabled (window, "previous-document", FALSE);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "DocumentsNextDocument");
-    gtk_action_set_sensitive (action, FALSE);
+        set_action_enabled (window, "next-document", FALSE);
 
 }
 
@@ -903,7 +921,6 @@ received_clipboard_contents (GtkClipboard     *clipboard,
                              PlumaWindow      *window)
 {
     gboolean sens;
-    GtkAction *action;
 
     /* getting clipboard contents is async, so we need to
      * get the current tab and its state */
@@ -924,9 +941,7 @@ received_clipboard_contents (GtkClipboard     *clipboard,
         sens = FALSE;
     }
 
-    action = gtk_action_group_get_action (window->priv->action_group, "EditPaste");
-
-    gtk_action_set_sensitive (action, sens);
+        set_action_enabled (window, "paste", sens);
 
     g_object_unref (window);
 }
@@ -948,14 +963,13 @@ set_paste_sensitivity_according_to_clipboard (PlumaWindow  *window,
     }
     else
     {
-        GtkAction *action;
+        GAction *action;
 
-        action = gtk_action_group_get_action (window->priv->action_group,
-                                              "EditPaste");
+        action = g_action_map_lookup_action (G_ACTION_MAP (window), "paste");
 
         /* XFIXES extension not availbale, make
          * Paste always sensitive */
-        gtk_action_set_sensitive (action, TRUE);
+        g_simple_action_set_enabled (G_SIMPLE_ACTION (action), TRUE);
     }
 }
 
@@ -965,7 +979,7 @@ set_sensitivity_according_to_tab (PlumaWindow *window,
 {
     PlumaDocument *doc;
     PlumaView     *view;
-    GtkAction     *action;
+    GAction     *action;
     gboolean       b;
     gboolean       state_normal;
     gboolean       editable;
@@ -994,14 +1008,13 @@ set_sensitivity_according_to_tab (PlumaWindow *window,
     clipboard = gtk_widget_get_clipboard (GTK_WIDGET (window),
                                           GDK_SELECTION_CLIPBOARD);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "FileSave");
+    action = g_action_map_lookup_action (G_ACTION_MAP (window), "save");
 
     if (state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION) {
         gtk_text_buffer_set_modified (GTK_TEXT_BUFFER (doc), TRUE);
     }
 
-    gtk_action_set_sensitive (action,
+    g_simple_action_set_enabled (G_SIMPLE_ACTION (action),
                               (state_normal ||
                               (state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION) ||
                               (state == PLUMA_TAB_STATE_SHOWING_PRINT_PREVIEW)) &&
@@ -1010,39 +1023,28 @@ set_sensitivity_according_to_tab (PlumaWindow *window,
                               (cansave) &&
                               (editable));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "FileSaveAs");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "save-as",
                               (state_normal ||
                               (state == PLUMA_TAB_STATE_SAVING_ERROR) ||
                               (state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION) ||
                               (state == PLUMA_TAB_STATE_SHOWING_PRINT_PREVIEW)) &&
                               !(lockdown & PLUMA_LOCKDOWN_SAVE_TO_DISK));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "FileRevert");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "revert",
                               (state_normal ||
                               (state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION)) &&
                               !pluma_document_is_untitled (doc));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "FilePrintPreview");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "print-preview",
                               state_normal &&
                               !(lockdown & PLUMA_LOCKDOWN_PRINTING));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "FilePrint");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "print",
                               (state_normal ||
                               (state == PLUMA_TAB_STATE_SHOWING_PRINT_PREVIEW)) &&
                               !(lockdown & PLUMA_LOCKDOWN_PRINTING));
 
-    action = gtk_action_group_get_action (window->priv->close_action_group,
-                                          "FileClose");
-
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "close",
                               (state != PLUMA_TAB_STATE_CLOSING) &&
                               (state != PLUMA_TAB_STATE_SAVING) &&
                               (state != PLUMA_TAB_STATE_SHOWING_PRINT_PREVIEW) &&
@@ -1050,395 +1052,169 @@ set_sensitivity_according_to_tab (PlumaWindow *window,
                               (state != PLUMA_TAB_STATE_PRINT_PREVIEWING) &&
                               (state != PLUMA_TAB_STATE_SAVING_ERROR));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "EditUndo");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "undo",
                               state_normal &&
                               gtk_source_buffer_can_undo (GTK_SOURCE_BUFFER (doc)));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "EditRedo");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "redo",
                               state_normal &&
                               gtk_source_buffer_can_redo (GTK_SOURCE_BUFFER (doc)));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "EditCut");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "cut",
                               state_normal &&
                               editable &&
                               gtk_text_buffer_get_has_selection (GTK_TEXT_BUFFER (doc)));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "EditCopy");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "copy",
                               (state_normal ||
                                state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION) &&
                               gtk_text_buffer_get_has_selection (GTK_TEXT_BUFFER (doc)));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "EditPaste");
+    action = g_action_map_lookup_action (G_ACTION_MAP (window), "paste");
     if (state_normal && editable)
     {
         set_paste_sensitivity_according_to_clipboard (window, clipboard);
     }
     else
     {
-        gtk_action_set_sensitive (action, FALSE);
+        g_simple_action_set_enabled (G_SIMPLE_ACTION (action), FALSE);
     }
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "EditDelete");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "delete",
                               state_normal &&
                               editable &&
                               gtk_text_buffer_get_has_selection (GTK_TEXT_BUFFER (doc)));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "SearchFind");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "find",
                               (state_normal ||
                                state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "SearchIncrementalSearch");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "incremental-search",
                               (state_normal ||
                               state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "SearchReplace");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "replace",
                               state_normal &&
                               editable);
 
     b = pluma_document_get_can_search_again (doc);
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "SearchFindNext");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "find-next",
                               (state_normal ||
                               state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION) && b);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "SearchFindPrevious");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "find-previous",
                               (state_normal ||
                               state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION) && b);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                         "SearchClearHighlight");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "clear-highlight",
                               (state_normal ||
                               state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION) && b);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "SearchGoToLine");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "goto-line",
                               (state_normal ||
                               state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "ViewHighlightMode");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "highlight-mode",
                               (state != PLUMA_TAB_STATE_CLOSING) &&
                               enable_syntax_highlighting);
-    {
-        GAction *modern_action = g_action_map_lookup_action (G_ACTION_MAP (window),
-                                                             "highlight-mode");
-        if (modern_action != NULL)
-            g_simple_action_set_enabled (G_SIMPLE_ACTION (modern_action),
-                                         (state != PLUMA_TAB_STATE_CLOSING) &&
-                                         enable_syntax_highlighting);
-    }
 
     update_next_prev_doc_sensitivity (window, tab);
 
     peas_extension_set_call (window->priv->extensions, "update_state");
 }
 
-static void
-language_toggled (GtkToggleAction *action,
-                  PlumaWindow     *window)
-{
-    PlumaDocument *doc;
-    GtkSourceLanguage *lang;
-    const gchar *lang_id;
-
-    if (gtk_toggle_action_get_active (action) == FALSE)
-        return;
-
-    doc = pluma_window_get_active_document (window);
-    if (doc == NULL)
-        return;
-
-    lang_id = gtk_action_get_name (GTK_ACTION (action));
-
-    if (strcmp (lang_id, LANGUAGE_NONE) == 0)
-    {
-        /* Normal (no highlighting) */
-        lang = NULL;
-    }
-    else
-    {
-        lang = gtk_source_language_manager_get_language (pluma_get_language_manager (),
-                                                         lang_id);
-        if (lang == NULL)
-        {
-            g_warning ("Could not get language %s\n", lang_id);
-        }
-    }
-
-    pluma_document_set_language (doc, lang);
-}
-
-static gchar *
-escape_section_name (const gchar *name)
-{
-    gchar *ret;
-
-    ret = g_markup_escape_text (name, -1);
-
-    /* Replace '/' with '-' to avoid problems in xml paths */
-    g_strdelimit (ret, "/", '-');
-
-    return ret;
-}
-
-static void
-create_language_menu_item (GtkSourceLanguage *lang,
-                           gint           index,
-                           guint          ui_id,
-                           PlumaWindow       *window)
-{
-    GtkAction *section_action;
-    GtkRadioAction *action;
-    GtkAction *normal_action;
-    GSList *group;
-    const gchar *section;
-    gchar *escaped_section;
-    const gchar *lang_id;
-    const gchar *lang_name;
-    gchar *escaped_lang_name;
-    gchar *tip;
-    gchar *path;
-
-    section = gtk_source_language_get_section (lang);
-    escaped_section = escape_section_name (section);
-
-    /* check if the section submenu exists or create it */
-    section_action = gtk_action_group_get_action (window->priv->languages_action_group,
-                                                  escaped_section);
-
-    if (section_action == NULL)
-    {
-        gchar *section_name;
-
-        section_name = pluma_utils_escape_underscores (section, -1);
-
-        section_action = gtk_action_new (escaped_section,
-                                         section_name,
-                                         NULL,
-                                         NULL);
-
-        g_free (section_name);
-
-        gtk_action_group_add_action (window->priv->languages_action_group,
-                                     section_action);
-        g_object_unref (section_action);
-
-        gtk_ui_manager_add_ui (window->priv->manager,
-                               ui_id,
-                               "/MenuBar/ViewMenu/ViewHighlightModeMenu/LanguagesMenuPlaceholder",
-                               escaped_section,
-                               escaped_section,
-                               GTK_UI_MANAGER_MENU,
-                               FALSE);
-    }
-
-    /* now add the language item to the section */
-    lang_name = gtk_source_language_get_name (lang);
-    lang_id = gtk_source_language_get_id (lang);
-
-    escaped_lang_name = pluma_utils_escape_underscores (lang_name, -1);
-
-    tip = g_strdup_printf (_("Use %s highlight mode"), lang_name);
-    path = g_strdup_printf ("/MenuBar/ViewMenu/ViewHighlightModeMenu/LanguagesMenuPlaceholder/%s",
-                            escaped_section);
-
-    action = gtk_radio_action_new (lang_id,
-                                   escaped_lang_name,
-                                   tip,
-                                   NULL,
-                                   index);
-
-    g_free (escaped_lang_name);
-
-    /* Action is added with a NULL accel to make the accel overridable */
-    gtk_action_group_add_action_with_accel (window->priv->languages_action_group,
-                                            GTK_ACTION (action),
-                                            NULL);
-    g_object_unref (action);
-
-    /* add the action to the same radio group of the "Normal" action */
-    normal_action = gtk_action_group_get_action (window->priv->languages_action_group,
-                                                 LANGUAGE_NONE);
-    group = gtk_radio_action_get_group (GTK_RADIO_ACTION (normal_action));
-    gtk_radio_action_set_group (action, group);
-
-    g_signal_connect (action,
-                      "activate",
-                      G_CALLBACK (language_toggled),
-                      window);
-
-    gtk_ui_manager_add_ui (window->priv->manager,
-                           ui_id,
-                           path,
-                           lang_id,
-                           lang_id,
-                           GTK_UI_MANAGER_MENUITEM,
-                           FALSE);
-
-    g_free (path);
-    g_free (tip);
-    g_free (escaped_section);
-}
-
+/* The "win.highlight-mode" GMenu items are radio-style: GTK activates them
+ * by calling g_action_change_state() directly (see modern_highlight_mode_changed()),
+ * so no per-language callback or GtkAction is needed here any more. */
 static void
 create_languages_menu (PlumaWindow *window)
 {
-    GtkRadioAction *action_none;
-    GSList *languages;
-    GSList *l;
-    guint id;
-    gint i;
-    GMenu *modern_section = NULL;
+    GSList *languages, *l;
+    GMenu *modern_section;
+    GHashTable *section_menus;
+    GMenuItem *item;
 
     pluma_debug (DEBUG_WINDOW);
 
-    if (window->priv->modern_menu_builder != NULL)
+    if (window->priv->modern_menu_builder == NULL)
+        return;
+
     {
         GObject *object = gtk_builder_get_object (window->priv->modern_menu_builder,
                                                    "highlight-language-section");
-        if (G_IS_MENU (object))
-        {
-            modern_section = G_MENU (object);
-            g_menu_remove_all (modern_section);
-        }
+        if (!G_IS_MENU (object))
+            return;
+        modern_section = G_MENU (object);
     }
+    g_menu_remove_all (modern_section);
 
-    /* add the "Plain Text" item before all the others */
+    /* Translators: "Plain Text" means that no highlight mode is selected in
+     * the "View->Highlight Mode" submenu and so syntax highlighting is
+     * disabled */
+    item = g_menu_item_new (_("Plain Text"), NULL);
+    g_menu_item_set_action_and_target (item, "win.highlight-mode", "s", LANGUAGE_NONE);
+    g_menu_append_item (modern_section, item);
+    g_object_unref (item);
 
-    /* Translators: "Plain Text" means that no highlight mode is selected in the
-     * "View->Highlight Mode" submenu and so syntax highlighting is disabled */
-    action_none = gtk_radio_action_new (LANGUAGE_NONE, _("Plain Text"),
-                                        _("Disable syntax highlighting"),
-                                        NULL,
-                                        -1);
+    /* Group languages into their section (e.g. "Sources", "Markup") as
+     * submenus of modern_section, same grouping the old GtkUIManager-based
+     * menu used. */
+    section_menus = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_object_unref);
 
-    gtk_action_group_add_action (window->priv->languages_action_group,
-                                 GTK_ACTION (action_none));
-    g_object_unref (action_none);
+    languages = pluma_language_manager_list_languages_sorted (pluma_get_language_manager (), FALSE);
 
-    g_signal_connect (action_none,
-                      "activate",
-                      G_CALLBACK (language_toggled),
-                      window);
-
-    id = gtk_ui_manager_new_merge_id (window->priv->manager);
-
-    gtk_ui_manager_add_ui (window->priv->manager,
-                           id,
-                           "/MenuBar/ViewMenu/ViewHighlightModeMenu/LanguagesMenuPlaceholder",
-                           LANGUAGE_NONE,
-                           LANGUAGE_NONE,
-                           GTK_UI_MANAGER_MENUITEM,
-                           TRUE);
-
-    gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action_none), TRUE);
-
-    if (modern_section != NULL)
-    {
-        GMenuItem *item = g_menu_item_new (_("Plain Text"), NULL);
-        g_menu_item_set_action_and_target (item, "win.highlight-mode", "s", LANGUAGE_NONE);
-        g_menu_append_item (modern_section, item);
-        g_object_unref (item);
-    }
-
-    /* now add all the known languages */
-    languages = pluma_language_manager_list_languages_sorted (pluma_get_language_manager (),
-                                                              FALSE);
-
-    for (l = languages, i = 0; l != NULL; l = l->next, ++i)
+    for (l = languages; l != NULL; l = l->next)
     {
         GtkSourceLanguage *language = l->data;
-        create_language_menu_item (l->data,
-                                   i,
-                                   id,
-                                   window);
-        if (modern_section != NULL)
+        const gchar *section = gtk_source_language_get_section (language);
+        GMenu *section_menu = g_hash_table_lookup (section_menus, section);
+        gchar *escaped_name;
+
+        if (section_menu == NULL)
         {
-            GMenuItem *item = g_menu_item_new (gtk_source_language_get_name (language), NULL);
-            g_menu_item_set_action_and_target (item, "win.highlight-mode", "s",
-                                               gtk_source_language_get_id (language));
-            g_menu_append_item (modern_section, item);
-            g_object_unref (item);
+            gchar *escaped_section = pluma_utils_escape_underscores (section, -1);
+            GMenuItem *submenu_item;
+
+            section_menu = g_menu_new ();
+            g_hash_table_insert (section_menus, g_strdup (section), g_object_ref (section_menu));
+
+            submenu_item = g_menu_item_new_submenu (escaped_section, G_MENU_MODEL (section_menu));
+            g_menu_append_item (modern_section, submenu_item);
+            g_object_unref (submenu_item);
+            g_free (escaped_section);
         }
+
+        escaped_name = pluma_utils_escape_underscores (gtk_source_language_get_name (language), -1);
+        item = g_menu_item_new (escaped_name, NULL);
+        g_menu_item_set_action_and_target (item, "win.highlight-mode", "s",
+                                           gtk_source_language_get_id (language));
+        g_menu_append_item (section_menu, item);
+        g_object_unref (item);
+        g_free (escaped_name);
     }
 
     g_slist_free (languages);
+    g_hash_table_unref (section_menus);
 }
 
 static void
 update_languages_menu (PlumaWindow *window)
 {
     PlumaDocument *doc;
-    GList *actions;
-    GList *l;
-    GtkAction *action;
     GtkSourceLanguage *lang;
     const gchar *lang_id;
+    GAction *action;
 
     doc = pluma_window_get_active_document (window);
     if (doc == NULL)
         return;
 
     lang = pluma_document_get_language (doc);
-    if (lang != NULL)
-        lang_id = gtk_source_language_get_id (lang);
-    else
-        lang_id = LANGUAGE_NONE;
+    lang_id = lang != NULL ? gtk_source_language_get_id (lang) : LANGUAGE_NONE;
 
-    actions = gtk_action_group_list_actions (window->priv->languages_action_group);
-
-    /* prevent recursion */
-    for (l = actions; l != NULL; l = l->next)
-    {
-        g_signal_handlers_block_by_func (GTK_ACTION (l->data),
-                                         G_CALLBACK (language_toggled),
-                                         window);
-    }
-
-    action = gtk_action_group_get_action (window->priv->languages_action_group,
-                                          lang_id);
-
-    gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action), TRUE);
-
-    action = NULL;
-    {
-        GAction *modern_action = g_action_map_lookup_action (G_ACTION_MAP (window), "highlight-mode");
-        if (modern_action != NULL)
-            g_simple_action_set_state (G_SIMPLE_ACTION (modern_action),
-                                       g_variant_new_string (lang_id));
-    }
-
-    for (l = actions; l != NULL; l = l->next)
-    {
-        g_signal_handlers_unblock_by_func (GTK_ACTION (l->data),
-                                           G_CALLBACK (language_toggled),
-                                           window);
-    }
-
-    g_list_free (actions);
+    action = g_action_map_lookup_action (G_ACTION_MAP (window), "highlight-mode");
+    if (action != NULL)
+        g_simple_action_set_state (G_SIMPLE_ACTION (action), g_variant_new_string (lang_id));
 }
 
 void
@@ -1511,21 +1287,6 @@ recent_chooser_item_activated (GtkRecentChooser *chooser,
     g_free (uri);
 }
 
-static void
-recents_menu_activate (GtkAction   *action,
-                       PlumaWindow *window)
-{
-    GtkRecentInfo *info;
-    const gchar *uri;
-
-    info = g_object_get_data (G_OBJECT (action), "gtk-recent-info");
-    g_return_if_fail (info != NULL);
-
-    uri = gtk_recent_info_get_uri (info);
-
-    open_recent_file (uri, window);
-}
-
 static gint
 sort_recents_mru (GtkRecentInfo *a, GtkRecentInfo *b)
 {
@@ -1543,8 +1304,8 @@ recent_manager_changed (GtkRecentManager *manager,
 }
 
 /*
- * Manually construct the inline recents list in the File menu.
- * Hopefully gtk 2.12 will add support for it.
+ * Rebuild the "win.open-recent"-backed recent-files section of the File
+ * menu (pluma-menus.ui's "recent-files-section").
  */
 static void
 update_recent_files_menu (PlumaWindow *window)
@@ -1552,34 +1313,18 @@ update_recent_files_menu (PlumaWindow *window)
     PlumaWindowPrivate *p = window->priv;
     GtkRecentManager *recent_manager;
     guint max_recents;
-    GList *actions, *l, *items;
+    GList *l, *items;
     GList *filtered_items = NULL;
     gint i;
 
     pluma_debug (DEBUG_WINDOW);
 
+    if (p->modern_recent_section == NULL)
+        return;
+
     max_recents = g_settings_get_uint (window->priv->editor_settings, PLUMA_SETTINGS_MAX_RECENTS);
 
-    g_return_if_fail (p->recents_action_group != NULL);
-
-    if (p->modern_recent_section != NULL)
-        g_menu_remove_all (p->modern_recent_section);
-
-    if (p->recents_menu_ui_id != 0)
-        gtk_ui_manager_remove_ui (p->manager, p->recents_menu_ui_id);
-
-    actions = gtk_action_group_list_actions (p->recents_action_group);
-    for (l = actions; l != NULL; l = l->next)
-    {
-        g_signal_handlers_disconnect_by_func (GTK_ACTION (l->data),
-                                              G_CALLBACK (recents_menu_activate),
-                                              window);
-         gtk_action_group_remove_action (p->recents_action_group,
-                                         GTK_ACTION (l->data));
-    }
-    g_list_free (actions);
-
-    p->recents_menu_ui_id = gtk_ui_manager_new_merge_id (p->manager);
+    g_menu_remove_all (p->modern_recent_section);
 
     recent_manager =  gtk_recent_manager_get_default ();
     items = gtk_recent_manager_get_items (recent_manager);
@@ -1602,14 +1347,10 @@ update_recent_files_menu (PlumaWindow *window)
     i = 0;
     for (l = filtered_items; l != NULL; l = l->next)
     {
-        gchar *action_name;
         const gchar *display_name;
         gchar *escaped;
         gchar *label;
-        gchar *uri;
-        gchar *ruri;
-        gchar *tip;
-        GtkAction *action;
+        GMenuItem *menu_item;
         GtkRecentInfo *info = l->data;
 
         /* clamp */
@@ -1618,69 +1359,21 @@ update_recent_files_menu (PlumaWindow *window)
 
         i++;
 
-        action_name = g_strdup_printf ("recent-info-%d", i);
-
         display_name = gtk_recent_info_get_display_name (info);
         escaped = pluma_utils_escape_underscores (display_name, -1);
         if (i >= 10)
-            label = g_strdup_printf ("%d.  %s",
-                                     i,
-                                     escaped);
+            label = g_strdup_printf ("%d.  %s", i, escaped);
         else
-            label = g_strdup_printf ("_%d.  %s",
-                                     i,
-                                     escaped);
+            label = g_strdup_printf ("_%d.  %s", i, escaped);
         g_free (escaped);
 
-        /* gtk_recent_info_get_uri_display (info) is buggy and
-         * works only for local files */
-        uri = pluma_utils_uri_for_display (gtk_recent_info_get_uri (info));
-        ruri = pluma_utils_replace_home_dir_with_tilde (uri);
-        g_free (uri);
+        menu_item = g_menu_item_new (label, NULL);
+        g_menu_item_set_action_and_target (menu_item, "win.open-recent", "s",
+                                           gtk_recent_info_get_uri (info));
+        g_menu_append_item (p->modern_recent_section, menu_item);
+        g_object_unref (menu_item);
 
-        /* Translators: %s is a URI */
-        tip = g_strdup_printf (_("Open '%s'"), ruri);
-        g_free (ruri);
-
-        action = gtk_action_new (action_name,
-                                 label,
-                                 tip,
-                                 NULL);
-
-        g_object_set_data_full (G_OBJECT (action),
-                                "gtk-recent-info",
-                                gtk_recent_info_ref (info),
-                                (GDestroyNotify) gtk_recent_info_unref);
-
-        g_signal_connect (action,
-                          "activate",
-                          G_CALLBACK (recents_menu_activate),
-                          window);
-
-        gtk_action_group_add_action (p->recents_action_group,
-                                     action);
-        g_object_unref (action);
-
-        gtk_ui_manager_add_ui (p->manager,
-                               p->recents_menu_ui_id,
-                               "/MenuBar/FileMenu/FileRecentsPlaceholder",
-                               action_name,
-                               action_name,
-                               GTK_UI_MANAGER_MENUITEM,
-                               FALSE);
-
-        if (p->modern_recent_section != NULL)
-        {
-            GMenuItem *menu_item = g_menu_item_new (label, NULL);
-            g_menu_item_set_action_and_target (menu_item, "win.open-recent", "s",
-                                               gtk_recent_info_get_uri (info));
-            g_menu_append_item (p->modern_recent_section, menu_item);
-            g_object_unref (menu_item);
-        }
-
-        g_free (action_name);
         g_free (label);
-        g_free (tip);
     }
 
     g_list_free (filtered_items);
@@ -1708,6 +1401,66 @@ toolbar_visibility_changed (GtkWidget   *toolbar,
     sync_view_toggle_action_state (window, "show-toolbar", visible);
 }
 
+typedef struct
+{
+    const gchar *action_name;  /* NULL means "insert a separator here" */
+    const gchar *icon_name;
+    const gchar *label;        /* shown when the toolbar style includes text; NULL for icon-only */
+    const gchar *tooltip;
+    gboolean     is_important; /* shown with its label even in icon-only mode when space is tight */
+} PlumaToolbarItem;
+
+/* Mirrors the old "/ToolBar" (and "/FullscreenToolBar", which is the same
+ * buttons plus Leave Fullscreen — see fullscreen_controls_build()) from
+ * pluma-ui.xml. The "Open" button is special-cased in
+ * setup_toolbar_open_button() since it carries a recent-files dropdown. */
+static const PlumaToolbarItem pluma_toolbar_items[] =
+{
+    { "new",   "document-new-symbolic",  NULL,          N_("Create a new document"), FALSE },
+    { "save",  "document-save-symbolic", N_("Save"),    N_("Save the current file"), TRUE },
+    { NULL,    NULL,                     NULL,          NULL,                        FALSE },
+    { "print", "document-print-symbolic", N_("Print"),  N_("Print the current page"), FALSE },
+    { NULL,    NULL,                     NULL,          NULL,                        FALSE },
+    { "undo",  "edit-undo-symbolic",     NULL,          N_("Undo the last action"),  TRUE },
+    { "redo",  "edit-redo-symbolic",     NULL,          N_("Redo the last undone action"), FALSE },
+    { NULL,    NULL,                     NULL,          NULL,                        FALSE },
+    { "cut",   "edit-cut-symbolic",      NULL,          N_("Cut the selection"),     FALSE },
+    { "copy",  "edit-copy-symbolic",     NULL,          N_("Copy the selection"),    FALSE },
+    { "paste", "edit-paste-symbolic",    NULL,          N_("Paste the clipboard"),   FALSE },
+    { NULL,    NULL,                     NULL,          NULL,                        FALSE },
+    { "find",    "edit-find-symbolic",         N_("Find"),    N_("Search for text"), FALSE },
+    { "replace", "edit-find-replace-symbolic", N_("Replace"), N_("Search for and replace text"), FALSE },
+};
+
+static GtkWidget *
+build_toolbar (PlumaWindow *window)
+{
+    GtkWidget *toolbar = gtk_toolbar_new ();
+    gsize i;
+
+    gtk_style_context_add_class (gtk_widget_get_style_context (toolbar),
+                                 GTK_STYLE_CLASS_PRIMARY_TOOLBAR);
+
+    for (i = 0; i < G_N_ELEMENTS (pluma_toolbar_items); i++)
+    {
+        const PlumaToolbarItem *item = &pluma_toolbar_items[i];
+        GtkToolItem *tool_item;
+
+        if (item->action_name == NULL)
+            tool_item = gtk_separator_tool_item_new ();
+        else
+            tool_item = create_toolbar_button (window, item->action_name, item->icon_name,
+                                               item->label != NULL ? _(item->label) : NULL,
+                                               item->tooltip != NULL ? _(item->tooltip) : NULL,
+                                               item->is_important);
+
+        gtk_toolbar_insert (GTK_TOOLBAR (toolbar), tool_item, -1);
+    }
+
+    gtk_widget_show_all (toolbar);
+    return toolbar;
+}
+
 static GtkWidget *
 setup_toolbar_open_button (PlumaWindow *window,
                            GtkWidget *toolbar)
@@ -1716,7 +1469,7 @@ setup_toolbar_open_button (PlumaWindow *window,
     GtkRecentFilter *filter;
     GtkWidget *toolbar_recent_menu;
     GtkToolItem *open_button;
-    GtkAction *action;
+    GAction *action;
     guint max_recents;
 
     recent_manager = gtk_recent_manager_get_default ();
@@ -1754,14 +1507,16 @@ setup_toolbar_open_button (PlumaWindow *window,
     gtk_menu_tool_button_set_arrow_tooltip_text (GTK_MENU_TOOL_BUTTON (open_button),
                                                  _("Open a recently used file"));
 
-    action = gtk_action_group_get_action (window->priv->always_sensitive_action_group,
-                                         "FileOpen");
-    g_object_set (action,
-                  "is_important", TRUE,
-                  "short_label", _("Open"),
-                  NULL);
-    gtk_activatable_set_related_action (GTK_ACTIVATABLE (open_button),
-                                        action);
+    gtk_tool_item_set_is_important (open_button, TRUE);
+    g_object_set_data_full (G_OBJECT (open_button), "pluma-action-name",
+                            g_strdup ("open"), g_free);
+    g_signal_connect (open_button, "clicked",
+                      G_CALLBACK (toolbar_button_clicked), window);
+
+    action = g_action_map_lookup_action (G_ACTION_MAP (window), "open");
+    if (action != NULL)
+        g_object_bind_property (action, "enabled", open_button, "sensitive",
+                                G_BINDING_SYNC_CREATE);
 
     gtk_toolbar_insert (GTK_TOOLBAR (toolbar),
                         open_button,
@@ -1780,6 +1535,12 @@ typedef struct
     GtkLabelClass parent_class;
 } PlumaChordAccelLabelClass;
 
+/* Purely private to this file (used only to render the "Ctrl+K, Ctrl+O"
+ * chord hint below); G_DEFINE_TYPE's generated _get_type() has external
+ * linkage but nothing outside this file needs to call it, so declare a
+ * prototype here rather than exposing it through a header. */
+GType pluma_chord_accel_label_get_type (void) G_GNUC_CONST;
+
 G_DEFINE_TYPE (PlumaChordAccelLabel, pluma_chord_accel_label, GTK_TYPE_LABEL)
 
 static void
@@ -1793,17 +1554,47 @@ pluma_chord_accel_label_init (PlumaChordAccelLabel *label)
 {
 }
 
-static void
-set_chord_menu_label (GtkUIManager *manager)
+/* Depth-first search for a GtkMenuItem bound (directly, or via a submenu)
+ * to @action_name (a "win.<name>"-style detailed action name) within the
+ * GtkMenuBar built by gtk_menu_bar_new_from_model(). Used to reach into the
+ * modern menu for widgets that pluma-menus.ui cannot express on its own,
+ * such as the chord-accelerator hint below. Returns NULL if not found. */
+static GtkWidget *
+find_menu_item_for_action (GtkWidget *widget, const gchar *action_name)
 {
-    GtkWidget *item;
+    if (GTK_IS_ACTIONABLE (widget) &&
+        g_strcmp0 (gtk_actionable_get_action_name (GTK_ACTIONABLE (widget)), action_name) == 0)
+        return widget;
+
+    if (GTK_IS_MENU_ITEM (widget))
+    {
+        GtkWidget *submenu = gtk_menu_item_get_submenu (GTK_MENU_ITEM (widget));
+
+        return submenu != NULL ? find_menu_item_for_action (submenu, action_name) : NULL;
+    }
+    else if (GTK_IS_CONTAINER (widget))
+    {
+        GList *children = gtk_container_get_children (GTK_CONTAINER (widget));
+        GList *l;
+        GtkWidget *found = NULL;
+
+        for (l = children; l != NULL && found == NULL; l = l->next)
+            found = find_menu_item_for_action (l->data, action_name);
+        g_list_free (children);
+        return found;
+    }
+
+    return NULL;
+}
+
+static void
+set_chord_menu_label (GtkWidget *item)
+{
     GtkWidget *box;
     GtkWidget *label;
     GtkWidget *shortcut;
     GtkWidget *child;
 
-    item = gtk_ui_manager_get_widget (manager,
-                                      "/MenuBar/FileMenu/FileOpenFolderMenu");
     if (item == NULL)
         return;
 
@@ -1835,16 +1626,21 @@ modern_open_recent_activated (GSimpleAction *action,
     open_recent_file (g_variant_get_string (parameter, NULL), PLUMA_WINDOW (user_data));
 }
 
+/* Stateful (not just activatable) so the Documents menu can show a radio
+ * mark next to the current tab, the same way "highlight-mode" does for
+ * languages. notebook_switch_page() keeps the state in sync when the active
+ * tab changes through means other than this menu (tab click, shortcuts). */
 static void
 modern_switch_document_activated (GSimpleAction *action,
-                                  GVariant      *parameter,
+                                  GVariant      *value,
                                   gpointer       user_data)
 {
     PlumaWindow *window = PLUMA_WINDOW (user_data);
-    gint page = g_variant_get_int32 (parameter);
+    gint page = g_variant_get_int32 (value);
 
     if (page >= 0 && page < gtk_notebook_get_n_pages (GTK_NOTEBOOK (window->priv->notebook)))
         gtk_notebook_set_current_page (GTK_NOTEBOOK (window->priv->notebook), page);
+    g_simple_action_set_state (action, value);
 }
 
 static void
@@ -1870,7 +1666,7 @@ modern_highlight_mode_changed (GSimpleAction *action,
     g_simple_action_set_state (action, value);
 }
 
-static void create_modern_document_action_mirrors (PlumaWindow *window);
+static void create_window_actions (PlumaWindow *window);
 
 static void
 on_window_application_notify (GObject *object, GParamSpec *pspec, gpointer user_data)
@@ -1879,114 +1675,35 @@ on_window_application_notify (GObject *object, GParamSpec *pspec, gpointer user_
 
     if (gtk_window_get_application (GTK_WINDOW (window)) != NULL)
     {
-        create_modern_document_action_mirrors (window);
+        create_window_actions (window);
         g_signal_handlers_disconnect_by_func (window, on_window_application_notify, user_data);
     }
 }
 
 static void
-create_modern_document_action_mirrors (PlumaWindow *window)
+create_window_actions (PlumaWindow *window)
 {
-	static const gchar * const new_accels[] = { "<Control>n", NULL };
-	static const gchar * const open_accels[] = { "<Control>o", NULL };
-	static const gchar * const save_accels[] = { "<Control>s", NULL };
-	static const gchar * const save_as_accels[] = { "<Control><Shift>s", NULL };
-	static const gchar * const save_all_accels[] = { "<Control><Shift>l", NULL };
-	static const gchar * const print_preview_accels[] = { "<Control><Shift>p", NULL };
-	static const gchar * const print_accels[] = { "<Control>p", NULL };
-	static const gchar * const close_accels[] = { "<Control>w", NULL };
-	static const gchar * const close_all_accels[] = { "<Control><Shift>w", NULL };
-	static const gchar * const previous_accels[] = { "<Control><Alt>Page_Up", NULL };
-	static const gchar * const next_accels[] = { "<Control><Alt>Page_Down", NULL };
-	static const gchar * const undo_accels[] = { "<Control>z", NULL };
-	static const gchar * const redo_accels[] = { "<Control><Shift>z", NULL };
-	static const gchar * const cut_accels[] = { "<Control>x", NULL };
-	static const gchar * const copy_accels[] = { "<Control>c", NULL };
-	static const gchar * const paste_accels[] = { "<Control>v", NULL };
-	static const gchar * const select_all_accels[] = { "<Control>a", NULL };
-	static const gchar * const find_accels[] = { "<Control>f", NULL };
-	static const gchar * const find_next_accels[] = { "<Control>g", NULL };
-	static const gchar * const find_previous_accels[] = { "<Control><Shift>g", NULL };
-	static const gchar * const replace_accels[] = { "<Control>h", NULL };
-	static const gchar * const goto_line_accels[] = { "<Control>i", NULL };
-	static const gchar * const find_files_accels[] = { "<Control><Shift>f", NULL };
-	static const gchar * const incremental_accels[] = { "<Control>k", NULL };
-	static const gchar * const fullscreen_accels[] = { "F11", NULL };
-	static const PlumaLegacyActionMapping always_mappings[] = {
-		{ "FileNew", "new", new_accels },
-		{ "FileOpen", "open", open_accels },
-		{ "FileOpenFolder", "open-folder", NULL },
-		{ "EditPreferences", "preferences", NULL },
-		{ "HelpContents", "help", NULL },
-		{ "HelpAbout", "about", NULL }
-	};
-	static const PlumaLegacyActionMapping document_mappings[] = {
-		{ "FileSave", "save", save_accels },
-		{ "FileSaveAs", "save-as", save_as_accels },
-		{ "FileSaveAll", "save-all", save_all_accels },
-		{ "FileRevert", "revert", NULL },
-		{ "FilePrintPreview", "print-preview", print_preview_accels },
-		{ "FilePrint", "print", print_accels },
-		{ "FileCloseAll", "close-all", close_all_accels },
-		{ "FileCloseTabsLeft", "close-tabs-left", NULL },
-		{ "FileCloseTabsRight", "close-tabs-right", NULL },
-		{ "FileCloseOtherTabs", "close-other-tabs", NULL },
-		{ "DocumentsPreviousDocument", "previous-document", previous_accels },
-		{ "DocumentsNextDocument", "next-document", next_accels },
-		{ "DocumentsMoveToNewWindow", "move-to-new-window", NULL }
-	};
-	static const PlumaLegacyActionMapping close_mappings[] = {
-		{ "FileClose", "close", close_accels }
-	};
-	static const PlumaLegacyActionMapping edit_search_mappings[] = {
-		{ "EditUndo", "undo", undo_accels },
-		{ "EditRedo", "redo", redo_accels },
-		{ "EditCut", "cut", cut_accels },
-		{ "EditCopy", "copy", copy_accels },
-		{ "EditPaste", "paste", paste_accels },
-		{ "EditDelete", "delete", NULL },
-		{ "EditSelectAll", "select-all", select_all_accels },
-		{ "EditZoomIn", "zoom-in", NULL },
-		{ "EditZoomOut", "zoom-out", NULL },
-		{ "EditZoomReset", "zoom-reset", NULL },
-		{ "UpperCase", "uppercase", NULL },
-		{ "LowerCase", "lowercase", NULL },
-		{ "InvertCase", "invert-case", NULL },
-		{ "TitleCase", "title-case", NULL },
-		{ "SearchFind", "find", find_accels },
-		{ "SearchFindInFiles", "find-in-files", find_files_accels },
-		{ "SearchFindNext", "find-next", find_next_accels },
-		{ "SearchFindPrevious", "find-previous", find_previous_accels },
-		{ "SearchReplace", "replace", replace_accels },
-		{ "SearchClearHighlight", "clear-highlight", NULL },
-		{ "SearchGoToLine", "goto-line", goto_line_accels },
-		{ "SearchIncrementalSearch", "incremental-search", incremental_accels }
-	};
-	static const PlumaLegacyActionMapping view_mappings[] = {
-		{ "ViewFullscreen", "fullscreen", fullscreen_accels }
-	};
 	GtkApplication *application = gtk_window_get_application (GTK_WINDOW (window));
 	GSimpleAction *parameterized_action;
 	GSimpleAction *toggle_action;
+	gsize i;
 
 	if (application == NULL)
 		return;
 
-	pluma_action_migration_mirror_group (application, G_ACTION_MAP (window),
-	                                     window->priv->always_sensitive_action_group,
-	                                     always_mappings, G_N_ELEMENTS (always_mappings));
-	pluma_action_migration_mirror_group (application, G_ACTION_MAP (window),
-	                                     window->priv->action_group,
-	                                     document_mappings, G_N_ELEMENTS (document_mappings));
-	pluma_action_migration_mirror_group (application, G_ACTION_MAP (window),
-	                                     window->priv->close_action_group,
-	                                     close_mappings, G_N_ELEMENTS (close_mappings));
-	pluma_action_migration_mirror_group (application, G_ACTION_MAP (window),
-	                                     window->priv->action_group,
-	                                     edit_search_mappings, G_N_ELEMENTS (edit_search_mappings));
-	pluma_action_migration_mirror_group (application, G_ACTION_MAP (window),
-	                                     window->priv->always_sensitive_action_group,
-	                                     view_mappings, G_N_ELEMENTS (view_mappings));
+	g_action_map_add_action_entries (G_ACTION_MAP (window),
+	                                 pluma_window_action_entries,
+	                                 G_N_ELEMENTS (pluma_window_action_entries),
+	                                 window);
+
+	for (i = 0; i < G_N_ELEMENTS (pluma_window_action_accels); i++)
+	{
+		gchar *detailed_name = g_strconcat ("win.", pluma_window_action_accels[i].action_name, NULL);
+
+		gtk_application_set_accels_for_action (application, detailed_name,
+		                                       pluma_window_action_accels[i].accelerators);
+		g_free (detailed_name);
+	}
 
 	/* Toolbar/statusbar/side/bottom/right-pane visibility: native stateful
 	 * GActions, not mirrored from any legacy GtkToggleAction. Initial state
@@ -2052,11 +1769,27 @@ create_modern_document_action_mirrors (PlumaWindow *window)
 	g_action_map_add_action (G_ACTION_MAP (window), G_ACTION (parameterized_action));
 	g_object_unref (parameterized_action);
 
-	parameterized_action = g_simple_action_new ("switch-document", G_VARIANT_TYPE_INT32);
-	g_signal_connect (parameterized_action, "activate",
+	parameterized_action = g_simple_action_new_stateful ("switch-document",
+	                                                     G_VARIANT_TYPE_INT32,
+	                                                     g_variant_new_int32 (0));
+	g_signal_connect (parameterized_action, "change-state",
 	                  G_CALLBACK (modern_switch_document_activated), window);
 	g_action_map_add_action (G_ACTION_MAP (window), G_ACTION (parameterized_action));
 	g_object_unref (parameterized_action);
+
+	/* Alt+1..Alt+0 switch directly to the first ten tabs, regardless of
+	 * which document is currently open at that position (matches the old
+	 * per-position GtkRadioAction accelerators in update_documents_list_menu()). */
+	for (i = 0; i < 10; i++)
+	{
+		gchar *detailed_name = g_strdup_printf ("win.switch-document(%" G_GSIZE_FORMAT ")", i);
+		gchar *accel = g_strdup_printf ("<Alt>%" G_GSIZE_FORMAT, (i + 1) % 10);
+		const gchar *accels[] = { accel, NULL };
+
+		gtk_application_set_accels_for_action (application, detailed_name, accels);
+		g_free (detailed_name);
+		g_free (accel);
+	}
 
 	parameterized_action = g_simple_action_new_stateful ("highlight-mode",
 	                                                     G_VARIANT_TYPE_STRING,
@@ -2136,124 +1869,36 @@ static void
 create_menu_bar_and_toolbar (PlumaWindow *window,
                              GtkWidget   *main_box)
 {
-    GtkActionGroup *action_group;
-    GtkAction *action;
-    GtkUIManager *manager;
     GtkRecentManager *recent_manager;
     GError *error = NULL;
+    GObject *menu_model;
 
     pluma_debug (DEBUG_WINDOW);
 
-    manager = gtk_ui_manager_new ();
-    window->priv->manager = manager;
-
-    gtk_window_add_accel_group (GTK_WINDOW (window),
-                                gtk_ui_manager_get_accel_group (manager));
-
-    action_group = gtk_action_group_new ("PlumaWindowAlwaysSensitiveActions");
-    gtk_action_group_set_translation_domain (action_group, NULL);
-    gtk_action_group_add_actions (action_group,
-                                  pluma_always_sensitive_menu_entries,
-                                  G_N_ELEMENTS (pluma_always_sensitive_menu_entries),
-                                  window);
-    gtk_action_group_add_toggle_actions (action_group,
-                                         pluma_always_sensitive_toggle_menu_entries,
-                                         G_N_ELEMENTS (pluma_always_sensitive_toggle_menu_entries),
-                                         window);
-
-    gtk_ui_manager_insert_action_group (manager, action_group, 0);
-    g_object_unref (action_group);
-    window->priv->always_sensitive_action_group = action_group;
-
-    action_group = gtk_action_group_new ("PlumaWindowActions");
-    gtk_action_group_set_translation_domain (action_group, NULL);
-    gtk_action_group_add_actions (action_group,
-                                  pluma_menu_entries,
-                                  G_N_ELEMENTS (pluma_menu_entries),
-                                  window);
-    gtk_ui_manager_insert_action_group (manager, action_group, 0);
-    g_object_unref (action_group);
-    window->priv->action_group = action_group;
-
-    /* set short labels to use in the toolbar */
-    action = gtk_action_group_get_action (action_group, "FileSave");
-    g_object_set (action, "short_label", _("Save"), NULL);
-    action = gtk_action_group_get_action (action_group, "FilePrint");
-    g_object_set (action, "short_label", _("Print"), NULL);
-    action = gtk_action_group_get_action (action_group, "SearchFind");
-    g_object_set (action, "short_label", _("Find"), NULL);
-    action = gtk_action_group_get_action (action_group, "SearchReplace");
-    g_object_set (action, "short_label", _("Replace"), NULL);
-
-    /* set which actions should have priority on the toolbar */
-    action = gtk_action_group_get_action (action_group, "FileSave");
-    g_object_set (action, "is_important", TRUE, NULL);
-    action = gtk_action_group_get_action (action_group, "EditUndo");
-    g_object_set (action, "is_important", TRUE, NULL);
-
-    action_group = gtk_action_group_new ("PlumaQuitWindowActions");
-    gtk_action_group_set_translation_domain (action_group, NULL);
-    gtk_action_group_add_actions (action_group,
-                                  pluma_quit_menu_entries,
-                                  G_N_ELEMENTS (pluma_quit_menu_entries),
-                                  window);
-
-    gtk_ui_manager_insert_action_group (manager, action_group, 0);
-    g_object_unref (action_group);
-    window->priv->quit_action_group = action_group;
-
-    action_group = gtk_action_group_new ("PlumaCloseWindowActions");
-    gtk_action_group_set_translation_domain (action_group, NULL);
-    gtk_action_group_add_actions (action_group,
-                                  pluma_close_menu_entries,
-                                  G_N_ELEMENTS (pluma_close_menu_entries),
-                                  window);
-
-    gtk_ui_manager_insert_action_group (manager, action_group, 0);
-    g_object_unref (action_group);
-    window->priv->close_action_group = action_group;
-
-    /* Side/bottom/right pane visibility are native GActions, created below
-     * in create_modern_document_action_mirrors() — there is no legacy
-     * GtkActionGroup/GtkToggleAction backing them (see
-     * sync_view_toggle_action_state() and friends). */
-
-    /* Transitional GActions for the document wave.  The visible legacy UI
-     * remains in place until its GMenuModel counterpart reaches parity.
-     *
-     * gtk_window_get_application() is still NULL here: this runs during
-     * PlumaWindow construction (pluma_app_create_window()), and the window
-     * is only attached to the GtkApplication afterwards, via
-     * gtk_application_add_window() in pluma_application_activate(). Mirror
-     * once that actually happens instead of silently no-op'ing forever. */
+    /* win.* actions (pluma-actions.h) back both the GMenuModel menubar
+     * below and the manually-built toolbar. gtk_window_get_application()
+     * is still NULL here: this runs during PlumaWindow construction
+     * (pluma_app_create_window()), and the window is only attached to the
+     * GtkApplication afterwards, via gtk_application_add_window() in
+     * pluma_application_activate(). Create the actions once that actually
+     * happens instead of silently no-op'ing forever. */
     if (gtk_window_get_application (GTK_WINDOW (window)) != NULL)
-        create_modern_document_action_mirrors (window);
+        create_window_actions (window);
     else
         g_signal_connect (window, "notify::application",
                           G_CALLBACK (on_window_application_notify), NULL);
-
-    /* now load the UI definition */
-    gtk_ui_manager_add_ui_from_file (manager,
-                                     PLUMA_DATADIR "/ui/pluma-ui.xml",
-                                     &error);
-    if (error != NULL)
-    {
-        g_warning ("Could not merge %s: %s",
-                   PLUMA_DATADIR "/ui/pluma-ui.xml",
-                   error->message);
-        g_clear_error (&error);
-    }
 
     window->priv->modern_menu_builder = gtk_builder_new ();
     if (!gtk_builder_add_from_file (window->priv->modern_menu_builder,
                                     PLUMA_DATADIR "/ui/pluma-menus.ui",
                                     &error))
     {
-        g_warning ("Could not load modern menu model: %s", error->message);
-        g_clear_error (&error);
-        g_clear_object (&window->priv->modern_menu_builder);
+        /* pluma-menus.ui is not optional any more: it is the only menu
+         * definition left, so a missing/broken file is a packaging error,
+         * not something to silently fall back from. */
+        g_error ("Could not load %s: %s", PLUMA_DATADIR "/ui/pluma-menus.ui", error->message);
     }
-    else
+
     {
         GObject *recent = gtk_builder_get_object (window->priv->modern_menu_builder,
                                                    "recent-files-section");
@@ -2270,104 +1915,57 @@ create_menu_bar_and_toolbar (PlumaWindow *window,
             window->priv->modern_tools_section = G_MENU (tools);
     }
 
-    /* show tooltips in the statusbar */
-    g_signal_connect (manager,
-                      "connect_proxy",
-                      G_CALLBACK (connect_proxy_cb),
-                      window);
-    g_signal_connect (manager,
-                      "disconnect_proxy",
-                      G_CALLBACK (disconnect_proxy_cb),
-                      window);
-
-    /* recent files menu */
-    action_group = gtk_action_group_new ("RecentFilesActions");
-    gtk_action_group_set_translation_domain (action_group, NULL);
-    window->priv->recents_action_group = action_group;
-    gtk_ui_manager_insert_action_group (manager, action_group, 0);
-    g_object_unref (action_group);
-
     recent_manager = gtk_recent_manager_get_default ();
     window->priv->recents_handler_id = g_signal_connect (recent_manager,
                                                          "changed",
                                                          G_CALLBACK (recent_manager_changed),
                                                          window);
     update_recent_files_menu (window);
-
-    /* languages menu */
-    action_group = gtk_action_group_new ("LanguagesActions");
-    gtk_action_group_set_translation_domain (action_group, NULL);
-    window->priv->languages_action_group = action_group;
-    gtk_ui_manager_insert_action_group (manager, action_group, 0);
-    g_object_unref (action_group);
     create_languages_menu (window);
 
-    /* list of open documents menu */
-    action_group = gtk_action_group_new ("DocumentsListActions");
-    gtk_action_group_set_translation_domain (action_group, NULL);
-    window->priv->documents_list_action_group = action_group;
-    gtk_ui_manager_insert_action_group (manager, action_group, 0);
-    g_object_unref (action_group);
+    menu_model = gtk_builder_get_object (window->priv->modern_menu_builder, "pluma-menubar");
+    if (!G_IS_MENU_MODEL (menu_model))
+        g_error ("pluma-menus.ui has no top-level \"pluma-menubar\" menu");
 
-    if (window->priv->modern_menu_builder != NULL)
-    {
-        GObject *menu_model = gtk_builder_get_object (window->priv->modern_menu_builder,
-                                                       "pluma-menubar");
-        window->priv->menubar = G_IS_MENU_MODEL (menu_model)
-                                ? gtk_menu_bar_new_from_model (G_MENU_MODEL (menu_model))
-                                : NULL;
-    }
-    else
-    {
-        window->priv->menubar = NULL;
-    }
+    window->priv->menubar = gtk_menu_bar_new_from_model (G_MENU_MODEL (menu_model));
 
-    if (window->priv->menubar == NULL)
-    {
-        window->priv->menubar = gtk_ui_manager_get_widget (manager, "/MenuBar");
-        set_chord_menu_label (manager);
-    }
-    else
-    {
-        /* Unlike gtk_ui_manager_get_widget(), gtk_menu_bar_new_from_model()
-         * does not pre-show the widgets it creates, and main_box below is
-         * only shown with a plain gtk_widget_show (not _show_all). */
-        gtk_widget_show_all (window->priv->menubar);
+    /* Unlike the old gtk_ui_manager_get_widget(), gtk_menu_bar_new_from_model()
+     * does not pre-show the widgets it creates, and main_box below is only
+     * shown with a plain gtk_widget_show (not _show_all). */
+    gtk_widget_show_all (window->priv->menubar);
 
-        /* The Tools top-level menu only ever holds plugin-contributed
-         * items (see "plugin-tools-section" in pluma-menus.ui). GMenuModel
-         * has no built-in way to hide a submenu when its contents are
-         * empty, so track the section ourselves and hide the menubar
-         * entry while no plugin has added anything to it. */
-        if (window->priv->modern_tools_section != NULL)
+    set_chord_menu_label (find_menu_item_for_action (window->priv->menubar, "win.open-folder"));
+
+    /* The Tools top-level menu only ever holds plugin-contributed items
+     * (see "plugin-tools-section" in pluma-menus.ui). GMenuModel has no
+     * built-in way to hide a submenu when its contents are empty, so track
+     * the section ourselves and hide the menubar entry while no plugin has
+     * added anything to it. */
+    if (window->priv->modern_tools_section != NULL)
+    {
+        gint tools_index = find_menubar_index_for_section (G_MENU_MODEL (menu_model),
+                                                            window->priv->modern_tools_section);
+
+        if (tools_index >= 0)
         {
-            GObject *root = gtk_builder_get_object (window->priv->modern_menu_builder,
-                                                     "pluma-menubar");
-            gint tools_index = find_menubar_index_for_section (G_IS_MENU_MODEL (root) ? G_MENU_MODEL (root) : NULL,
-                                                                window->priv->modern_tools_section);
+            GList *children = gtk_container_get_children (GTK_CONTAINER (window->priv->menubar));
 
-            if (tools_index >= 0)
-            {
-                GList *children = gtk_container_get_children (GTK_CONTAINER (window->priv->menubar));
+            window->priv->tools_menu_item = g_list_nth_data (children, tools_index);
+            g_list_free (children);
 
-                window->priv->tools_menu_item = g_list_nth_data (children, tools_index);
-                g_list_free (children);
-
-                g_signal_connect (window->priv->modern_tools_section, "items-changed",
-                                  G_CALLBACK (modern_tools_section_items_changed), window);
-                update_tools_menu_visibility (window);
-            }
+            g_signal_connect (window->priv->modern_tools_section, "items-changed",
+                              G_CALLBACK (modern_tools_section_items_changed), window);
+            update_tools_menu_visibility (window);
         }
     }
+
     gtk_box_pack_start (GTK_BOX (main_box),
                         window->priv->menubar,
                         FALSE,
                         FALSE,
                         0);
 
-    window->priv->toolbar = gtk_ui_manager_get_widget (manager, "/ToolBar");
-    gtk_style_context_add_class (gtk_widget_get_style_context (window->priv->toolbar),
-                                 GTK_STYLE_CLASS_PRIMARY_TOOLBAR);
+    window->priv->toolbar = build_toolbar (window);
     gtk_box_pack_start (GTK_BOX (main_box),
                         window->priv->toolbar,
                         FALSE,
@@ -2390,151 +1988,43 @@ create_menu_bar_and_toolbar (PlumaWindow *window,
                             window);
 }
 
-static void
-documents_list_menu_activate (GtkToggleAction *action,
-                              PlumaWindow     *window)
-{
-    gint n;
-
-    if (gtk_toggle_action_get_active (action) == FALSE)
-        return;
-
-    n = gtk_radio_action_get_current_value (GTK_RADIO_ACTION (action));
-    gtk_notebook_set_current_page (GTK_NOTEBOOK (window->priv->notebook), n);
-}
-
-static gchar *
-get_menu_tip_for_tab (PlumaTab *tab)
-{
-    PlumaDocument *doc;
-    gchar *uri;
-    gchar *ruri;
-    gchar *tip;
-
-    doc = pluma_tab_get_document (tab);
-
-    uri = pluma_document_get_uri_for_display (doc);
-    ruri = pluma_utils_replace_home_dir_with_tilde (uri);
-    g_free (uri);
-
-    /* Translators: %s is a URI */
-    tip =  g_strdup_printf (_("Activate '%s'"), ruri);
-    g_free (ruri);
-
-    return tip;
-}
-
+/*
+ * Rebuild the "win.switch-document"-backed tab list of the Documents menu
+ * (pluma-menus.ui's "documents-list-section"). Keyboard access to the
+ * first ten tabs (Alt+1..Alt+0) is wired once, in create_window_actions(),
+ * as detailed-name accelerators ("win.switch-document(0)", etc.) rather
+ * than here, since it depends on tab position, not on this list being
+ * rebuilt.
+ */
 static void
 update_documents_list_menu (PlumaWindow *window)
 {
     PlumaWindowPrivate *p = window->priv;
-    GList *actions, *l;
     gint n, i;
-    guint id;
-    GSList *group = NULL;
 
     pluma_debug (DEBUG_WINDOW);
 
-    g_return_if_fail (p->documents_list_action_group != NULL);
+    if (p->modern_documents_section == NULL)
+        return;
 
-    if (p->modern_documents_section != NULL)
-        g_menu_remove_all (p->modern_documents_section);
-
-    if (p->documents_list_menu_ui_id != 0)
-        gtk_ui_manager_remove_ui (p->manager,
-                                  p->documents_list_menu_ui_id);
-
-    actions = gtk_action_group_list_actions (p->documents_list_action_group);
-    for (l = actions; l != NULL; l = l->next)
-    {
-        g_signal_handlers_disconnect_by_func (GTK_ACTION (l->data),
-                                              G_CALLBACK (documents_list_menu_activate),
-                                              window);
-         gtk_action_group_remove_action (p->documents_list_action_group,
-                                         GTK_ACTION (l->data));
-    }
-    g_list_free (actions);
+    g_menu_remove_all (p->modern_documents_section);
 
     n = gtk_notebook_get_n_pages (GTK_NOTEBOOK (p->notebook));
 
-    id = (n > 0) ? gtk_ui_manager_new_merge_id (p->manager) : 0;
-
     for (i = 0; i < n; i++)
     {
-        GtkWidget *tab;
-        GtkRadioAction *action;
-        gchar *action_name;
-        gchar *tab_name;
-        gchar *name;
-        gchar *tip;
-        gchar *accel;
+        GtkWidget *tab = gtk_notebook_get_nth_page (GTK_NOTEBOOK (p->notebook), i);
+        gchar *tab_name = _pluma_tab_get_name (PLUMA_TAB (tab));
+        gchar *name = pluma_utils_escape_underscores (tab_name, -1);
+        GMenuItem *menu_item = g_menu_item_new (name, NULL);
 
-        tab = gtk_notebook_get_nth_page (GTK_NOTEBOOK (p->notebook), i);
+        g_menu_item_set_action_and_target (menu_item, "win.switch-document", "i", i);
+        g_menu_append_item (p->modern_documents_section, menu_item);
+        g_object_unref (menu_item);
 
-        /* NOTE: the action is associated to the position of the tab in
-         * the notebook not to the tab itself! This is needed to work
-         * around the gtk+ bug #170727: gtk leaves around the accels
-         * of the action. Since the accel depends on the tab position
-         * the problem is worked around, action with the same name always
-         * get the same accel.
-         */
-        action_name = g_strdup_printf ("Tab_%d", i);
-        tab_name = _pluma_tab_get_name (PLUMA_TAB (tab));
-        name = pluma_utils_escape_underscores (tab_name, -1);
-        tip =  get_menu_tip_for_tab (PLUMA_TAB (tab));
-
-        /* alt + 1, 2, 3... 0 to switch to the first ten tabs */
-        accel = (i < 10) ? g_strdup_printf ("<alt>%d", (i + 1) % 10) : NULL;
-
-        action = gtk_radio_action_new (action_name,
-                                       name,
-                                       tip,
-                                       NULL,
-                                       i);
-
-        if (group != NULL)
-            gtk_radio_action_set_group (action, group);
-
-        /* note that group changes each time we add an action, so it must be updated */
-        group = gtk_radio_action_get_group (action);
-
-        gtk_action_group_add_action_with_accel (p->documents_list_action_group,
-                                                GTK_ACTION (action),
-                                                accel);
-
-        g_signal_connect (action,
-                          "activate",
-                          G_CALLBACK (documents_list_menu_activate),
-                          window);
-
-        gtk_ui_manager_add_ui (p->manager,
-                               id,
-                               "/MenuBar/DocumentsMenu/DocumentsListPlaceholder",
-                               action_name, action_name,
-                               GTK_UI_MANAGER_MENUITEM,
-                               FALSE);
-
-        if (p->modern_documents_section != NULL)
-        {
-            GMenuItem *menu_item = g_menu_item_new (name, NULL);
-            g_menu_item_set_action_and_target (menu_item, "win.switch-document", "i", i);
-            g_menu_append_item (p->modern_documents_section, menu_item);
-            g_object_unref (menu_item);
-        }
-
-        if (PLUMA_TAB (tab) == p->active_tab)
-            gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action), TRUE);
-
-        g_object_unref (action);
-
-        g_free (action_name);
         g_free (tab_name);
         g_free (name);
-        g_free (tip);
-        g_free (accel);
     }
-
-    p->documents_list_menu_ui_id = id;
 }
 
 /* Returns TRUE if status bar is visible */
@@ -2898,7 +2388,6 @@ set_title (PlumaWindow *window)
     gchar *dirname = NULL;
     gchar *title = NULL;
     gint len;
-    GtkAction *action;
 
     if (window->priv->active_tab == NULL)
     {
@@ -2983,8 +2472,7 @@ set_title (PlumaWindow *window)
                                      name);
     }
 
-    action = gtk_action_group_get_action (window->priv->action_group, "FileSave");
-    gtk_action_set_sensitive (action, cansave);
+        set_action_enabled (window, "save", cansave);
 
     gtk_window_set_title (GTK_WINDOW (window), title);
 
@@ -3134,8 +2622,7 @@ notebook_switch_page (GtkNotebook     *book,
 {
     PlumaView *view;
     PlumaTab *tab;
-    GtkAction *action;
-    gchar *action_name;
+    GAction *action;
 
     /* CHECK: I don't know why but it seems notebook_switch_page is called
     two times every time the user change the active tab */
@@ -3180,18 +2667,9 @@ notebook_switch_page (GtkNotebook     *book,
     set_sensitivity_according_to_tab (window, tab);
 
     /* activate the right item in the documents menu */
-    action_name = g_strdup_printf ("Tab_%d", page_num);
-    action = gtk_action_group_get_action (window->priv->documents_list_action_group,
-                                          action_name);
-
-    /* sometimes the action doesn't exist yet, and the proper action
-     * is set active during the documents list menu creation
-     * CHECK: would it be nicer if active_tab was a property and we monitored the notify signal?
-     */
+    action = g_action_map_lookup_action (G_ACTION_MAP (window), "switch-document");
     if (action != NULL)
-        gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action), TRUE);
-
-    g_free (action_name);
+        g_simple_action_set_state (G_SIMPLE_ACTION (action), g_variant_new_int32 (page_num));
 
     /* update the syntax menu */
     update_languages_menu (window);
@@ -3235,44 +2713,37 @@ notebook_switch_page (GtkNotebook     *book,
 static void
 set_sensitivity_according_to_window_state (PlumaWindow *window)
 {
-    GtkAction *action;
     PlumaLockdownMask lockdown;
+    gboolean saving_session;
+    gboolean tabs_enabled;
 
     lockdown = pluma_app_get_lockdown (pluma_app_get_default ());
 
-    /* We disable File->Quit/SaveAll/CloseAll while printing to avoid to have two
+    /* We disable File->SaveAll/CloseAll while printing to avoid to have two
        operations (save and print/print preview) that uses the message area at
        the same time (may be we can remove this limitation in the future) */
-    /* We disable File->Quit/CloseAll if state is saving since saving cannot be
-       cancelled (may be we can remove this limitation in the future) */
-    gtk_action_group_set_sensitive (window->priv->quit_action_group,
-                                    !(window->priv->state & PLUMA_WINDOW_STATE_SAVING) &&
-                                    !(window->priv->state & PLUMA_WINDOW_STATE_PRINTING));
-
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "FileCloseAll");
-    gtk_action_set_sensitive (action,
+    /* We disable File->CloseAll if state is saving since saving cannot be
+       cancelled (may be we can remove this limitation in the future).
+       Quit is an app-scoped action (app.quit, pluma-application.c) rather
+       than per-window now, so it is not greyed out here any more;
+       _pluma_cmd_file_quit() still refuses to run while saving/printing/
+       saving-session, so this only drops a UX nicety, not a safety check. */
+        set_action_enabled (window, "close-all",
                               !(window->priv->state & PLUMA_WINDOW_STATE_SAVING) &&
                               !(window->priv->state & PLUMA_WINDOW_STATE_PRINTING));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                          "FileSaveAll");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "save-all",
                               !(window->priv->state & PLUMA_WINDOW_STATE_PRINTING) &&
                               !(lockdown & PLUMA_LOCKDOWN_SAVE_TO_DISK));
 
-    action = gtk_action_group_get_action (window->priv->always_sensitive_action_group,
-                                          "FileNew");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "new",
                               !(window->priv->state & PLUMA_WINDOW_STATE_SAVING_SESSION));
 
-    action = gtk_action_group_get_action (window->priv->always_sensitive_action_group,
-                                          "FileOpen");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "open",
                               !(window->priv->state & PLUMA_WINDOW_STATE_SAVING_SESSION));
 
-    gtk_action_group_set_sensitive (window->priv->recents_action_group,
-                                    !(window->priv->state & PLUMA_WINDOW_STATE_SAVING_SESSION));
+        set_action_enabled (window, "open-recent",
+                              !(window->priv->state & PLUMA_WINDOW_STATE_SAVING_SESSION));
 
     pluma_notebook_set_close_buttons_sensitive (PLUMA_NOTEBOOK (window->priv->notebook),
                                                 !(window->priv->state & PLUMA_WINDOW_STATE_SAVING_SESSION));
@@ -3280,31 +2751,14 @@ set_sensitivity_according_to_window_state (PlumaWindow *window)
     pluma_notebook_set_tab_drag_and_drop_enabled (PLUMA_NOTEBOOK (window->priv->notebook),
                                                   !(window->priv->state & PLUMA_WINDOW_STATE_SAVING_SESSION));
 
-    if ((window->priv->state & PLUMA_WINDOW_STATE_SAVING_SESSION) != 0)
-    {
-        /* TODO: If we really care, Find could be active
-         * when in SAVING_SESSION state */
+    /* TODO: If we really care, Find could be active when in
+     * SAVING_SESSION state */
+    saving_session = (window->priv->state & PLUMA_WINDOW_STATE_SAVING_SESSION) != 0;
+    tabs_enabled = saving_session ? FALSE : (window->priv->num_tabs > 0);
 
-        if (gtk_action_group_get_sensitive (window->priv->action_group))
-            gtk_action_group_set_sensitive (window->priv->action_group, FALSE);
+    set_actions_enabled (window, document_action_names, tabs_enabled);
 
-        if (gtk_action_group_get_sensitive (window->priv->quit_action_group))
-            gtk_action_group_set_sensitive (window->priv->quit_action_group, FALSE);
-
-        if (gtk_action_group_get_sensitive (window->priv->close_action_group))
-            gtk_action_group_set_sensitive (window->priv->close_action_group, FALSE);
-    }
-    else
-    {
-        if (!gtk_action_group_get_sensitive (window->priv->action_group))
-            gtk_action_group_set_sensitive (window->priv->action_group, window->priv->num_tabs > 0);
-
-        if (!gtk_action_group_get_sensitive (window->priv->quit_action_group))
-            gtk_action_group_set_sensitive (window->priv->quit_action_group, window->priv->num_tabs > 0);
-
-        if (!gtk_action_group_get_sensitive (window->priv->close_action_group))
-            gtk_action_group_set_sensitive (window->priv->close_action_group, window->priv->num_tabs > 0);
-    }
+        set_action_enabled (window, "close", tabs_enabled);
 }
 
 static void
@@ -3322,7 +2776,6 @@ _pluma_window_set_lockdown (PlumaWindow       *window,
                             PlumaLockdownMask  lockdown)
 {
     PlumaTab *tab;
-    GtkAction *action;
     gboolean autosave;
 
     /* start/stop autosave in each existing tab */
@@ -3336,9 +2789,7 @@ _pluma_window_set_lockdown (PlumaWindow       *window,
 
     set_sensitivity_according_to_tab (window, tab);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                         "FileSaveAll");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "save-all",
                               !(window->priv->state & PLUMA_WINDOW_STATE_PRINTING) &&
                               !(lockdown & PLUMA_LOCKDOWN_SAVE_TO_DISK));
 
@@ -3441,12 +2892,6 @@ sync_name (PlumaTab    *tab,
            GParamSpec  *pspec,
            PlumaWindow *window)
 {
-    GtkAction *action;
-    gchar *action_name;
-    gchar *tab_name;
-    gchar *escaped_name;
-    gchar *tip;
-    gint n;
     PlumaDocument *doc;
 
     if (tab == window->priv->active_tab)
@@ -3454,30 +2899,13 @@ sync_name (PlumaTab    *tab,
         set_title (window);
 
         doc = pluma_tab_get_document (tab);
-        action = gtk_action_group_get_action (window->priv->action_group,
-                                              "FileRevert");
-        gtk_action_set_sensitive (action, !pluma_document_is_untitled (doc));
+                set_action_enabled (window, "revert", !pluma_document_is_untitled (doc));
     }
 
-    /* sync the item in the documents list menu */
-    n = gtk_notebook_page_num (GTK_NOTEBOOK (window->priv->notebook), GTK_WIDGET (tab));
-
-    action_name = g_strdup_printf ("Tab_%d", n);
-    action = gtk_action_group_get_action (window->priv->documents_list_action_group,
-                                          action_name);
-    g_free (action_name);
-    g_return_if_fail (action != NULL);
-
-    tab_name = _pluma_tab_get_name (tab);
-    escaped_name = pluma_utils_escape_underscores (tab_name, -1);
-    tip =  get_menu_tip_for_tab (tab);
-
-    g_object_set (action, "label", escaped_name, NULL);
-    g_object_set (action, "tooltip", tip, NULL);
-
-    g_free (tab_name);
-    g_free (escaped_name);
-    g_free (tip);
+    /* The documents-list GMenu items carry a static label set when they were
+     * created; rebuild the section so a rename (e.g. after Save As) is
+     * reflected there too. */
+    update_documents_list_menu (window);
 
     peas_extension_set_call (window->priv->extensions, "update_state");
 }
@@ -3732,7 +3160,8 @@ fullscreen_controls_build (PlumaWindow *window)
 {
     PlumaWindowPrivate *priv = window->priv;
     GtkWidget *toolbar;
-    GtkAction *action;
+    GtkToolItem *separator;
+    GtkToolItem *leave_button;
 
     if (priv->fullscreen_controls != NULL)
         return;
@@ -3742,15 +3171,23 @@ fullscreen_controls_build (PlumaWindow *window)
     gtk_window_set_transient_for (GTK_WINDOW (priv->fullscreen_controls),
                                   GTK_WINDOW (&window->window));
 
-    /* popup toolbar */
-    toolbar = gtk_ui_manager_get_widget (priv->manager, "/FullscreenToolBar");
-    gtk_container_add (GTK_CONTAINER (priv->fullscreen_controls), toolbar);
-
-    action = gtk_action_group_get_action (priv->always_sensitive_action_group,
-                                          "LeaveFullscreen");
-    g_object_set (action, "is-important", TRUE, NULL);
-
+    /* popup toolbar: same buttons as the main toolbar (build_toolbar()),
+     * plus an expanding separator and a "Leave Fullscreen" button at the
+     * far end, matching the old "/FullscreenToolBar" layout. */
+    toolbar = build_toolbar (window);
     setup_toolbar_open_button (window, toolbar);
+
+    separator = gtk_separator_tool_item_new ();
+    gtk_separator_tool_item_set_draw (GTK_SEPARATOR_TOOL_ITEM (separator), FALSE);
+    gtk_tool_item_set_expand (separator, TRUE);
+    gtk_toolbar_insert (GTK_TOOLBAR (toolbar), separator, -1);
+
+    leave_button = create_toolbar_button (window, "leave-fullscreen", "view-restore-symbolic",
+                                          NULL, _("Leave fullscreen mode"), TRUE);
+    gtk_toolbar_insert (GTK_TOOLBAR (toolbar), leave_button, -1);
+    gtk_widget_show_all (toolbar);
+
+    gtk_container_add (GTK_CONTAINER (priv->fullscreen_controls), toolbar);
 
     gtk_container_foreach (GTK_CONTAINER (toolbar),
                            (GtkCallback)set_non_homogeneus,
@@ -3773,24 +3210,17 @@ can_search_again (PlumaDocument *doc,
                   PlumaWindow   *window)
 {
     gboolean sensitive;
-    GtkAction *action;
 
     if (doc != pluma_window_get_active_document (window))
         return;
 
     sensitive = pluma_document_get_can_search_again (doc);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "SearchFindNext");
-    gtk_action_set_sensitive (action, sensitive);
+        set_action_enabled (window, "find-next", sensitive);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "SearchFindPrevious");
-    gtk_action_set_sensitive (action, sensitive);
+        set_action_enabled (window, "find-previous", sensitive);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "SearchClearHighlight");
-    gtk_action_set_sensitive (action, sensitive);
+        set_action_enabled (window, "clear-highlight", sensitive);
 }
 
 static void
@@ -3798,7 +3228,6 @@ can_undo (PlumaDocument *doc,
           GParamSpec    *pspec,
           PlumaWindow   *window)
 {
-    GtkAction *action;
     gboolean sensitive;
 
     sensitive = gtk_source_buffer_can_undo (GTK_SOURCE_BUFFER (doc));
@@ -3806,9 +3235,7 @@ can_undo (PlumaDocument *doc,
     if (doc != pluma_window_get_active_document (window))
         return;
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "EditUndo");
-    gtk_action_set_sensitive (action, sensitive);
+    set_action_enabled (window, "undo", sensitive);
 }
 
 static void
@@ -3816,7 +3243,6 @@ can_redo (PlumaDocument *doc,
           GParamSpec    *pspec,
           PlumaWindow   *window)
 {
-    GtkAction *action;
     gboolean sensitive;
 
     sensitive = gtk_source_buffer_can_redo (GTK_SOURCE_BUFFER (doc));
@@ -3824,9 +3250,7 @@ can_redo (PlumaDocument *doc,
     if (doc != pluma_window_get_active_document (window))
         return;
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "EditRedo");
-    gtk_action_set_sensitive (action, sensitive);
+    set_action_enabled (window, "redo", sensitive);
 }
 
 static void
@@ -3836,7 +3260,6 @@ selection_changed (PlumaDocument *doc,
 {
     PlumaTab *tab;
     PlumaView *view;
-    GtkAction *action;
     PlumaTabState state;
     gboolean state_normal;
     gboolean editable;
@@ -3853,23 +3276,17 @@ selection_changed (PlumaDocument *doc,
     view = pluma_tab_get_view (tab);
     editable = gtk_text_view_get_editable (GTK_TEXT_VIEW (view));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "EditCut");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "cut",
                               state_normal &&
                               editable &&
                               gtk_text_buffer_get_has_selection (GTK_TEXT_BUFFER (doc)));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "EditCopy");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "copy",
                               (state_normal ||
                               state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION) &&
                               gtk_text_buffer_get_has_selection (GTK_TEXT_BUFFER (doc)));
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "EditDelete");
-    gtk_action_set_sensitive (action,
+        set_action_enabled (window, "delete",
                               state_normal &&
                               editable &&
                               gtk_text_buffer_get_has_selection (GTK_TEXT_BUFFER (doc)));
@@ -3909,18 +3326,13 @@ editable_changed (PlumaView  *view,
 static void
 update_sensitivity_according_to_open_tabs (PlumaWindow *window)
 {
-    GtkAction *action;
 
     /* Set sensitivity */
-    gtk_action_group_set_sensitive (window->priv->action_group,
-                                    window->priv->num_tabs != 0);
+    set_actions_enabled (window, document_action_names, window->priv->num_tabs != 0);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "DocumentsMoveToNewWindow");
-    gtk_action_set_sensitive (action, window->priv->num_tabs > 1);
+        set_action_enabled (window, "move-to-new-window", window->priv->num_tabs > 1);
 
-    gtk_action_group_set_sensitive (window->priv->close_action_group,
-                                    window->priv->num_tabs != 0);
+        set_action_enabled (window, "close", window->priv->num_tabs != 0);
 }
 
 static void
@@ -4173,7 +3585,6 @@ show_notebook_popup_menu (GtkNotebook    *notebook,
                           GdkEventButton *event)
 {
     GtkWidget *menu;
-    GtkAction *action;
     GtkWidget *tab;
     GtkWidget *tab_label;
     gint page;
@@ -4189,25 +3600,11 @@ show_notebook_popup_menu (GtkNotebook    *notebook,
     page = gtk_notebook_page_num (notebook, tab);
     pages = gtk_notebook_get_n_pages (notebook);
 
-    /* These sensitivity updates also reach the mirrored win.close-tabs-left,
-     * win.close-tabs-right and win.close-other-tabs actions used by the
-     * menu built below, since pluma_action_migration_mirror_group listens
-     * for "notify::sensitive" on each legacy action. */
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "FileCloseTabsLeft");
-    gtk_action_set_sensitive (action, page > 0);
+        set_action_enabled (window, "close-tabs-left", page > 0);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "FileCloseTabsRight");
-    gtk_action_set_sensitive (action, page >= 0 && page < pages - 1);
+        set_action_enabled (window, "close-tabs-right", page >= 0 && page < pages - 1);
 
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "FileCloseOtherTabs");
-    gtk_action_set_sensitive (action, pages > 1);
-
-    action = gtk_action_group_get_action (window->priv->action_group,
-                                          "CloseMultipleTabs");
-    gtk_action_set_sensitive (action, pages > 1);
+        set_action_enabled (window, "close-other-tabs", pages > 1);
 
     model = g_menu_new ();
 
@@ -4865,12 +4262,6 @@ on_extension_removed (PeasExtensionSet *extensions,
                       PlumaWindow      *window)
 {
     peas_extension_call (exten, "deactivate", window);
-
-    /* Ensure update of ui manager, because we suspect it does something
-     * with expected static strings in the type module (when unloaded the
-     * strings don't exist anymore, and ui manager updates in an idle
-     * func) */
-    gtk_ui_manager_ensure_update (window->priv->manager);
 }
 
 static void
@@ -5413,22 +4804,6 @@ _pluma_window_is_removing_tabs (PlumaWindow *window)
     return window->priv->removing_tabs;
 }
 
-/**
- * pluma_window_get_ui_manager:
- * @window: a #PlumaWindow
- *
- * Gets the #GtkUIManager associated with the @window.
- *
- * Returns: (transfer none): the #GtkUIManager of the @window.
- */
-GtkUIManager *
-pluma_window_get_ui_manager (PlumaWindow *window)
-{
-    g_return_val_if_fail (PLUMA_IS_WINDOW (window), NULL);
-
-    return window->priv->manager;
-}
-
 gboolean
 pluma_window_add_menu_item (PlumaWindow *window,
                             const gchar *section_id,
@@ -5703,6 +5078,8 @@ _pluma_window_fullscreen (PlumaWindow *window)
 
     fullscreen_controls_build (window);
     fullscreen_controls_show (window);
+
+    sync_view_toggle_action_state (window, "fullscreen", TRUE);
 }
 
 void
@@ -5734,6 +5111,8 @@ _pluma_window_unfullscreen (PlumaWindow *window)
                                        window);
 
     gtk_widget_hide (window->priv->fullscreen_controls);
+
+    sync_view_toggle_action_state (window, "fullscreen", FALSE);
 }
 
 gboolean

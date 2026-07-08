@@ -524,7 +524,7 @@ show_popup_menu (PlumaDocumentsPanel *panel,
 	}
 	else
 	{
-		menu_popup_at_treeview_selection (menu, panel->priv->treeview);
+		pluma_utils_menu_popup_at_treeview_selection (menu, panel->priv->treeview);
 		gtk_menu_shell_select_first (GTK_MENU_SHELL (menu), FALSE);
 	}
 	g_signal_connect_swapped (menu, "selection-done", G_CALLBACK (gtk_widget_destroy), menu);

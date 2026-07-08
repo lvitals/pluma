@@ -76,14 +76,14 @@ test_consecutive_read (const gchar *inbuf,
 }
 
 static void
-test_empty ()
+test_empty (void)
 {
 	/* empty file should not have a trailing newline */
 	test_consecutive_read ("", "", PLUMA_DOCUMENT_NEWLINE_TYPE_CR_LF, 10);
 }
 
 static void
-test_consecutive_cut_char ()
+test_consecutive_cut_char (void)
 {
 	/* first \n is read then fo and then is added \r but not \n */
 	test_consecutive_read ("\nfo\nbar\n\nblah\n", "\r\nfo\r\nbar\r\n\r\nblah\r\n\r\n", PLUMA_DOCUMENT_NEWLINE_TYPE_CR_LF, 8);
@@ -91,7 +91,7 @@ test_consecutive_cut_char ()
 }
 
 static void
-test_consecutive_big_read ()
+test_consecutive_big_read (void)
 {
 	test_consecutive_read ("\nfo\nbar\n\nblah\n", "\rfo\rbar\r\rblah\r\r", PLUMA_DOCUMENT_NEWLINE_TYPE_CR, 200);
 	test_consecutive_read ("\nfo\nbar\n\nblah", "\rfo\rbar\r\rblah\r", PLUMA_DOCUMENT_NEWLINE_TYPE_CR, 200);
@@ -107,7 +107,7 @@ test_consecutive_big_read ()
 }
 
 static void
-test_consecutive_middle_read ()
+test_consecutive_middle_read (void)
 {
 	test_consecutive_read ("\nfo\nbar\n\nblah\n", "\rfo\rbar\r\rblah\r\r", PLUMA_DOCUMENT_NEWLINE_TYPE_CR, 6);
 	test_consecutive_read ("\nfo\nbar\n\nblah", "\rfo\rbar\r\rblah\r", PLUMA_DOCUMENT_NEWLINE_TYPE_CR, 6);
@@ -123,7 +123,7 @@ test_consecutive_middle_read ()
 }
 
 static void
-test_consecutive_multibyte_cut ()
+test_consecutive_multibyte_cut (void)
 {
 	test_consecutive_read ("hello\nhello\xe6\x96\x87\nworld\n", "hello\rhello\xe6\x96\x87\rworld\r\r", PLUMA_DOCUMENT_NEWLINE_TYPE_CR, 6);
 	test_consecutive_read ("hello\rhello\xe6\x96\x87\rworld\r", "hello\rhello\xe6\x96\x87\rworld\r\r", PLUMA_DOCUMENT_NEWLINE_TYPE_CR, 6);
@@ -131,7 +131,7 @@ test_consecutive_multibyte_cut ()
 }
 
 static void
-test_consecutive_multibyte_big_read ()
+test_consecutive_multibyte_big_read (void)
 {
 	test_consecutive_read ("hello\nhello\xe6\x96\x87\nworld\n", "hello\rhello\xe6\x96\x87\rworld\r\r", PLUMA_DOCUMENT_NEWLINE_TYPE_CR, 200);
 	test_consecutive_read ("hello\rhello\xe6\x96\x87\rworld\r", "hello\rhello\xe6\x96\x87\rworld\r\r", PLUMA_DOCUMENT_NEWLINE_TYPE_CR, 200);

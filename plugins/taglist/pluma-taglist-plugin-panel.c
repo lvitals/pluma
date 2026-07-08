@@ -776,7 +776,6 @@ pluma_taglist_plugin_panel_init (PlumaTaglistPluginPanel *panel)
 	GtkWidget *sw;
 	GtkTreeViewColumn *column;
 	GtkCellRenderer *cell;
-	GList *focus_chain = NULL;
 
 	pluma_debug (DEBUG_PLUGINS);
 
@@ -843,12 +842,9 @@ pluma_taglist_plugin_panel_init (PlumaTaglistPluginPanel *panel)
 
 	gtk_container_add (GTK_CONTAINER (sw), panel->priv->tags_list);
 
-	focus_chain = g_list_prepend (focus_chain, panel->priv->tags_list);
-	focus_chain = g_list_prepend (focus_chain, panel->priv->tag_groups_combo);
-
-	gtk_container_set_focus_chain (GTK_CONTAINER (panel),
-				       focus_chain);
-	g_list_free (focus_chain);
+	/* gtk_container_set_focus_chain() used to pin this order explicitly,
+	 * but it already matches the natural tab order from the pack order
+	 * below (tag_groups_combo, then sw/tags_list), so it was a no-op. */
 
 	add_preview_widget (panel);
 

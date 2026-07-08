@@ -37,8 +37,6 @@
 #include <pluma/pluma-utils.h>
 #include <pluma/pluma-help.h>
 
-#define MENU_PATH "/MenuBar/EditMenu/EditOps_6"
-
 static void peas_activatable_iface_init (PlumaWindowActivatableInterface *iface);
 
 enum {
@@ -50,9 +48,7 @@ struct _PlumaSortPluginPrivate
 {
 	PlumaWindow *window;
 
-	GtkActionGroup *ui_action_group;
 	GSimpleActionGroup *modern_action_group;
-	guint ui_id;
 
 	GtkWidget *dialog;
 	GtkWidget *col_num_spinbutton;
@@ -71,27 +67,17 @@ G_DEFINE_DYNAMIC_TYPE_EXTENDED (PlumaSortPlugin,
                                 G_IMPLEMENT_INTERFACE_DYNAMIC (PLUMA_TYPE_WINDOW_ACTIVATABLE,
                                                                peas_activatable_iface_init))
 
-static void sort_cb (GtkAction *action, PlumaSortPlugin *plugin);
+static void sort_cb (PlumaSortPlugin *plugin);
 
 static void
 sort_action_activated (GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
-	sort_cb (NULL, PLUMA_SORT_PLUGIN (user_data));
+	sort_cb (PLUMA_SORT_PLUGIN (user_data));
 }
 
 static const GActionEntry modern_action_entries[] =
 {
 	{ "sort", sort_action_activated, NULL, NULL, NULL, { 0, 0, 0 } }
-};
-
-static const GtkActionEntry action_entries[] =
-{
-	{ "Sort",
-	  "view-sort-ascending-symbolic",
-	  N_("S_ort..."),
-	  NULL,
-	  N_("Sort the current document or selection"),
-	  G_CALLBACK (sort_cb) }
 };
 
 static void
@@ -240,8 +226,7 @@ create_sort_dialog (PlumaSortPlugin *plugin)
 }
 
 static void
-sort_cb (GtkAction  *action,
-	 PlumaSortPlugin *plugin)
+sort_cb (PlumaSortPlugin *plugin)
 {
 	PlumaSortPluginPrivate *priv;
 	GtkWindowGroup *wg;
@@ -314,9 +299,6 @@ update_ui (PlumaSortPlugin *plugin)
 
 	view = pluma_window_get_active_view (plugin->priv->window);
 
-	gtk_action_group_set_sensitive (plugin->priv->ui_action_group,
-					(view != NULL) &&
-					gtk_text_view_get_editable (GTK_TEXT_VIEW (view)));
 	if (plugin->priv->modern_action_group != NULL)
 	{
 		GAction *action = g_action_map_lookup_action (G_ACTION_MAP (plugin->priv->modern_action_group), "sort");
@@ -330,35 +312,10 @@ static void
 pluma_sort_plugin_activate (PlumaWindowActivatable *activatable)
 {
 	PlumaSortPluginPrivate *priv;
-	GtkUIManager *manager;
 
 	pluma_debug (DEBUG_PLUGINS);
 
 	priv = PLUMA_SORT_PLUGIN (activatable)->priv;
-
-	manager = pluma_window_get_ui_manager (priv->window);
-
-	priv->ui_action_group = gtk_action_group_new ("PlumaSortPluginActions");
-	gtk_action_group_set_translation_domain (priv->ui_action_group,
-						 GETTEXT_PACKAGE);
-	gtk_action_group_add_actions (priv->ui_action_group,
-				      action_entries,
-				      G_N_ELEMENTS (action_entries),
-				      activatable);
-
-	gtk_ui_manager_insert_action_group (manager,
-					    priv->ui_action_group,
-					    -1);
-
-	priv->ui_id = gtk_ui_manager_new_merge_id (manager);
-
-	gtk_ui_manager_add_ui (manager,
-			       priv->ui_id,
-			       MENU_PATH,
-			       "Sort",
-			       "Sort",
-			       GTK_UI_MANAGER_MENUITEM,
-			       FALSE);
 
 	priv->modern_action_group = g_simple_action_group_new ();
 	g_action_map_add_action_entries (G_ACTION_MAP (priv->modern_action_group),
@@ -379,18 +336,11 @@ static void
 pluma_sort_plugin_deactivate (PlumaWindowActivatable *activatable)
 {
 	PlumaSortPluginPrivate *priv;
-	GtkUIManager *manager;
 
 	pluma_debug (DEBUG_PLUGINS);
 
 	priv = PLUMA_SORT_PLUGIN (activatable)->priv;
 
-	manager = pluma_window_get_ui_manager (priv->window);
-
-	gtk_ui_manager_remove_ui (manager,
-				  priv->ui_id);
-	gtk_ui_manager_remove_action_group (manager,
-				    priv->ui_action_group);
 	gtk_widget_insert_action_group (GTK_WIDGET (priv->window), "plugin-sort", NULL);
 	pluma_window_remove_menu_items (priv->window, "plugin-edit-section", "plugin-sort.sort");
 	g_clear_object (&priv->modern_action_group);
@@ -420,7 +370,6 @@ pluma_sort_plugin_dispose (GObject *object)
 	pluma_debug_message (DEBUG_PLUGINS, "PlumaSortPlugin disposing");
 
 	g_clear_object (&plugin->priv->window);
-	g_clear_object (&plugin->priv->ui_action_group);
 	g_clear_object (&plugin->priv->modern_action_group);
 
 	G_OBJECT_CLASS (pluma_sort_plugin_parent_class)->dispose (object);

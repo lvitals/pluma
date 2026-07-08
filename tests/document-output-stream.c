@@ -83,7 +83,7 @@ test_consecutive_write (const gchar *inbuf,
 }
 
 static void
-test_empty ()
+test_empty (void)
 {
 	test_consecutive_write ("", "", 10, PLUMA_DOCUMENT_NEWLINE_TYPE_DEFAULT);
 	test_consecutive_write ("\r\n", "", 10, PLUMA_DOCUMENT_NEWLINE_TYPE_CR_LF);
@@ -92,7 +92,7 @@ test_empty ()
 }
 
 static void
-test_consecutive ()
+test_consecutive (void)
 {
 	test_consecutive_write ("hello\nhow\nare\nyou", "hello\nhow\nare\nyou", 3,
 				PLUMA_DOCUMENT_NEWLINE_TYPE_LF);
@@ -103,7 +103,7 @@ test_consecutive ()
 }
 
 static void
-test_consecutive_tnewline ()
+test_consecutive_tnewline (void)
 {
 	test_consecutive_write ("hello\nhow\nare\nyou\n", "hello\nhow\nare\nyou", 3,
 				PLUMA_DOCUMENT_NEWLINE_TYPE_LF);
@@ -114,7 +114,7 @@ test_consecutive_tnewline ()
 }
 
 static void
-test_big_char ()
+test_big_char (void)
 {
 	test_consecutive_write ("\343\203\200\343\203\200", "\343\203\200\343\203\200", 2,
 				PLUMA_DOCUMENT_NEWLINE_TYPE_LF);

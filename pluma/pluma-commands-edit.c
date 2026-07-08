@@ -44,9 +44,11 @@
 #include "dialogs/pluma-preferences-dialog.h"
 
 void
-_pluma_cmd_edit_undo (GtkAction   *action,
-		     PlumaWindow *window)
+_pluma_cmd_edit_undo (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 	GtkSourceBuffer *active_document;
 
@@ -65,9 +67,11 @@ _pluma_cmd_edit_undo (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_redo (GtkAction   *action,
-		     PlumaWindow *window)
+_pluma_cmd_edit_redo (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 	GtkSourceBuffer *active_document;
 
@@ -86,9 +90,11 @@ _pluma_cmd_edit_redo (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_cut (GtkAction   *action,
-		    PlumaWindow *window)
+_pluma_cmd_edit_cut (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -102,9 +108,11 @@ _pluma_cmd_edit_cut (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_copy (GtkAction   *action,
-		     PlumaWindow *window)
+_pluma_cmd_edit_copy (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -118,9 +126,11 @@ _pluma_cmd_edit_copy (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_paste (GtkAction   *action,
-		      PlumaWindow *window)
+_pluma_cmd_edit_paste (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -134,9 +144,11 @@ _pluma_cmd_edit_paste (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_delete (GtkAction   *action,
-		       PlumaWindow *window)
+_pluma_cmd_edit_delete (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -150,9 +162,11 @@ _pluma_cmd_edit_delete (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_select_all (GtkAction   *action,
-			   PlumaWindow *window)
+_pluma_cmd_edit_select_all (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -166,9 +180,11 @@ _pluma_cmd_edit_select_all (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_zoom_in (GtkAction   *action,
-			 PlumaWindow *window)
+_pluma_cmd_edit_zoom_in (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -181,9 +197,11 @@ _pluma_cmd_edit_zoom_in (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_zoom_out (GtkAction   *action,
-			  PlumaWindow *window)
+_pluma_cmd_edit_zoom_out (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -196,9 +214,11 @@ _pluma_cmd_edit_zoom_out (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_zoom_reset (GtkAction   *action,
-			    PlumaWindow *window)
+_pluma_cmd_edit_zoom_reset (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -211,9 +231,11 @@ _pluma_cmd_edit_zoom_reset (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_upper_case (GtkAction   *action,
-			    PlumaWindow *window)
+_pluma_cmd_edit_upper_case (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -227,9 +249,11 @@ _pluma_cmd_edit_upper_case (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_lower_case (GtkAction   *action,
-			    PlumaWindow *window)
+_pluma_cmd_edit_lower_case (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -243,9 +267,11 @@ _pluma_cmd_edit_lower_case (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_invert_case (GtkAction   *action,
-			     PlumaWindow *window)
+_pluma_cmd_edit_invert_case (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -259,9 +285,11 @@ _pluma_cmd_edit_invert_case (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_title_case (GtkAction   *action,
-			    PlumaWindow *window)
+_pluma_cmd_edit_title_case (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaView *active_view;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -275,9 +303,11 @@ _pluma_cmd_edit_title_case (GtkAction   *action,
 }
 
 void
-_pluma_cmd_edit_preferences (GtkAction   *action,
-			    PlumaWindow *window)
+_pluma_cmd_edit_preferences (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	pluma_debug (DEBUG_COMMANDS);
 
 	pluma_show_preferences_dialog (window);

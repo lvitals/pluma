@@ -297,7 +297,12 @@ peas_plugin_loader_lua_initialize (PeasPluginLoader *loader)
       "package.path = '%s/?.lua;%s/?/init.lua;' .. package.path\n"
       "package.cpath = '%s/?.so;' .. package.cpath\n",
       PEAS_LUA_EXTRA_PATH, PEAS_LUA_EXTRA_PATH, PEAS_LUA_EXTRA_PATH);
-    luaL_dostring (L, snippet);
+    if (luaL_dostring (L, snippet) != 0)
+      {
+        g_warning ("Failed to set up bundled LuaGObject search path: %s",
+                   lua_tostring (L, -1));
+        lua_pop (L, 1);
+      }
     g_free (snippet);
   }
 #endif

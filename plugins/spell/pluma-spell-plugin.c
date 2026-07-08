@@ -49,8 +49,6 @@
 #define PLUMA_METADATA_ATTRIBUTE_SPELL_LANGUAGE "metadata::pluma-spell-language"
 #define PLUMA_METADATA_ATTRIBUTE_SPELL_ENABLED  "metadata::pluma-spell-enabled"
 
-#define MENU_PATH "/MenuBar/ToolsMenu/ToolsOps_1"
-
 /* GSettings keys */
 #define SPELL_SCHEMA		"org.mate.pluma.plugins.spell"
 #define AUTOCHECK_TYPE_KEY	"autocheck-type"
@@ -67,9 +65,7 @@ struct _PlumaSpellPluginPrivate
 {
 	PlumaWindow *window;
 
-	GtkActionGroup *action_group;
 	GSimpleActionGroup *modern_action_group;
-	guint           ui_id;
 	guint           message_cid;
 	gulong          tab_added_id;
 	gulong          tab_removed_id;
@@ -87,41 +83,9 @@ G_DEFINE_DYNAMIC_TYPE_EXTENDED (PlumaSpellPlugin,
                                 G_IMPLEMENT_INTERFACE_DYNAMIC (PEAS_GTK_TYPE_CONFIGURABLE,
                                                                peas_gtk_configurable_iface_init))
 
-static void	spell_cb	(GtkAction *action, PlumaSpellPlugin *plugin);
-static void	set_language_cb	(GtkAction *action, PlumaSpellPlugin *plugin);
-static void	auto_spell_cb	(GtkAction *action, PlumaSpellPlugin *plugin);
-
-/* UI actions. */
-static const GtkActionEntry action_entries[] =
-{
-	{ "CheckSpell",
-	  "tools-check-spelling-symbolic",
-	  N_("_Check Spelling..."),
-	  "<shift>F7",
-	  N_("Check the current document for incorrect spelling"),
-	  G_CALLBACK (spell_cb)
-	},
-
-	{ "ConfigSpell",
-	  NULL,
-	  N_("Set _Language..."),
-	  NULL,
-	  N_("Set the language of the current document"),
-	  G_CALLBACK (set_language_cb)
-	}
-};
-
-static const GtkToggleActionEntry toggle_action_entries[] =
-{
-	{ "AutoSpell",
-	  NULL,
-	  N_("_Autocheck Spelling"),
-	  "<control>F7",
-	  N_("Automatically spell-check the current document"),
-	  G_CALLBACK (auto_spell_cb),
-	  FALSE
-	}
-};
+static void	spell_cb	(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void	set_language_cb	(GSimpleAction *action, GVariant *parameter, gpointer user_data);
+static void	auto_spell_change_state (GSimpleAction *action, GVariant *value, gpointer user_data);
 
 typedef struct _SpellConfigureDialog SpellConfigureDialog;
 
@@ -180,12 +144,6 @@ pluma_spell_plugin_dispose (GObject *object)
 	{
 		g_object_unref (plugin->priv->window);
 		plugin->priv->window = NULL;
-	}
-
-	if (plugin->priv->action_group)
-	{
-		g_object_unref (plugin->priv->action_group);
-		plugin->priv->action_group = NULL;
 	}
 
 	g_clear_object (&plugin->priv->modern_action_group);
@@ -843,9 +801,11 @@ configure_dialog_destroyed (GtkWidget *widget,
 }
 
 static void
-set_language_cb (GtkAction   *action,
-		 PlumaSpellPlugin *plugin)
+set_language_cb (GSimpleAction *action,
+                 GVariant      *parameter,
+                 gpointer       user_data)
 {
+	PlumaSpellPlugin *plugin = PLUMA_SPELL_PLUGIN (user_data);
 	PlumaWindow *window;
 	PlumaDocument *doc;
 	PlumaSpellChecker *spell;
@@ -886,9 +846,11 @@ set_language_cb (GtkAction   *action,
 }
 
 static void
-spell_cb (GtkAction   *action,
-	  PlumaSpellPlugin *plugin)
+spell_cb (GSimpleAction *action,
+         GVariant      *parameter,
+         gpointer       user_data)
 {
+	PlumaSpellPlugin *plugin = PLUMA_SPELL_PLUGIN (user_data);
 	PlumaSpellPluginPrivate *data;
 	PlumaWindow *window;
 	PlumaView *view;
@@ -1014,9 +976,11 @@ set_auto_spell (PlumaWindow   *window,
 }
 
 static void
-auto_spell_cb (GtkAction   *action,
-	       PlumaSpellPlugin *plugin)
+auto_spell_change_state (GSimpleAction *action,
+                         GVariant      *value,
+                         gpointer       user_data)
 {
+	PlumaSpellPlugin *plugin = PLUMA_SPELL_PLUGIN (user_data);
 	PlumaWindow *window;
 	PlumaDocument *doc;
 	gboolean active;
@@ -1025,7 +989,7 @@ auto_spell_cb (GtkAction   *action,
 
 	window = PLUMA_WINDOW (plugin->priv->window);
 
-	active = gtk_toggle_action_get_active (GTK_TOGGLE_ACTION (action));
+	active = g_variant_get_boolean (value);
 
 	pluma_debug_message (DEBUG_PLUGINS, active ? "Auto Spell activated" : "Auto Spell deactivated");
 
@@ -1041,6 +1005,7 @@ auto_spell_cb (GtkAction   *action,
 	}
 
 	set_auto_spell (window, doc, active);
+	g_simple_action_set_state (action, value);
 }
 
 static void
@@ -1051,7 +1016,9 @@ update_ui (PlumaSpellPlugin *plugin)
 	PlumaDocument *doc;
 	PlumaView *view;
 	gboolean autospell;
-	GtkAction *action;
+	gboolean sensitive;
+	static const gchar * const action_names[] = { "check-spelling", "set-language", "auto-spell", NULL };
+	gsize i;
 
 	pluma_debug (DEBUG_PLUGINS);
 
@@ -1059,6 +1026,9 @@ update_ui (PlumaSpellPlugin *plugin)
 	window = PLUMA_WINDOW (data->window);
 	doc = pluma_window_get_active_document (window);
 	view = pluma_window_get_active_view (window);
+
+	if (data->modern_action_group == NULL)
+		return;
 
 	autospell = (doc != NULL &&
 	             pluma_automatic_spell_checker_get_from_document (doc) != NULL);
@@ -1075,28 +1045,32 @@ update_ui (PlumaSpellPlugin *plugin)
 		   endup with an useless speller */
 		if (state == PLUMA_TAB_STATE_NORMAL)
 		{
-			action = gtk_action_group_get_action (data->action_group,
-							      "AutoSpell");
+			GAction *action = g_action_map_lookup_action (G_ACTION_MAP (data->modern_action_group),
+			                                              "auto-spell");
 
-			g_signal_handlers_block_by_func (action, auto_spell_cb,
-							 plugin);
 			set_auto_spell (window, doc, autospell);
-			gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action),
-						      autospell);
-			g_signal_handlers_unblock_by_func (action, auto_spell_cb,
-							   plugin);
+			/* g_simple_action_set_state() only updates the property and
+			 * does not re-emit "change-state", so this cannot recurse
+			 * into auto_spell_change_state(). */
+			if (action != NULL)
+				g_simple_action_set_state (G_SIMPLE_ACTION (action),
+				                          g_variant_new_boolean (autospell));
 		}
 	}
 
-	gtk_action_group_set_sensitive (data->action_group,
-					(view != NULL) &&
-					gtk_text_view_get_editable (GTK_TEXT_VIEW (view)));
+	sensitive = (view != NULL) && gtk_text_view_get_editable (GTK_TEXT_VIEW (view));
+	for (i = 0; action_names[i] != NULL; i++)
+	{
+		GAction *action = g_action_map_lookup_action (G_ACTION_MAP (data->modern_action_group),
+		                                              action_names[i]);
+		if (action != NULL)
+			g_simple_action_set_enabled (G_SIMPLE_ACTION (action), sensitive);
+	}
 }
 
 static void
 set_auto_spell_from_metadata (PlumaSpellPlugin *plugin,
-			      PlumaDocument  *doc,
-			      GtkActionGroup *action_group)
+			      PlumaDocument  *doc)
 {
 	gboolean active = FALSE;
 	gchar *active_str = NULL;
@@ -1139,19 +1113,13 @@ set_auto_spell_from_metadata (PlumaSpellPlugin *plugin,
 	/* In case that the doc is the active one we mark the spell action */
 	active_doc = pluma_window_get_active_document (window);
 
-	if (active_doc == doc && action_group != NULL)
+	if (active_doc == doc && plugin->priv->modern_action_group != NULL)
 	{
-		GtkAction *action;
+		GAction *action = g_action_map_lookup_action (G_ACTION_MAP (plugin->priv->modern_action_group),
+		                                              "auto-spell");
 
-		action = gtk_action_group_get_action (action_group,
-						      "AutoSpell");
-
-		g_signal_handlers_block_by_func (action, auto_spell_cb,
-						 plugin);
-		gtk_toggle_action_set_active (GTK_TOGGLE_ACTION (action),
-					      active);
-		g_signal_handlers_unblock_by_func (action, auto_spell_cb,
-						   plugin);
+		if (action != NULL)
+			g_simple_action_set_state (G_SIMPLE_ACTION (action), g_variant_new_boolean (active));
 	}
 }
 
@@ -1171,7 +1139,7 @@ on_document_loaded (PlumaDocument *doc,
 			set_language_from_metadata (spell, doc);
 		}
 
-		set_auto_spell_from_metadata (plugin, doc, plugin->priv->action_group);
+		set_auto_spell_from_metadata (plugin, doc);
 	}
 }
 
@@ -1238,7 +1206,7 @@ tab_added_cb (PlumaWindow *window,
 
 	if (!uri)
 	{
-		set_auto_spell_from_metadata (plugin, doc, plugin->priv->action_group);
+		set_auto_spell_from_metadata (plugin, doc);
 
 		g_free(uri);
 	}
@@ -1265,6 +1233,13 @@ tab_removed_cb (PlumaWindow *window,
 	g_signal_handlers_disconnect_by_func (doc, on_document_saved, plugin);
 }
 
+static const GActionEntry modern_action_entries[] =
+{
+	{ "check-spelling", spell_cb },
+	{ "set-language", set_language_cb },
+	{ "auto-spell", NULL, NULL, "false", auto_spell_change_state },
+};
+
 static void
 register_modern_actions (PlumaSpellPlugin *plugin,
                          GtkApplication   *application)
@@ -1274,24 +1249,15 @@ register_modern_actions (PlumaSpellPlugin *plugin,
 
 	static const gchar * const check_spell_accels[] = { "<shift>F7", NULL };
 	static const gchar * const auto_spell_accels[] = { "<control>F7", NULL };
-	static const PlumaLegacyActionMapping spell_mappings[] = {
-		{ "CheckSpell", "check-spelling", NULL },
-		{ "ConfigSpell", "set-language", NULL },
-		{ "AutoSpell", "auto-spell", NULL }
-	};
 	GMenuItem *item;
 
 	data->modern_action_group = g_simple_action_group_new ();
-	pluma_action_migration_mirror_group (application,
-	                                     G_ACTION_MAP (data->modern_action_group),
-	                                     data->action_group, spell_mappings,
-	                                     G_N_ELEMENTS (spell_mappings));
+	g_action_map_add_action_entries (G_ACTION_MAP (data->modern_action_group),
+	                                 modern_action_entries,
+	                                 G_N_ELEMENTS (modern_action_entries), plugin);
 	gtk_widget_insert_action_group (GTK_WIDGET (window), "plugin-spell",
 	                                G_ACTION_GROUP (data->modern_action_group));
 
-	/* mirror_group always sets accelerators under the "win." prefix,
-	 * which does not apply to this "plugin-spell." group, so set
-	 * them here with the correct detailed action names instead. */
 	gtk_application_set_accels_for_action (application,
 	                                       "plugin-spell.check-spelling",
 	                                       check_spell_accels);
@@ -1332,7 +1298,6 @@ pluma_spell_plugin_activate (PlumaWindowActivatable *activatable)
 	PlumaSpellPlugin *plugin;
 	PlumaSpellPluginPrivate *data;
 	PlumaWindow *window;
-	GtkUIManager *manager;
 	GList *docs, *l;
 
 	pluma_debug (DEBUG_PLUGINS);
@@ -1341,51 +1306,9 @@ pluma_spell_plugin_activate (PlumaWindowActivatable *activatable)
 	data = plugin->priv;
 	window = PLUMA_WINDOW (data->window);
 
-	manager = pluma_window_get_ui_manager (window);
-
-	data->action_group = gtk_action_group_new ("PlumaSpellPluginActions");
-	gtk_action_group_set_translation_domain (data->action_group,
-						 GETTEXT_PACKAGE);
-	gtk_action_group_add_actions (data->action_group,
-					   action_entries,
-					   G_N_ELEMENTS (action_entries),
-					   plugin);
-	gtk_action_group_add_toggle_actions (data->action_group,
-					     toggle_action_entries,
-					     G_N_ELEMENTS (toggle_action_entries),
-					     plugin);
-
-	gtk_ui_manager_insert_action_group (manager, data->action_group, -1);
-
-	data->ui_id = gtk_ui_manager_new_merge_id (manager);
-
 	data->message_cid = gtk_statusbar_get_context_id
 			(GTK_STATUSBAR (pluma_window_get_statusbar (window)),
 			 "spell_plugin_message");
-
-	gtk_ui_manager_add_ui (manager,
-			       data->ui_id,
-			       MENU_PATH,
-			       "CheckSpell",
-			       "CheckSpell",
-			       GTK_UI_MANAGER_MENUITEM,
-			       FALSE);
-
-	gtk_ui_manager_add_ui (manager,
-			       data->ui_id,
-			       MENU_PATH,
-			       "AutoSpell",
-			       "AutoSpell",
-			       GTK_UI_MANAGER_MENUITEM,
-			       FALSE);
-
-	gtk_ui_manager_add_ui (manager,
-			       data->ui_id,
-			       MENU_PATH,
-			       "ConfigSpell",
-			       "ConfigSpell",
-			       GTK_UI_MANAGER_MENUITEM,
-			       FALSE);
 
 	{
 		GtkApplication *application = gtk_window_get_application (GTK_WINDOW (window));
@@ -1408,8 +1331,7 @@ pluma_spell_plugin_activate (PlumaWindowActivatable *activatable)
 	{
 		PlumaDocument *doc = PLUMA_DOCUMENT (l->data);
 
-		set_auto_spell_from_metadata (plugin, doc,
-					      data->action_group);
+		set_auto_spell_from_metadata (plugin, doc);
 
 		g_signal_handlers_disconnect_by_func (doc,
 		                                      on_document_loaded,
@@ -1434,7 +1356,6 @@ pluma_spell_plugin_deactivate (PlumaWindowActivatable *activatable)
 	PlumaSpellPlugin *plugin;
 	PlumaSpellPluginPrivate *data;
 	PlumaWindow *window;
-	GtkUIManager *manager;
 	GList *docs, *l;
 
 	pluma_debug (DEBUG_PLUGINS);
@@ -1444,11 +1365,6 @@ pluma_spell_plugin_deactivate (PlumaWindowActivatable *activatable)
 	window = PLUMA_WINDOW (data->window);
 
 	g_signal_handlers_disconnect_by_func (window, on_application_notify, plugin);
-
-	manager = pluma_window_get_ui_manager (window);
-
-	gtk_ui_manager_remove_ui (manager, data->ui_id);
-	gtk_ui_manager_remove_action_group (manager, data->action_group);
 
 	gtk_widget_insert_action_group (GTK_WIDGET (window), "plugin-spell", NULL);
 	pluma_window_remove_menu_items (window, "plugin-tools-section", "plugin-spell.check-spelling");
@@ -1471,6 +1387,8 @@ pluma_spell_plugin_deactivate (PlumaWindowActivatable *activatable)
 
 	g_signal_handler_disconnect (window, data->tab_added_id);
 	g_signal_handler_disconnect (window, data->tab_removed_id);
+
+	g_clear_object (&data->modern_action_group);
 }
 
 static void

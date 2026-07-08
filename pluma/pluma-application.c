@@ -71,7 +71,7 @@ quit_action_activated (GSimpleAction *action,
 	GtkWindow *window = gtk_application_get_active_window (GTK_APPLICATION (user_data));
 
 	if (window != NULL && PLUMA_IS_WINDOW (window))
-		_pluma_cmd_file_quit (NULL, PLUMA_WINDOW (window));
+		_pluma_cmd_file_quit (NULL, NULL, PLUMA_WINDOW (window));
 }
 
 static void

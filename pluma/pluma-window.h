@@ -150,10 +150,9 @@ PlumaPanel	*pluma_window_get_right_panel		(PlumaWindow         *window);
 
 GtkWidget	*pluma_window_get_statusbar		(PlumaWindow         *window);
 
-GtkUIManager	*pluma_window_get_ui_manager		(PlumaWindow         *window);
-
-/* Transitional GMenu API used while bundled plugins move away from
- * GtkUIManager. The section id must name a mutable section in pluma-menus.ui. */
+/* GMenu API used by bundled and third-party plugins to add menu items.
+ * The section id must name a mutable section in pluma-menus.ui (e.g.
+ * "plugin-tools-section", "plugin-edit-section", "plugin-search-section"). */
 gboolean	 pluma_window_add_menu_item		(PlumaWindow         *window,
 							 const gchar         *section_id,
 							 GMenuItem           *item);

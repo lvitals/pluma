@@ -21,8 +21,7 @@ struct _PlumaMarkdownPreviewPlugin
     GtkWidget *preview;      /* GtkScrolledWindow */
     GtkWidget *viewport;     /* GtkViewport */
     GtkWidget *container;    /* GtkBox (vertical) */
-    GtkActionGroup *action_group;
-    guint ui_id;
+    GSimpleActionGroup *modern_action_group;
     guint update_id;
     PlumaDocument *document;
     gulong changed_id;
@@ -212,13 +211,25 @@ set_document (PlumaMarkdownPreviewPlugin *self, PlumaDocument *document)
 }
 
 static void
-show_preview (GtkAction *action, PlumaMarkdownPreviewPlugin *self)
+show_preview (PlumaMarkdownPreviewPlugin *self)
 {
     PlumaPanel *panel = pluma_window_get_right_panel (self->window);
     gtk_widget_show (GTK_WIDGET (panel));
     pluma_panel_activate_item (panel, self->preview);
     update_preview (self);
 }
+
+static void
+show_preview_activated (GSimpleAction *action, GVariant *parameter, gpointer user_data)
+{
+    show_preview (PLUMA_MARKDOWN_PREVIEW_PLUGIN (user_data));
+}
+
+static const GActionEntry modern_action_entries[] =
+{
+    { "show-preview", show_preview_activated },
+    { "update-preview", show_preview_activated },
+};
 
 static void
 style_updated_cb (GtkWidget *widget, gpointer data)
@@ -232,13 +243,6 @@ activate (PlumaWindowActivatable *activatable)
 {
     PlumaMarkdownPreviewPlugin *self = PLUMA_MARKDOWN_PREVIEW_PLUGIN (activatable);
     PlumaPanel *panel = pluma_window_get_right_panel (self->window);
-    GtkUIManager *manager = pluma_window_get_ui_manager (self->window);
-    const GtkActionEntry entries[] = {
-        { "MarkdownPreview", NULL, N_("Show Markdown Preview"), NULL,
-          N_("Preview the current Markdown document"), G_CALLBACK (show_preview) },
-        { "MarkdownUpdate", NULL, N_("Update Markdown Preview"), NULL,
-          N_("Update the Markdown preview"), G_CALLBACK (show_preview) }
-    };
 
     self->preview = gtk_scrolled_window_new (NULL, NULL);
     gtk_widget_set_name (self->preview, "markdown-preview-panel");
@@ -373,22 +377,30 @@ activate (PlumaWindowActivatable *activatable)
     gtk_widget_show_all (self->preview);
     load_welcome (self);
 
-    self->action_group = gtk_action_group_new ("MarkdownPreviewActions");
-    gtk_action_group_set_translation_domain (self->action_group, GETTEXT_PACKAGE);
-    gtk_action_group_add_actions (self->action_group, entries, G_N_ELEMENTS (entries), self);
-    gtk_ui_manager_insert_action_group (manager, self->action_group, -1);
-    self->ui_id = gtk_ui_manager_new_merge_id (manager);
-    gtk_ui_manager_add_ui (manager, self->ui_id, "/MenuBar/ToolsMenu/ToolsOps_4",
-                           "MarkdownPreview", "MarkdownPreview", GTK_UI_MANAGER_MENUITEM, FALSE);
-    gtk_ui_manager_add_ui (manager, self->ui_id, "/MenuBar/ToolsMenu/ToolsOps_4",
-                           "MarkdownUpdate", "MarkdownUpdate", GTK_UI_MANAGER_MENUITEM, FALSE);
+    self->modern_action_group = g_simple_action_group_new ();
+    g_action_map_add_action_entries (G_ACTION_MAP (self->modern_action_group),
+                                     modern_action_entries,
+                                     G_N_ELEMENTS (modern_action_entries), self);
+    gtk_widget_insert_action_group (GTK_WIDGET (self->window), "plugin-markdown-preview",
+                                    G_ACTION_GROUP (self->modern_action_group));
+
+    {
+        GMenuItem *item;
+
+        item = g_menu_item_new (_("Show Markdown Preview"), "plugin-markdown-preview.show-preview");
+        pluma_window_add_menu_item (self->window, "plugin-tools-section", item);
+        g_object_unref (item);
+
+        item = g_menu_item_new (_("Update Markdown Preview"), "plugin-markdown-preview.update-preview");
+        pluma_window_add_menu_item (self->window, "plugin-tools-section", item);
+        g_object_unref (item);
+    }
 }
 
 static void
 deactivate (PlumaWindowActivatable *activatable)
 {
     PlumaMarkdownPreviewPlugin *self = PLUMA_MARKDOWN_PREVIEW_PLUGIN (activatable);
-    GtkUIManager *manager = pluma_window_get_ui_manager (self->window);
     if (self->update_id != 0) {
         g_source_remove (self->update_id);
         self->update_id = 0;
@@ -401,9 +413,12 @@ deactivate (PlumaWindowActivatable *activatable)
         g_clear_object (&self->css_provider);
     }
 
-    gtk_ui_manager_remove_ui (manager, self->ui_id);
-    gtk_ui_manager_remove_action_group (manager, self->action_group);
-    g_clear_object (&self->action_group);
+    gtk_widget_insert_action_group (GTK_WIDGET (self->window), "plugin-markdown-preview", NULL);
+    pluma_window_remove_menu_items (self->window, "plugin-tools-section",
+                                    "plugin-markdown-preview.show-preview");
+    pluma_window_remove_menu_items (self->window, "plugin-tools-section",
+                                    "plugin-markdown-preview.update-preview");
+    g_clear_object (&self->modern_action_group);
     pluma_panel_remove_item (pluma_window_get_right_panel (self->window), self->preview);
     self->preview = NULL;
     self->viewport = NULL;

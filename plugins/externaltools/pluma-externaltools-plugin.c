@@ -13,24 +13,12 @@
 #include <pluma/pluma-window.h>
 #include <pluma/pluma-panel.h>
 #include <pluma/pluma-document.h>
-#include <pluma/pluma-action-migration.h>
-
 #include "pluma-tool-library.h"
 #include "pluma-tool-output-panel.h"
 #include "pluma-tool-functions.h"
 #include "pluma-tool-manager.h"
 
-#define TOOLS_MENU_PATH "/MenuBar/ToolsMenu/ToolsOps_4/ExternalToolsMenu/ExternalToolPlaceholder"
-
-typedef struct {
-    PlumaExternalToolsPlugin *plugin;
-    PlumaTool *tool;
-    gulong handler_id;
-} AccelMapBinding;
-
 static void peas_activatable_iface_init (PlumaWindowActivatableInterface *iface);
-static void tool_menu_update (PlumaExternalToolsPlugin *plugin);
-static void tool_menu_remove (PlumaExternalToolsPlugin *plugin);
 static void tool_menu_filter (PlumaExternalToolsPlugin *plugin, PlumaDocument *document);
 static void on_manager_updated (gpointer user_data);
 static void modern_tool_group_rebuild (PlumaExternalToolsPlugin *plugin);
@@ -46,13 +34,6 @@ struct _PlumaExternalToolsPluginPrivate {
     GPtrArray *tools;
 
     PlumaToolOutputPanel *panel;
-
-    GtkActionGroup *static_action_group;
-    guint static_merge_id;
-
-    GtkActionGroup *tool_action_group;
-    guint tool_merge_id;
-    GList *accelmap_handlers; /* AccelMapBinding* */
 
     GSimpleActionGroup *modern_action_group; /* "plugin-externaltools" prefix */
 
@@ -121,29 +102,6 @@ tool_is_visible (PlumaTool *tool, PlumaDocument *document)
 /* ---------------------------------------------------------------- */
 /* dynamic Tools submenu                                             */
 /* ---------------------------------------------------------------- */
-
-static void
-on_tool_action_activate (GtkAction *action, PlumaExternalToolsPlugin *plugin)
-{
-    PlumaTool *tool = g_object_get_data (G_OBJECT (action), "pluma-tool");
-
-    if (tool != NULL)
-        pluma_tool_run_from_menu (plugin->priv->window, plugin->priv->panel, tool);
-}
-
-static void
-on_accelmap_changed (GtkAccelMap *accel_map, gchar *accel_path, guint key, GdkModifierType mods,
-                     AccelMapBinding *binding)
-{
-    g_free (binding->tool->shortcut);
-    binding->tool->shortcut = gtk_accelerator_name (key, mods);
-    pluma_tool_save (binding->tool, binding->plugin->priv->user_dir);
-
-    if (binding->plugin->priv->manager != NULL)
-        pluma_tool_manager_tool_changed (binding->plugin->priv->manager, binding->tool);
-
-    modern_tool_group_rebuild (binding->plugin);
-}
 
 /* ---------------------------------------------------------------- */
 /* "plugin-externaltools" GAction/GMenu mirror                       */
@@ -243,111 +201,14 @@ modern_tool_group_rebuild (PlumaExternalToolsPlugin *plugin)
     }
 }
 
-static void
-tool_menu_remove (PlumaExternalToolsPlugin *plugin)
-{
-    PlumaExternalToolsPluginPrivate *priv = plugin->priv;
-    GtkUIManager *manager = pluma_window_get_ui_manager (priv->window);
-    GList *actions, *l;
-
-    if (priv->tool_merge_id != 0) {
-        gtk_ui_manager_remove_ui (manager, priv->tool_merge_id);
-        gtk_ui_manager_remove_action_group (manager, priv->tool_action_group);
-        priv->tool_merge_id = 0;
-    }
-
-    actions = gtk_action_group_list_actions (priv->tool_action_group);
-    for (l = actions; l != NULL; l = l->next)
-        gtk_action_group_remove_action (priv->tool_action_group, GTK_ACTION (l->data));
-    g_list_free (actions);
-
-    {
-        GtkAccelMap *accel_map = gtk_accel_map_get ();
-        for (l = priv->accelmap_handlers; l != NULL; l = l->next) {
-            AccelMapBinding *binding = l->data;
-            g_signal_handler_disconnect (accel_map, binding->handler_id);
-            g_free (binding);
-        }
-        g_list_free (priv->accelmap_handlers);
-        priv->accelmap_handlers = NULL;
-    }
-
-    modern_tool_group_clear (plugin);
-}
-
-static void
-tool_menu_update (PlumaExternalToolsPlugin *plugin)
-{
-    PlumaExternalToolsPluginPrivate *priv = plugin->priv;
-    GtkUIManager *manager = pluma_window_get_ui_manager (priv->window);
-    guint i;
-
-    tool_menu_remove (plugin);
-
-    priv->tool_merge_id = gtk_ui_manager_new_merge_id (manager);
-
-    for (i = 0; i < priv->tools->len; i++) {
-        PlumaTool *tool = g_ptr_array_index (priv->tools, i);
-        gchar *action_name = g_strdup_printf ("ExternalToolTool%p", (void *) tool);
-        GtkAction *action = gtk_action_new (action_name, tool->name, tool->comment, NULL);
-
-        g_object_set_data (G_OBJECT (action), "pluma-tool", tool);
-        g_signal_connect (action, "activate", G_CALLBACK (on_tool_action_activate), plugin);
-
-        if (tool->shortcut != NULL) {
-            guint key;
-            GdkModifierType mods;
-            gchar *accel_path = g_strdup_printf ("<Actions>/ExternalToolsPluginToolActions/%s", action_name);
-            gchar *detailed_signal = g_strdup_printf ("changed::%s", accel_path);
-            AccelMapBinding *binding = g_new0 (AccelMapBinding, 1);
-
-            gtk_accelerator_parse (tool->shortcut, &key, &mods);
-            gtk_accel_map_add_entry (accel_path, key, mods);
-
-            binding->plugin = plugin;
-            binding->tool = tool;
-            binding->handler_id = g_signal_connect (gtk_accel_map_get (), detailed_signal,
-                                                    G_CALLBACK (on_accelmap_changed), binding);
-            priv->accelmap_handlers = g_list_prepend (priv->accelmap_handlers, binding);
-
-            g_free (detailed_signal);
-            g_free (accel_path);
-
-            gtk_action_group_add_action_with_accel (priv->tool_action_group, action, tool->shortcut);
-        } else {
-            gtk_action_group_add_action_with_accel (priv->tool_action_group, action, NULL);
-        }
-
-        gtk_ui_manager_add_ui (manager, priv->tool_merge_id, TOOLS_MENU_PATH,
-                               action_name, action_name, GTK_UI_MANAGER_MENUITEM, FALSE);
-
-        g_object_unref (action);
-        g_free (action_name);
-    }
-
-    gtk_ui_manager_insert_action_group (manager, priv->tool_action_group, -1);
-    tool_menu_filter (plugin, pluma_window_get_active_document (priv->window));
-}
-
+/* modern_tool_group_rebuild() already filters by the active document's
+ * visibility (see the tool_is_visible() check in its loop), so updating
+ * the tool list and filtering it for the current document are the same
+ * operation now. */
 static void
 tool_menu_filter (PlumaExternalToolsPlugin *plugin, PlumaDocument *document)
 {
-    GList *actions, *l;
-
     modern_tool_group_rebuild (plugin);
-
-    if (document == NULL)
-        return;
-
-    actions = gtk_action_group_list_actions (plugin->priv->tool_action_group);
-    for (l = actions; l != NULL; l = l->next) {
-        GtkAction *action = GTK_ACTION (l->data);
-        PlumaTool *tool = g_object_get_data (G_OBJECT (action), "pluma-tool");
-
-        if (tool != NULL)
-            gtk_action_set_visible (action, tool_is_visible (tool, document));
-    }
-    g_list_free (actions);
 }
 
 /* ---------------------------------------------------------------- */
@@ -357,11 +218,11 @@ tool_menu_filter (PlumaExternalToolsPlugin *plugin, PlumaDocument *document)
 static void
 on_manager_updated (gpointer user_data)
 {
-    tool_menu_update (PLUMA_EXTERNALTOOLS_PLUGIN (user_data));
+    modern_tool_group_rebuild (PLUMA_EXTERNALTOOLS_PLUGIN (user_data));
 }
 
 static void
-open_manager_cb (GtkAction *action, PlumaExternalToolsPlugin *plugin)
+open_manager_cb (PlumaExternalToolsPlugin *plugin)
 {
     PlumaExternalToolsPluginPrivate *priv = plugin->priv;
 
@@ -379,44 +240,18 @@ open_manager_cb (GtkAction *action, PlumaExternalToolsPlugin *plugin)
 static void
 modern_open_manager_activated (GSimpleAction *action, GVariant *parameter, gpointer user_data)
 {
-    open_manager_cb (NULL, PLUMA_EXTERNALTOOLS_PLUGIN (user_data));
+    open_manager_cb (PLUMA_EXTERNALTOOLS_PLUGIN (user_data));
 }
 
 /* ---------------------------------------------------------------- */
 /* PlumaWindowActivatable                                            */
 /* ---------------------------------------------------------------- */
 
-static const GtkActionEntry static_entries[] = {
-    { "ExternalToolManager", NULL, N_("Manage _External Tools..."), NULL,
-      N_("Opens the External Tools Manager"), G_CALLBACK (open_manager_cb) },
-    { "ExternalTools", NULL, N_("External _Tools"), NULL, N_("External tools"), NULL }
-};
-
-static const gchar ui_string[] =
-    "<ui>"
-    "  <menubar name=\"MenuBar\">"
-    "    <menu name=\"ToolsMenu\" action=\"Tools\">"
-    "      <placeholder name=\"ToolsOps_4\">"
-    "        <separator/>"
-    "        <menu name=\"ExternalToolsMenu\" action=\"ExternalTools\">"
-    "          <placeholder name=\"ExternalToolPlaceholder\"/>"
-    "        </menu>"
-    "        <separator/>"
-    "      </placeholder>"
-    "      <placeholder name=\"ToolsOps_5\">"
-    "        <menuitem name=\"ExternalToolManager\" action=\"ExternalToolManager\"/>"
-    "      </placeholder>"
-    "    </menu>"
-    "  </menubar>"
-    "</ui>";
-
 static void
 pluma_externaltools_plugin_activate (PlumaWindowActivatable *activatable)
 {
     PlumaExternalToolsPlugin *plugin = PLUMA_EXTERNALTOOLS_PLUGIN (activatable);
     PlumaExternalToolsPluginPrivate *priv = plugin->priv;
-    GtkUIManager *manager;
-    GError *error = NULL;
 
     priv->data_dir = peas_extension_base_get_data_dir (PEAS_EXTENSION_BASE (plugin));
     priv->system_dir = g_build_filename (priv->data_dir, "tools", NULL);
@@ -425,27 +260,11 @@ pluma_externaltools_plugin_activate (PlumaWindowActivatable *activatable)
 
     priv->tools = pluma_tool_library_load (priv->system_dir, priv->user_dir);
 
-    manager = pluma_window_get_ui_manager (priv->window);
-
-    priv->static_action_group = gtk_action_group_new ("ExternalToolsPluginActions");
-    gtk_action_group_set_translation_domain (priv->static_action_group, GETTEXT_PACKAGE);
-    gtk_action_group_add_actions (priv->static_action_group, static_entries,
-                                  G_N_ELEMENTS (static_entries), plugin);
-    gtk_ui_manager_insert_action_group (manager, priv->static_action_group, -1);
-
-    priv->static_merge_id = gtk_ui_manager_add_ui_from_string (manager, ui_string, -1, &error);
-    if (priv->static_merge_id == 0) {
-        g_warning ("External Tools: failed to merge menu UI: %s", error->message);
-        g_error_free (error);
-    }
-
     priv->panel = pluma_tool_output_panel_new (priv->data_dir, priv->window);
     if (priv->panel != NULL)
         pluma_panel_add_item_with_icon (pluma_window_get_bottom_panel (priv->window),
                                         pluma_tool_output_panel_get_widget (priv->panel),
                                         _("Shell Output"), "system-run");
-
-    priv->tool_action_group = gtk_action_group_new ("ExternalToolsPluginToolActions");
 
     {
         GtkApplication *application = gtk_window_get_application (GTK_WINDOW (priv->window));
@@ -469,9 +288,7 @@ pluma_externaltools_plugin_activate (PlumaWindowActivatable *activatable)
         }
     }
 
-    tool_menu_update (plugin);
-
-    gtk_ui_manager_ensure_update (manager);
+    modern_tool_group_rebuild (plugin);
 }
 
 static void
@@ -479,10 +296,8 @@ pluma_externaltools_plugin_deactivate (PlumaWindowActivatable *activatable)
 {
     PlumaExternalToolsPlugin *plugin = PLUMA_EXTERNALTOOLS_PLUGIN (activatable);
     PlumaExternalToolsPluginPrivate *priv = plugin->priv;
-    GtkUIManager *manager = pluma_window_get_ui_manager (priv->window);
 
-    tool_menu_remove (plugin);
-    g_clear_object (&priv->tool_action_group);
+    modern_tool_group_clear (plugin);
 
     if (priv->modern_action_group != NULL) {
         pluma_window_remove_menu_items (priv->window, "plugin-tools-section",
@@ -490,14 +305,6 @@ pluma_externaltools_plugin_deactivate (PlumaWindowActivatable *activatable)
         gtk_widget_insert_action_group (GTK_WIDGET (priv->window), "plugin-externaltools", NULL);
         g_clear_object (&priv->modern_action_group);
     }
-
-    if (priv->static_merge_id != 0)
-        gtk_ui_manager_remove_ui (manager, priv->static_merge_id);
-    if (priv->static_action_group != NULL) {
-        gtk_ui_manager_remove_action_group (manager, priv->static_action_group);
-        g_clear_object (&priv->static_action_group);
-    }
-    gtk_ui_manager_ensure_update (manager);
 
     if (priv->panel != NULL) {
         pluma_panel_remove_item (pluma_window_get_bottom_panel (priv->window),
@@ -527,7 +334,6 @@ pluma_externaltools_plugin_update_state (PlumaWindowActivatable *activatable)
     PlumaExternalToolsPlugin *plugin = PLUMA_EXTERNALTOOLS_PLUGIN (activatable);
 
     tool_menu_filter (plugin, pluma_window_get_active_document (plugin->priv->window));
-    gtk_ui_manager_ensure_update (pluma_window_get_ui_manager (plugin->priv->window));
 }
 
 static void

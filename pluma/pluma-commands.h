@@ -67,121 +67,167 @@ gint		_pluma_cmd_load_files_from_prompt	(PlumaWindow         *window,
 							 const PlumaEncoding *encoding,
 							 gint                 line_pos);
 
-void		_pluma_cmd_file_new			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_open			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_open_folder		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_save			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_save_as			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_save_all		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_revert			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_open_uri		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_print_preview		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_print			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_close			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_close_all		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_close_tabs_left		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_close_tabs_right	(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_close_other_tabs	(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_file_quit			(GtkAction   *action,
-							 PlumaWindow *window);
+void		_pluma_cmd_file_new			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_open			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_open_folder			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_save			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_save_as			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_save_all			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_revert			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_open_uri			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_print_preview			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_print			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_close			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_close_all			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_close_tabs_left			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_close_tabs_right			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_close_other_tabs			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_file_quit			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
 
-void		_pluma_cmd_edit_undo			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_redo			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_cut			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_copy			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_paste			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_delete			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_upper_case		  (GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_lower_case		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_invert_case		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_title_case		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_select_all		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_zoom_in		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_zoom_out		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_zoom_reset		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_edit_preferences		(GtkAction   *action,
-							 PlumaWindow *window);
+void		_pluma_cmd_edit_undo			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_redo			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_cut			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_copy			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_paste			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_delete			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_upper_case			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_lower_case			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_invert_case			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_title_case			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_select_all			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_zoom_in			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_zoom_out			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_zoom_reset			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_edit_preferences			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
 
 /* Native stateful GActions (win.show-toolbar/show-statusbar/show-side-pane/
  * show-bottom-pane/show-right-pane) — wired via the "change-state" signal,
  * not a legacy GtkToggleActionEntry callback. */
-void		_pluma_cmd_view_show_toolbar		(GSimpleAction *action,
+void		_pluma_cmd_view_show_toolbar			(GSimpleAction *action,
 							 GVariant      *state,
-							 PlumaWindow   *window);
-void		_pluma_cmd_view_show_statusbar		(GSimpleAction *action,
+							 gpointer       user_data);
+void		_pluma_cmd_view_show_statusbar			(GSimpleAction *action,
 							 GVariant      *state,
-							 PlumaWindow   *window);
-void		_pluma_cmd_view_show_side_pane		(GSimpleAction *action,
+							 gpointer       user_data);
+void		_pluma_cmd_view_show_side_pane			(GSimpleAction *action,
 							 GVariant      *state,
-							 PlumaWindow   *window);
-void		_pluma_cmd_view_show_bottom_pane	(GSimpleAction *action,
+							 gpointer       user_data);
+void		_pluma_cmd_view_show_bottom_pane			(GSimpleAction *action,
 							 GVariant      *state,
-							 PlumaWindow   *window);
-void		_pluma_cmd_view_show_right_pane		(GSimpleAction *action,
+							 gpointer       user_data);
+void		_pluma_cmd_view_show_right_pane			(GSimpleAction *action,
 							 GVariant      *state,
-							 PlumaWindow   *window);
-void		_pluma_cmd_view_toggle_fullscreen_mode	(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_view_leave_fullscreen_mode	(GtkAction   *action,
-							 PlumaWindow *window);
+							 gpointer       user_data);
+void		_pluma_cmd_view_toggle_fullscreen_mode			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_view_leave_fullscreen_mode			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
 
-void		_pluma_cmd_search_find			(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_search_find_in_files		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_search_find_next		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_search_find_prev		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_search_replace		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_search_clear_highlight	(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_search_goto_line		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_search_incremental_search	(GtkAction   *action,
-							 PlumaWindow *window);
+void		_pluma_cmd_search_find			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_search_find_in_files			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_search_find_next			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_search_find_prev			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_search_replace			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_search_clear_highlight			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_search_goto_line			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_search_incremental_search			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
 
-void		_pluma_cmd_documents_previous_document	(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_documents_next_document	(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_documents_move_to_new_window	(GtkAction   *action,
-							 PlumaWindow *window);
+void		_pluma_cmd_documents_previous_document			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_documents_next_document			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_documents_move_to_new_window			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
 
-void		_pluma_cmd_help_contents		(GtkAction   *action,
-							 PlumaWindow *window);
-void		_pluma_cmd_help_about			(GtkAction   *action,
-							 PlumaWindow *window);
+void		_pluma_cmd_help_contents			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
+void		_pluma_cmd_help_about			(GSimpleAction *action,
+							 GVariant      *parameter,
+							 gpointer       user_data);
 
 void		_pluma_cmd_file_close_tab 		(PlumaTab    *tab,
 							 PlumaWindow *window);

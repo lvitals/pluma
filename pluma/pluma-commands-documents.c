@@ -43,9 +43,11 @@
 #include "pluma-debug.h"
 
 void
-_pluma_cmd_documents_previous_document (GtkAction   *action,
-				       PlumaWindow *window)
+_pluma_cmd_documents_previous_document (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	GtkNotebook *notebook;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -55,9 +57,11 @@ _pluma_cmd_documents_previous_document (GtkAction   *action,
 }
 
 void
-_pluma_cmd_documents_next_document (GtkAction   *action,
-				   PlumaWindow *window)
+_pluma_cmd_documents_next_document (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	GtkNotebook *notebook;
 
 	pluma_debug (DEBUG_COMMANDS);
@@ -67,9 +71,11 @@ _pluma_cmd_documents_next_document (GtkAction   *action,
 }
 
 void
-_pluma_cmd_documents_move_to_new_window (GtkAction   *action,
-					PlumaWindow *window)
+_pluma_cmd_documents_move_to_new_window (GSimpleAction *action,
+                     GVariant      *parameter,
+                     gpointer       user_data)
 {
+	PlumaWindow *window = PLUMA_WINDOW (user_data);
 	PlumaNotebook *old_notebook;
 	PlumaTab *tab;
 

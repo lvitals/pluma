@@ -153,7 +153,7 @@ pluma_utils_menu_position_under_widget (GtkMenu  *menu,
 }
 
 void
-menu_popup_at_treeview_selection (GtkWidget *menu,
+pluma_utils_menu_popup_at_treeview_selection (GtkWidget *menu,
 				  GtkWidget *treeview)
 {
 	GtkTreePath *path;
@@ -236,7 +236,7 @@ pluma_dialog_add_button (GtkDialog   *dialog,
  * n: len of the string in bytes
  */
 gboolean
-g_utf8_caselessnmatch (const char *s1, const char *s2, gssize n1, gssize n2)
+pluma_utils_utf8_caselessnmatch (const char *s1, const char *s2, gssize n1, gssize n2)
 {
 	gchar *casefold;
 	gchar *normalized_s1;

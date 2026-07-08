@@ -3,6 +3,13 @@
 #include <unistd.h>
 #include "pluma-action-migration.h"
 
+/* This test exercises pluma_action_migration_mirror_group() against real
+ * GtkAction/GtkToggleAction/GtkActionGroup instances on purpose, so the
+ * resulting deprecation warnings are expected here and silenced locally
+ * rather than project-wide. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 static void
 legacy_activated (GtkAction *action, guint *count)
 {
@@ -146,3 +153,5 @@ main (int argc, char **argv)
 	g_test_add_func ("/actions/menu-loader", test_menu_loader);
 	return g_test_run ();
 }
+
+#pragma GCC diagnostic pop

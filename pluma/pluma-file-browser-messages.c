@@ -2,6 +2,14 @@
 #include "pluma-file-browser-store.h"
 #include <pluma/pluma-message.h>
 
+/* Bridges the file browser's message-bus API onto the widget's legacy
+ * GtkActionGroup-backed actions. This is a designated legacy/compatibility
+ * area, so deprecation warnings are expected here and silenced locally
+ * rather than project-wide.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #define MESSAGE_OBJECT_PATH 	"/plugins/filebrowser"
 #define WINDOW_DATA_KEY	       	"PlumaFileBrowserMessagesWindowData"
 
@@ -1032,3 +1040,5 @@ pluma_file_browser_messages_unregister (PlumaWindow *window)
 
 	window_data_free (window);
 }
+
+#pragma GCC diagnostic pop

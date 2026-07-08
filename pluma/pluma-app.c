@@ -453,7 +453,7 @@ window_delete_event (PlumaWindow *window,
          PLUMA_WINDOW_STATE_SAVING_SESSION))
             return TRUE;
 
-    _pluma_cmd_file_quit (NULL, window);
+    _pluma_cmd_file_quit (NULL, NULL, window);
 
     /* Do not destroy the window */
     return TRUE;

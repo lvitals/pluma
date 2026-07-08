@@ -43,6 +43,15 @@
 #include "pluma-file-bookmarks-store.h"
 #include "pluma-file-browser-enum-types.h"
 
+/* The file browser widget still builds its toolbar and menus from a
+ * GtkUIManager XML definition backed by GtkActionGroup/GtkToggleAction, and
+ * mirrors those into GAction equivalents via pluma-action-migration.c. This
+ * is a designated legacy/compatibility area, so the resulting deprecation
+ * warnings are expected and silenced locally rather than project-wide.
+ */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
 #define XML_UI_FILE "pluma-file-browser-widget-ui.xml"
 #define LOCATION_DATA_KEY "pluma-file-browser-widget-location"
 
@@ -1852,7 +1861,7 @@ popup_menu (PlumaFileBrowserWidget * obj, GdkEventButton * event, GtkTreeModel *
 
 		gtk_menu_popup_at_pointer (GTK_MENU (menu), NULL);
 	} else {
-		menu_popup_at_treeview_selection (menu, GTK_WIDGET (obj->priv->treeview));
+		pluma_utils_menu_popup_at_treeview_selection (menu, GTK_WIDGET (obj->priv->treeview));
 		gtk_menu_shell_select_first (GTK_MENU_SHELL (menu), FALSE);
 	}
 
@@ -3995,5 +4004,7 @@ on_action_bookmark_open (GtkAction * action, PlumaFileBrowserWidget * obj)
 	if (gtk_tree_selection_get_selected (selection, NULL, &iter))
 		bookmark_open (obj, model, &iter);
 }
+
+#pragma GCC diagnostic pop
 
 // ex:ts=8:noet:

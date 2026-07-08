@@ -76,6 +76,12 @@ void pluma_status_combo_box_set_item_text 		(PlumaStatusComboBox	*combo,
 void pluma_status_combo_box_set_item			(PlumaStatusComboBox	*combo,
 							 GtkMenuItem		*item);
 
+/**
+ * pluma_status_combo_box_get_item_label:
+ * @combo: a #PlumaStatusComboBox
+ *
+ * Returns: (transfer none): the label widget of the currently selected item
+ */
 GtkLabel *pluma_status_combo_box_get_item_label		(PlumaStatusComboBox	*combo);
 
 G_END_DECLS

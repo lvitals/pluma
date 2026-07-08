@@ -70,6 +70,17 @@ GType 		 pluma_application_get_type 		(void) G_GNUC_CONST;
 
 PlumaApplication *pluma_application_new			(void);
 
+/**
+ * pluma_application_set_command_line_options:
+ * @app: a #PlumaApplication
+ * @line_pos: the line to position the cursor at in the first opened file
+ * @encoding: (nullable): the charset to use, or %NULL to auto-detect
+ * @new_window: whether to force opening in a new window
+ * @new_document: whether to also open a new empty document
+ * @file_list: (nullable) (element-type GFile): files to open
+ *
+ * Stores command line options to be applied the next time the application activates.
+ */
 void		 pluma_application_set_command_line_options (PlumaApplication *app,
 							     gint line_pos,
 							     const gchar *encoding,
