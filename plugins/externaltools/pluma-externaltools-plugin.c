@@ -187,7 +187,7 @@ modern_tool_group_rebuild (PlumaExternalToolsPlugin *plugin)
         g_action_map_add_action (G_ACTION_MAP (priv->modern_action_group), G_ACTION (action));
         g_object_unref (action);
 
-        if (tool->shortcut != NULL) {
+        if (tool->shortcut != NULL && *tool->shortcut != '\0') {
             const gchar *accels[] = { tool->shortcut, NULL };
             gtk_application_set_accels_for_action (application, detailed_name, accels);
         }

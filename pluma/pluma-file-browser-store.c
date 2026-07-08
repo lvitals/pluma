@@ -48,7 +48,8 @@
 			 	 G_FILE_ATTRIBUTE_STANDARD_IS_BACKUP "," \
 				 G_FILE_ATTRIBUTE_STANDARD_NAME "," \
 				 G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE "," \
-				 G_FILE_ATTRIBUTE_STANDARD_ICON
+				 G_FILE_ATTRIBUTE_STANDARD_ICON "," \
+				 G_FILE_ATTRIBUTE_STANDARD_SIZE
 
 typedef struct _FileBrowserNode    FileBrowserNode;
 typedef struct _FileBrowserNodeDir FileBrowserNodeDir;
