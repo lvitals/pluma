@@ -332,6 +332,82 @@ iter_ends_with_text (GtkTextIter *iter,
 	return matches;
 }
 
+static gboolean
+range_contains_text (GtkTextIter *start,
+                     GtkTextIter *end,
+                     const gchar *text)
+{
+	GtkTextIter match_start;
+	GtkTextIter match_end;
+
+	if (gtk_text_iter_compare (start, end) >= 0)
+		return FALSE;
+
+	return gtk_text_iter_forward_search (start,
+	                                     text,
+	                                     GTK_TEXT_SEARCH_TEXT_ONLY,
+	                                     &match_start,
+	                                     &match_end,
+	                                     end);
+}
+
+static gboolean
+find_containing_block_comment (GtkTextIter *selection_start,
+                               GtkTextIter *selection_end,
+                               const gchar *start_tag,
+                               const gchar *end_tag,
+                               GtkTextIter *block_start,
+                               GtkTextIter *block_end)
+{
+	GtkTextIter start_match_start;
+	GtkTextIter start_match_end;
+	GtkTextIter end_match_start;
+	GtkTextIter end_match_end;
+
+	if (iter_starts_with_text (selection_start, start_tag))
+	{
+		start_match_start = *selection_start;
+		start_match_end = *selection_start;
+		gtk_text_iter_forward_chars (&start_match_end, g_utf8_strlen (start_tag, -1));
+	}
+	else if (!gtk_text_iter_backward_search (selection_start,
+	                                         start_tag,
+	                                         GTK_TEXT_SEARCH_TEXT_ONLY,
+	                                         &start_match_start,
+	                                         &start_match_end,
+	                                         NULL))
+	{
+		return FALSE;
+	}
+
+	if (iter_ends_with_text (selection_end, end_tag))
+	{
+		end_match_start = *selection_end;
+		gtk_text_iter_backward_chars (&end_match_start, g_utf8_strlen (end_tag, -1));
+		end_match_end = *selection_end;
+	}
+	else if (!gtk_text_iter_forward_search (selection_end,
+	                                        end_tag,
+	                                        GTK_TEXT_SEARCH_TEXT_ONLY,
+	                                        &end_match_start,
+	                                        &end_match_end,
+	                                        NULL))
+	{
+		return FALSE;
+	}
+
+	if (range_contains_text (&start_match_end, selection_start, end_tag) ||
+	    range_contains_text (selection_end, &end_match_start, start_tag))
+	{
+		return FALSE;
+	}
+
+	*block_start = start_match_start;
+	*block_end = end_match_end;
+
+	return TRUE;
+}
+
 static void
 restore_cursor_if_needed (PlumaDocument *document,
                           gboolean       deselect)
@@ -403,11 +479,25 @@ pluma_comment_toggle_block_comment (PlumaDocument *document)
 	block_start = start;
 	block_end = end;
 
-	if (iter_ends_with_text (&block_start, start_tag) &&
+	if (iter_starts_with_text (&block_start, start_tag) &&
+	    iter_ends_with_text (&block_end, end_tag))
+	{
+		/* The selection already includes the whole block comment. */
+	}
+	else if (iter_ends_with_text (&block_start, start_tag) &&
 	    iter_starts_with_text (&block_end, end_tag))
 	{
 		gtk_text_iter_backward_chars (&block_start, g_utf8_strlen (start_tag, -1));
 		gtk_text_iter_forward_chars (&block_end, g_utf8_strlen (end_tag, -1));
+	}
+	else if (find_containing_block_comment (&start,
+	                                        &end,
+	                                        start_tag,
+	                                        end_tag,
+	                                        &block_start,
+	                                        &block_end))
+	{
+		/* The selection is inside an existing block comment. */
 	}
 
 	start_tag_end = block_start;
@@ -492,7 +582,8 @@ pluma_comment_toggle_block_comment (PlumaDocument *document)
 		{
 			gtk_text_buffer_get_iter_at_mark (buffer, &select_start, start_mark);
 			gtk_text_buffer_get_iter_at_mark (buffer, &select_end, end_mark);
-			gtk_text_iter_forward_chars (&select_end, g_utf8_strlen (end_tag, -1));
+			gtk_text_iter_forward_chars (&select_start, g_utf8_strlen (start_tag, -1));
+			gtk_text_iter_backward_chars (&select_end, g_utf8_strlen (end_tag, -1));
 			gtk_text_buffer_select_range (buffer, &select_start, &select_end);
 		}
 
