@@ -11,6 +11,7 @@ git -C "$repo" config user.email "pluma@example.invalid"
 printf 'initial\n' > "$repo/tracked file.txt"
 git -C "$repo" add -- "tracked file.txt"
 git -C "$repo" commit -qm initial
+default_branch=$(git -C "$repo" symbolic-ref --short HEAD)
 
 printf 'modified\n' >> "$repo/tracked file.txt"
 printf 'untracked\n' > "$repo/untracked.txt"
@@ -149,9 +150,9 @@ git -C "$repo" restore -- "tracked file.txt"
 git -C "$repo" switch -q feature
 printf 'feature\n' > "$repo/tracked file.txt"
 git -C "$repo" commit -qam feature-change
-git -C "$repo" switch -q master
-printf 'master\n' > "$repo/tracked file.txt"
-git -C "$repo" commit -qam master-change
+git -C "$repo" switch -q "$default_branch"
+printf '%s\n' "$default_branch" > "$repo/tracked file.txt"
+git -C "$repo" commit -qam default-branch-change
 if git -C "$repo" merge feature >/dev/null 2>&1; then
   echo "merge fixture did not conflict" >&2
   exit 1
@@ -175,20 +176,20 @@ if git -C "$repo" rev-parse --verify --quiet --end-of-options 'missing-reference
   exit 1
 fi
 git -C "$repo" diff HEAD~1 -- 'renamed path with spaces.txt' | grep -F 'space'
-git -C "$repo" diff feature master -- 'tracked file.txt' | grep -F 'master'
+git -C "$repo" diff feature "$default_branch" -- 'tracked file.txt' | grep -F "$default_branch"
 
 remote="${repo}-remote.git"
 git init --bare -q "$remote"
 git -C "$repo" remote add origin "$remote"
-git -C "$repo" push -qu origin master
+git -C "$repo" push -qu origin "$default_branch"
 git -C "$repo" remote -v | grep -F origin
 
 # Amending a published commit requires an explicit force-with-lease update.
 git -C "$repo" commit --amend -qm published-amend
-if git -C "$repo" push origin master >/dev/null 2>&1; then
+if git -C "$repo" push origin "$default_branch" >/dev/null 2>&1; then
   echo "normal push unexpectedly accepted rewritten history" >&2
   exit 1
 fi
-git -C "$repo" push --force-with-lease -q origin master
-test "$(git -C "$repo" rev-parse HEAD)" = "$(git --git-dir="$remote" rev-parse refs/heads/master)"
+git -C "$repo" push --force-with-lease -q origin "$default_branch"
+test "$(git -C "$repo" rev-parse HEAD)" = "$(git --git-dir="$remote" rev-parse "refs/heads/$default_branch")"
 rm -rf "$remote"

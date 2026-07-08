@@ -706,17 +706,37 @@ check_unowned_group (void)
 	return TRUE;
 }
 
+static gboolean
+remote_document_saver_tests_enabled (void)
+{
+	const gchar *enabled;
+
+	enabled = g_getenv ("PLUMA_TEST_REMOTE_DOCUMENT_SAVER");
+
+	if (g_strcmp0 (enabled, "1") == 0 ||
+	    g_strcmp0 (enabled, "true") == 0 ||
+	    g_strcmp0 (enabled, "yes") == 0)
+	{
+		return TRUE;
+	}
+
+	g_printf ("*** Skipping remote document saver tests; set PLUMA_TEST_REMOTE_DOCUMENT_SAVER=1 to enable them\n");
+	return FALSE;
+}
+
 int main (int   argc,
           char *argv[])
 {
 	gboolean have_unowned;
 	gboolean have_unowned_group;
+	gboolean have_remote;
 
 	g_test_init (&argc, &argv, NULL);
 
 	g_printf ("\n***\n");
 	have_unowned = check_unowned_directory ();
 	have_unowned_group = check_unowned_group ();
+	have_remote = remote_document_saver_tests_enabled ();
 	g_printf ("***\n\n");
 
 	g_test_add_func ("/document-saver/local", test_local);
@@ -727,11 +747,13 @@ int main (int   argc,
 		g_test_add_func ("/document-saver/local-unowned-directory", test_local_unowned_directory);
 	}
 
-	g_test_add_func ("/document-saver/remote", test_remote);
-	g_test_add_func ("/document-saver/remote-new-line", test_remote_newline);
+	if (have_remote)
+	{
+		g_test_add_func ("/document-saver/remote", test_remote);
+		g_test_add_func ("/document-saver/remote-new-line", test_remote_newline);
+	}
 
-
-	if (have_unowned)
+	if (have_remote && have_unowned)
 	{
 		g_test_add_func ("/document-saver/remote-unowned-directory", test_remote_unowned_directory);
 	}
@@ -749,7 +771,10 @@ int main (int   argc,
 		g_test_add_func ("/document-saver/local-unowned-group", test_local_unowned_group);
 	}
 
-	g_test_add_func ("/document-saver/remote-permissions", test_remote_permissions);
+	if (have_remote)
+	{
+		g_test_add_func ("/document-saver/remote-permissions", test_remote_permissions);
+	}
 
 	return g_test_run ();
 }

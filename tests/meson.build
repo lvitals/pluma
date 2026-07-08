@@ -16,7 +16,9 @@ foreach t : test_progs
     ],
     link_with: libpluma,
   )
-  test(t, exe)
+  test(t, exe,
+    env: ['GSETTINGS_BACKEND=memory'],
+  )
 endforeach
 
 git_program = find_program('git', required: false)
