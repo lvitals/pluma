@@ -35,15 +35,9 @@ G_DEFINE_TYPE (PlumaProjectSearchPanel, pluma_project_search_panel, GTK_TYPE_BOX
 static GFile *
 get_root (PlumaProjectSearchPanel *panel)
 {
-	GFile *root = _pluma_window_get_default_location (panel->window);
-	PlumaDocument *doc;
+	GFile *root = NULL;
+	PlumaDocument *doc = pluma_window_get_active_document (panel->window);
 
-	if (root != NULL && g_file_query_file_type (root, 0, NULL) == G_FILE_TYPE_DIRECTORY)
-		return root;
-	if (root != NULL)
-		g_object_unref (root);
-
-	doc = pluma_window_get_active_document (panel->window);
 	if (doc != NULL)
 	{
 		GFile *location = pluma_document_get_location (doc);
@@ -51,10 +45,17 @@ get_root (PlumaProjectSearchPanel *panel)
 		{
 			root = g_file_get_parent (location);
 			g_object_unref (location);
-			if (root != NULL)
-				return root;
 		}
 	}
+
+	if (root == NULL)
+		root = _pluma_window_get_default_location (panel->window);
+
+	if (root != NULL && g_file_query_file_type (root, 0, NULL) == G_FILE_TYPE_DIRECTORY)
+		return root;
+
+	if (root != NULL)
+		g_object_unref (root);
 
 	{
 		gchar *cwd = g_get_current_dir ();
@@ -102,15 +103,53 @@ add_result (PlumaProjectSearchPanel *panel, GHashTable *parents,
 	g_free (label);
 }
 
+static gchar *
+decode_text (const gchar *raw_text, gsize raw_len, const gchar *path, GHashTable *encoding_cache)
+{
+	const PlumaEncoding *enc = g_hash_table_lookup (encoding_cache, path);
+
+	if (enc == NULL)
+	{
+		gsize dummy_len = 0;
+		gchar *contents = pluma_file_read_with_encoding (path, &dummy_len, &enc, NULL);
+		g_free (contents);
+
+		if (enc == NULL)
+			enc = pluma_encoding_get_utf8 ();
+
+		g_hash_table_insert (encoding_cache, g_strdup (path), (gpointer) enc);
+	}
+
+	gchar *utf8 = NULL;
+	const gchar *charset = pluma_encoding_get_charset (enc);
+
+	/* Since Ripgrep/Grep output UTF-8 matches for UTF-8 and UTF-16/32 files,
+	 * we only need to decode if the file's encoding is not UTF-* */
+	if (g_ascii_strncasecmp (charset, "UTF-", 4) == 0)
+	{
+		utf8 = g_utf8_make_valid (raw_text, raw_len);
+	}
+	else
+	{
+		gsize bytes_written = 0;
+		utf8 = g_convert (raw_text, raw_len, "UTF-8", charset, NULL, &bytes_written, NULL);
+		if (utf8 == NULL)
+		{
+			utf8 = g_utf8_make_valid (raw_text, raw_len);
+		}
+	}
+
+	return utf8;
+}
+
 static void
 search_finished (GObject *source, GAsyncResult *result, gpointer user_data)
 {
 	PlumaProjectSearchPanel *panel = user_data;
 	GError *error = NULL;
-	gchar *out = NULL, *err = NULL, **lines;
+	gchar *err = NULL;
 	GFile *root_file;
 	gchar *root;
-	GRegex *parser, *grep_parser;
 	GHashTable *parents;
 	guint count = 0;
 	GBytes *stdout_bytes = NULL, *stderr_bytes = NULL;
@@ -141,43 +180,92 @@ search_finished (GObject *source, GAsyncResult *result, gpointer user_data)
 		return;
 	}
 
-	out = pluma_file_bytes_to_utf8 (stdout_bytes);
 	err = pluma_file_bytes_to_utf8 (stderr_bytes);
 
 	root_file = get_root (panel);
 	root = g_file_get_path (root_file);
 	g_object_unref (root_file);
-	parser = g_regex_new ("^(.*):([0-9]+):([0-9]+):(.*)$", 0, 0, NULL);
-	grep_parser = g_regex_new ("^(.*):([0-9]+):(.*)$", 0, 0, NULL);
 	parents = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, (GDestroyNotify) gtk_tree_iter_free);
-	lines = g_strsplit (out ? out : "", "\n", -1);
 
-	for (guint i = 0; lines[i] != NULL; i++)
+	if (stdout_bytes != NULL)
 	{
-		GMatchInfo *match = NULL;
-		if (g_regex_match (parser, lines[i], 0, &match))
+		gsize size = 0;
+		const gchar *data = g_bytes_get_data (stdout_bytes, &size);
+		GHashTable *encoding_cache = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+
+		const gchar *line_start = data;
+		const gchar *data_end = data + size;
+
+		while (line_start < data_end)
 		{
-			gchar *path = g_match_info_fetch (match, 1);
-			gchar *line = g_match_info_fetch (match, 2);
-			gchar *column = g_match_info_fetch (match, 3);
-			gchar *text = g_match_info_fetch (match, 4);
-			gchar *absolute = g_canonicalize_filename (path, root);
-			add_result (panel, parents, root, absolute, atoi (line), atoi (column), text);
-			g_free (absolute); g_free (path); g_free (line); g_free (column); g_free (text);
-			count++;
-		}
-		else
-		{
-			g_match_info_free (match); match = NULL;
-			if (g_regex_match (grep_parser, lines[i], 0, &match))
+			const gchar *line_end = memchr (line_start, '\n', data_end - line_start);
+			if (line_end == NULL)
+				line_end = data_end;
+
+			gsize line_len = line_end - line_start;
+			if (line_len > 0 && line_start[line_len - 1] == '\r')
+				line_len--;
+
+			const gchar *p1 = memchr (line_start, ':', line_len);
+			if (p1 != NULL)
 			{
-				gchar *path = g_match_info_fetch (match, 1), *line = g_match_info_fetch (match, 2), *text = g_match_info_fetch (match, 3);
-				gchar *absolute = g_canonicalize_filename (path, root);
-				add_result (panel, parents, root, absolute, atoi (line), 1, text); count++;
-				g_free (absolute); g_free (path); g_free (line); g_free (text);
+				const gchar *p2 = memchr (p1 + 1, ':', line_len - (p1 + 1 - line_start));
+				if (p2 != NULL)
+				{
+					const gchar *p3 = memchr (p2 + 1, ':', line_len - (p2 + 1 - line_start));
+					const gchar *text_start = NULL;
+					gchar *path = g_strndup (line_start, p1 - line_start);
+					gint line_num = atoi (p1 + 1);
+					gint col_num = 0;
+					gsize text_len = 0;
+					gboolean is_rg = FALSE;
+
+					if (p3 != NULL)
+					{
+						gboolean line_digits = TRUE;
+						for (const gchar *c = p1 + 1; c < p2; c++)
+						{
+							if (*c < '0' || *c > '9') { line_digits = FALSE; break; }
+						}
+						gboolean col_digits = TRUE;
+						for (const gchar *c = p2 + 1; c < p3; c++)
+						{
+							if (*c < '0' || *c > '9') { col_digits = FALSE; break; }
+						}
+						if (line_digits && col_digits)
+							is_rg = TRUE;
+					}
+
+					if (is_rg)
+					{
+						col_num = atoi (p2 + 1);
+						text_start = p3 + 1;
+						text_len = line_start + line_len - text_start;
+					}
+					else
+					{
+						col_num = 1;
+						text_start = p2 + 1;
+						text_len = line_start + line_len - text_start;
+					}
+
+					gchar *absolute = g_canonicalize_filename (path, root);
+					gchar *decoded_text = decode_text (text_start, text_len, absolute, encoding_cache);
+
+					add_result (panel, parents, root, absolute, line_num, col_num, decoded_text);
+
+					g_free (absolute);
+					g_free (path);
+					g_free (decoded_text);
+					count++;
+				}
 			}
+
+			line_start = line_end + 1;
 		}
-		g_match_info_free (match);
+
+		g_hash_table_unref (encoding_cache);
+		g_bytes_unref (stdout_bytes);
 	}
 
 	gtk_tree_view_expand_all (GTK_TREE_VIEW (panel->tree));
@@ -188,13 +276,13 @@ search_finished (GObject *source, GAsyncResult *result, gpointer user_data)
 		gtk_label_set_text (GTK_LABEL (panel->status), status);
 		g_free (status);
 	}
-	g_strfreev (lines); g_hash_table_unref (parents); g_regex_unref (parser); g_regex_unref (grep_parser); g_free (root);
+	g_hash_table_unref (parents); g_free (root);
 
 done:
 	set_busy (panel, FALSE);
 	g_clear_object (&panel->process);
 	g_clear_object (&panel->cancellable);
-	g_free (out); g_free (err);
+	g_free (err);
 	g_object_unref (panel);
 }
 
@@ -228,17 +316,96 @@ append_grep_globs (GPtrArray *args, const gchar *value, gboolean exclude)
 }
 
 static void
+get_multichar_patterns (const gchar *query, gboolean is_regex, gchar **out_rg, gchar **out_grep)
+{
+	gchar *utf8_pat = NULL;
+	gchar *latin1_pat_rg = NULL;
+	gchar *latin1_pat_grep = NULL;
+
+	if (is_regex)
+		utf8_pat = g_strdup (query);
+	else
+		utf8_pat = g_regex_escape_string (query, -1);
+
+	/* Try to convert to Latin1/CP1252 */
+	gsize bytes_written = 0;
+	gchar *latin1_bytes = g_convert (query, -1, "ISO-8859-1", "UTF-8", NULL, &bytes_written, NULL);
+
+	if (latin1_bytes != NULL)
+	{
+		/* Check if it actually contains any non-ASCII characters */
+		gboolean has_non_ascii = FALSE;
+		for (gsize i = 0; i < bytes_written; i++)
+		{
+			if ((guchar)latin1_bytes[i] >= 128)
+			{
+				has_non_ascii = TRUE;
+				break;
+			}
+		}
+
+		if (has_non_ascii)
+		{
+			GString *s_rg = g_string_new ("(?-u)");
+			GString *s_grep = g_string_new ("");
+			for (gsize i = 0; i < bytes_written; i++)
+			{
+				guchar c = (guchar)latin1_bytes[i];
+				if (c >= 128)
+				{
+					g_string_append_printf (s_rg, "\\x%02x", c);
+					g_string_append_c (s_grep, (gchar)c);
+				}
+				else
+				{
+					if (!is_regex && strchr ("\\^$.|?*+()[]{}", c) != NULL)
+					{
+						g_string_append_c (s_rg, '\\');
+						g_string_append_c (s_grep, '\\');
+					}
+					g_string_append_c (s_rg, c);
+					g_string_append_c (s_grep, c);
+				}
+			}
+			latin1_pat_rg = g_string_free (s_rg, FALSE);
+			latin1_pat_grep = g_string_free (s_grep, FALSE);
+		}
+		g_free (latin1_bytes);
+	}
+
+	if (latin1_pat_rg != NULL)
+	{
+		*out_rg = g_strdup_printf ("(?:%s)|(?:%s)", utf8_pat, latin1_pat_rg);
+		*out_grep = g_strdup_printf ("(?:%s)|(?:%s)", utf8_pat, latin1_pat_grep);
+		g_free (utf8_pat);
+		g_free (latin1_pat_rg);
+		g_free (latin1_pat_grep);
+	}
+	else
+	{
+		*out_rg = utf8_pat;
+		*out_grep = g_strdup (utf8_pat);
+	}
+}
+
+static void
 start_search (PlumaProjectSearchPanel *panel)
 {
 	const gchar *query = gtk_entry_get_text (GTK_ENTRY (panel->search_entry));
-	GPtrArray *args;
 	GFile *root_file;
 	gchar *root;
-	GError *error = NULL;
+	GPtrArray *args;
 	gchar *rg_path;
 	GSubprocessLauncher *launcher;
+	GError *error = NULL;
+	gchar *pattern_rg = NULL;
+	gchar *pattern_grep = NULL;
+	gboolean is_regex_search;
+	gboolean use_regex_matching;
 
-	if (*query == '\0') return;
+	if (query == NULL || *query == '\0')
+		return;
+
 	g_settings_set_string (panel->settings, "project-search-text", query);
 	g_settings_set_string (panel->settings, "project-search-include", gtk_entry_get_text (GTK_ENTRY (panel->include_entry)));
 	g_settings_set_string (panel->settings, "project-search-exclude", gtk_entry_get_text (GTK_ENTRY (panel->exclude_entry)));
@@ -246,6 +413,7 @@ start_search (PlumaProjectSearchPanel *panel)
 	g_settings_set_boolean (panel->settings, "project-search-whole-word", gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->word_button)));
 	g_settings_set_boolean (panel->settings, "project-search-regex", gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->regex_button)));
 	g_settings_set_boolean (panel->settings, "project-search-include-ignored", gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->ignored_button)));
+
 	if (panel->cancellable) g_cancellable_cancel (panel->cancellable);
 	g_clear_object (&panel->process);
 	g_clear_object (&panel->cancellable);
@@ -254,34 +422,38 @@ start_search (PlumaProjectSearchPanel *panel)
 	gtk_label_set_text (GTK_LABEL (panel->status), _("Searching…"));
 	set_busy (panel, TRUE);
 
+	is_regex_search = gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->regex_button));
+	get_multichar_patterns (query, is_regex_search, &pattern_rg, &pattern_grep);
+	use_regex_matching = is_regex_search || g_str_has_prefix (pattern_rg, "(?:");
+
 	root_file = get_root (panel); root = g_file_get_path (root_file); g_object_unref (root_file);
 	args = g_ptr_array_new_with_free_func (g_free);
 	rg_path = g_find_program_in_path ("rg");
 	if (rg_path != NULL)
 	{
-	g_ptr_array_add (args, rg_path); g_ptr_array_add (args, g_strdup ("--vimgrep"));
-	g_ptr_array_add (args, g_strdup ("--color=never")); g_ptr_array_add (args, g_strdup ("--no-heading"));
-	g_ptr_array_add (args, g_strdup ("--max-count=10000"));
-	if (!gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->regex_button))) g_ptr_array_add (args, g_strdup ("-F"));
-	if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->case_button))) g_ptr_array_add (args, g_strdup ("-s"));
-	else g_ptr_array_add (args, g_strdup ("-i"));
-	if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->word_button))) g_ptr_array_add (args, g_strdup ("-w"));
-	if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->ignored_button))) g_ptr_array_add (args, g_strdup ("--no-ignore"));
-	append_globs (args, gtk_entry_get_text (GTK_ENTRY (panel->include_entry)), FALSE);
-	append_globs (args, gtk_entry_get_text (GTK_ENTRY (panel->exclude_entry)), TRUE);
-	g_ptr_array_add (args, g_strdup ("--")); g_ptr_array_add (args, g_strdup (query));
-	g_ptr_array_add (args, g_strdup (".")); g_ptr_array_add (args, NULL);
+		g_ptr_array_add (args, rg_path); g_ptr_array_add (args, g_strdup ("--vimgrep"));
+		g_ptr_array_add (args, g_strdup ("--color=never")); g_ptr_array_add (args, g_strdup ("--no-heading"));
+		g_ptr_array_add (args, g_strdup ("--max-count=10000"));
+		if (!use_regex_matching) g_ptr_array_add (args, g_strdup ("-F"));
+		if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->case_button))) g_ptr_array_add (args, g_strdup ("-s"));
+		else g_ptr_array_add (args, g_strdup ("-i"));
+		if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->word_button))) g_ptr_array_add (args, g_strdup ("-w"));
+		if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->ignored_button))) g_ptr_array_add (args, g_strdup ("--no-ignore"));
+		append_globs (args, gtk_entry_get_text (GTK_ENTRY (panel->include_entry)), FALSE);
+		append_globs (args, gtk_entry_get_text (GTK_ENTRY (panel->exclude_entry)), TRUE);
+		g_ptr_array_add (args, g_strdup ("--")); g_ptr_array_add (args, pattern_rg);
+		g_ptr_array_add (args, g_strdup (".")); g_ptr_array_add (args, NULL);
 	}
 	else
 	{
-		g_ptr_array_add (args, g_strdup ("grep")); g_ptr_array_add (args, g_strdup ("-RInH"));
+		g_ptr_array_add (args, g_strdup ("grep")); g_ptr_array_add (args, g_strdup ("-RanH"));
 		g_ptr_array_add (args, g_strdup ("--exclude-dir=.git"));
-		if (!gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->regex_button))) g_ptr_array_add (args, g_strdup ("-F")); else g_ptr_array_add (args, g_strdup ("-E"));
+		if (!use_regex_matching) g_ptr_array_add (args, g_strdup ("-F")); else g_ptr_array_add (args, g_strdup ("-E"));
 		if (!gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->case_button))) g_ptr_array_add (args, g_strdup ("-i"));
 		if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->word_button))) g_ptr_array_add (args, g_strdup ("-w"));
 		append_grep_globs (args, gtk_entry_get_text (GTK_ENTRY (panel->include_entry)), FALSE);
 		append_grep_globs (args, gtk_entry_get_text (GTK_ENTRY (panel->exclude_entry)), TRUE);
-		g_ptr_array_add (args, g_strdup ("--")); g_ptr_array_add (args, g_strdup (query));
+		g_ptr_array_add (args, g_strdup ("--")); g_ptr_array_add (args, pattern_grep);
 		g_ptr_array_add (args, g_strdup (".")); g_ptr_array_add (args, NULL);
 	}
 

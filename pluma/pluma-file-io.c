@@ -38,8 +38,31 @@ pluma_file_read_with_encoding (const gchar          *path,
 	gchar *utf8_text = NULL;
 	gsize utf8_len = 0;
 
-	/* 1. Try UTF-8 first */
-	if (g_utf8_validate (raw_contents, raw_len, NULL))
+	/* 0. Try UTF-16 BOM first to prevent false-positives with single-byte encodings */
+	if (raw_len >= 2 && (guchar)raw_contents[0] == 0xff && (guchar)raw_contents[1] == 0xfe)
+	{
+		found_enc = pluma_encoding_get_from_charset ("UTF-16LE");
+	}
+	else if (raw_len >= 2 && (guchar)raw_contents[0] == 0xfe && (guchar)raw_contents[1] == 0xff)
+	{
+		found_enc = pluma_encoding_get_from_charset ("UTF-16BE");
+	}
+
+	if (found_enc != NULL)
+	{
+		const gchar *charset = pluma_encoding_get_charset (found_enc);
+		GError *conv_err = NULL;
+		gsize bytes_read = 0;
+		gsize bytes_written = 0;
+		gchar *converted = g_convert (raw_contents, raw_len, "UTF-8", charset, &bytes_read, &bytes_written, &conv_err);
+		if (converted != NULL)
+		{
+			utf8_text = converted;
+			utf8_len = bytes_written;
+		}
+		g_clear_error (&conv_err);
+	}
+	else if (g_utf8_validate (raw_contents, raw_len, NULL))
 	{
 		found_enc = pluma_encoding_get_utf8 ();
 		utf8_text = g_memdup2 (raw_contents, raw_len + 1);
