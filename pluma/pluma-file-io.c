@@ -34,33 +34,35 @@ pluma_file_read_with_encoding (const gchar          *path,
 	if (!g_file_get_contents (path, &raw_contents, &raw_len, error))
 		return NULL;
 
-	GSettings *settings = get_settings ();
-	gchar **enc_strv = g_settings_get_strv (settings, "auto-detected-encodings");
-	GSList *encodings = _pluma_encoding_strv_to_list ((const gchar * const *) enc_strv);
-	g_strfreev (enc_strv);
-
 	const PlumaEncoding *found_enc = NULL;
 	gchar *utf8_text = NULL;
 	gsize utf8_len = 0;
 
-	for (GSList *l = encodings; l != NULL; l = l->next)
+	/* 1. Try UTF-8 first */
+	if (g_utf8_validate (raw_contents, raw_len, NULL))
 	{
-		const PlumaEncoding *enc = (const PlumaEncoding *) l->data;
-		const gchar *charset = pluma_encoding_get_charset (enc);
+		found_enc = pluma_encoding_get_utf8 ();
+		utf8_text = g_memdup2 (raw_contents, raw_len + 1);
+		utf8_text[raw_len] = '\0';
+		utf8_len = raw_len;
+	}
+	else
+	{
+		/* 2. Try auto-detected encodings list from GSettings */
+		GSettings *settings = get_settings ();
+		gchar **enc_strv = g_settings_get_strv (settings, "auto-detected-encodings");
+		GSList *encodings = _pluma_encoding_strv_to_list ((const gchar * const *) enc_strv);
+		g_strfreev (enc_strv);
 
-		if (g_ascii_strcasecmp (charset, "UTF-8") == 0)
+		for (GSList *l = encodings; l != NULL; l = l->next)
 		{
-			if (g_utf8_validate (raw_contents, raw_len, NULL))
-			{
-				found_enc = enc;
-				utf8_text = g_memdup2 (raw_contents, raw_len + 1);
-				utf8_text[raw_len] = '\0';
-				utf8_len = raw_len;
-				break;
-			}
-		}
-		else
-		{
+			const PlumaEncoding *enc = (const PlumaEncoding *) l->data;
+			const gchar *charset = pluma_encoding_get_charset (enc);
+
+			/* Skip UTF-8 since we already checked it */
+			if (g_ascii_strcasecmp (charset, "UTF-8") == 0)
+				continue;
+
 			GError *conv_err = NULL;
 			gsize bytes_read = 0;
 			gsize bytes_written = 0;
@@ -76,8 +78,8 @@ pluma_file_read_with_encoding (const gchar          *path,
 			g_free (converted);
 			g_clear_error (&conv_err);
 		}
+		g_slist_free (encodings);
 	}
-	g_slist_free (encodings);
 
 	if (utf8_text == NULL)
 	{

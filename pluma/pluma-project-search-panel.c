@@ -322,24 +322,31 @@ static void cancel_clicked (GtkButton *button, gpointer data) { PlumaProjectSear
 static void expand_clicked (GtkButton *button, gpointer data) { gtk_tree_view_expand_all (GTK_TREE_VIEW (PLUMA_PROJECT_SEARCH_PANEL (data)->tree)); }
 static void collapse_clicked (GtkButton *button, gpointer data) { gtk_tree_view_collapse_all (GTK_TREE_VIEW (PLUMA_PROJECT_SEARCH_PANEL (data)->tree)); }
 
-static gboolean
-path_is_open (PlumaProjectSearchPanel *panel, const gchar *path)
+static PlumaDocument *
+find_document_by_path (PlumaProjectSearchPanel *panel, const gchar *path)
 {
 	GList *documents = pluma_window_get_documents (panel->window);
-	gboolean found = FALSE;
+	PlumaDocument *found_doc = NULL;
 
-	for (GList *item = documents; item != NULL && !found; item = item->next)
+	for (GList *item = documents; item != NULL; item = item->next)
 	{
 		GFile *location = pluma_document_get_location (PLUMA_DOCUMENT (item->data));
 		if (location != NULL)
 		{
 			gchar *document_path = g_file_get_path (location);
-			found = g_strcmp0 (document_path, path) == 0;
-			g_free (document_path); g_object_unref (location);
+			if (g_strcmp0 (document_path, path) == 0)
+			{
+				found_doc = PLUMA_DOCUMENT (item->data);
+				g_free (document_path);
+				g_object_unref (location);
+				break;
+			}
+			g_free (document_path);
+			g_object_unref (location);
 		}
 	}
 	g_list_free (documents);
-	return found;
+	return found_doc;
 }
 
 static gboolean
@@ -350,10 +357,22 @@ replace_file (PlumaProjectSearchPanel *panel, const gchar *path, GRegex *regex, 
 	gsize length = 0;
 	const PlumaEncoding *encoding = NULL;
 	gboolean success = FALSE;
+	PlumaDocument *doc = find_document_by_path (panel, path);
 
-	contents = pluma_file_read_with_encoding (path, &length, &encoding, error);
-	if (contents == NULL)
-		return FALSE;
+	if (doc != NULL)
+	{
+		GtkTextBuffer *buffer = GTK_TEXT_BUFFER (doc);
+		GtkTextIter start, end;
+		gtk_text_buffer_get_bounds (buffer, &start, &end);
+		contents = gtk_text_buffer_get_text (buffer, &start, &end, FALSE);
+		length = strlen (contents);
+	}
+	else
+	{
+		contents = pluma_file_read_with_encoding (path, &length, &encoding, error);
+		if (contents == NULL)
+			return FALSE;
+	}
 
 	if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->regex_button)))
 		updated = g_regex_replace (regex, contents, length, 0, replacement, 0, error);
@@ -361,7 +380,24 @@ replace_file (PlumaProjectSearchPanel *panel, const gchar *path, GRegex *regex, 
 		updated = g_regex_replace_literal (regex, contents, length, 0, replacement, 0, error);
 
 	if (updated != NULL)
-		success = pluma_file_write_with_encoding (path, updated, encoding, error);
+	{
+		if (doc != NULL)
+		{
+			GtkTextBuffer *buffer = GTK_TEXT_BUFFER (doc);
+			GtkTextIter start, end;
+			gtk_text_buffer_begin_user_action (buffer);
+			gtk_text_buffer_get_bounds (buffer, &start, &end);
+			gtk_text_buffer_delete (buffer, &start, &end);
+			gtk_text_buffer_get_bounds (buffer, &start, &end);
+			gtk_text_buffer_insert (buffer, &start, updated, -1);
+			gtk_text_buffer_end_user_action (buffer);
+			success = TRUE;
+		}
+		else
+		{
+			success = pluma_file_write_with_encoding (path, updated, encoding, error);
+		}
+	}
 
 	g_free (contents);
 	g_free (updated);
@@ -379,14 +415,15 @@ replace_all_clicked (GtkButton *button, gpointer data)
 	GRegex *regex;
 	GRegexCompileFlags flags = G_REGEX_OPTIMIZE;
 	gchar *pattern;
-	guint changed = 0, skipped = 0, failed = 0;
+	guint changed = 0, failed = 0;
+	GHashTable *processed;
 
 	if (*query == '\0' || !gtk_tree_model_get_iter_first (GTK_TREE_MODEL (panel->store), &iter)) return;
 	dialog = gtk_message_dialog_new (GTK_WINDOW (panel->window), GTK_DIALOG_MODAL,
 	                                 GTK_MESSAGE_WARNING, GTK_BUTTONS_CANCEL,
 	                                 "%s", _("Replace all results?"));
 	gtk_message_dialog_format_secondary_text (GTK_MESSAGE_DIALOG (dialog), "%s",
-	                                          _("The result list is the preview. Open files will be skipped to preserve their undo history."));
+	                                          _("The result list is the preview. Open files will be updated in the editor."));
 	gtk_dialog_add_button (GTK_DIALOG (dialog), _("Replace All"), GTK_RESPONSE_ACCEPT);
 	if (gtk_dialog_run (GTK_DIALOG (dialog)) != GTK_RESPONSE_ACCEPT) { gtk_widget_destroy (dialog); return; }
 	gtk_widget_destroy (dialog);
@@ -401,13 +438,15 @@ replace_all_clicked (GtkButton *button, gpointer data)
 	regex = g_regex_new (pattern, flags, 0, NULL); g_free (pattern);
 	if (regex == NULL) return;
 
+	processed = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, NULL);
+
 	do
 	{
 		gchar *path = NULL; GError *error = NULL;
 		gtk_tree_model_get (GTK_TREE_MODEL (panel->store), &iter, COL_PATH, &path, -1);
-		if (path_is_open (panel, path)) skipped++;
-		else
+		if (path != NULL && g_hash_table_lookup (processed, path) == NULL)
 		{
+			g_hash_table_insert (processed, g_strdup (path), GINT_TO_POINTER (1));
 			if (replace_file (panel, path, regex, replacement, &error))
 				changed++;
 			else
@@ -415,9 +454,10 @@ replace_all_clicked (GtkButton *button, gpointer data)
 		}
 		g_clear_error (&error); g_free (path);
 	} while (gtk_tree_model_iter_next (GTK_TREE_MODEL (panel->store), &iter));
+	g_hash_table_unref (processed);
 	g_regex_unref (regex);
 	{
-		gchar *summary = g_strdup_printf (_("%u files changed; %u open files skipped; %u failures"), changed, skipped, failed);
+		gchar *summary = g_strdup_printf (_("%u files changed; %u failures"), changed, failed);
 		gtk_label_set_text (GTK_LABEL (panel->status), summary); g_free (summary);
 	}
 	start_search (panel);
