@@ -16,6 +16,7 @@
 #include "pluma-git-commit.h"
 #include "pluma-git-diff.h"
 #include "pluma-git-blame.h"
+#include "pluma-file-io.h"
 
 enum { COL_LABEL, COL_PATH, COL_GROUP, COL_STATUS, COL_IS_GROUP, N_COLS };
 enum { GROUP_OUTGOING, GROUP_CONFLICT, GROUP_STAGED, GROUP_CHANGED, GROUP_UNTRACKED, N_GROUPS };
@@ -457,7 +458,9 @@ status_done (GObject *source, GAsyncResult *result, gpointer data)
 			log_process = spawn_git (panel, log_argv, &log_error);
 			if (log_process != NULL)
 			{
-				g_subprocess_communicate_utf8 (log_process, NULL, NULL, &log_out, NULL, &log_error);
+				GBytes *log_out_bytes = NULL;
+				g_subprocess_communicate (log_process, NULL, NULL, &log_out_bytes, NULL, &log_error);
+				log_out = pluma_file_bytes_to_utf8 (log_out_bytes);
 				g_object_unref (log_process);
 			}
 			g_clear_error (&log_error);
@@ -612,7 +615,12 @@ static void
 call_done (GObject *source, GAsyncResult *result, gpointer data)
 {
 	GitCall *call=data; gchar *out=NULL,*err=NULL; GError *error=NULL;
-	g_subprocess_communicate_utf8_finish(G_SUBPROCESS(source),result,&out,&err,&error);
+	GBytes *out_bytes = NULL, *err_bytes = NULL;
+	g_subprocess_communicate_finish(G_SUBPROCESS(source),result,&out_bytes,&err_bytes,&error);
+
+	out = pluma_file_bytes_to_utf8 (out_bytes);
+	err = pluma_file_bytes_to_utf8 (err_bytes);
+
 	if (!call->panel->destroyed)
 	{
 		if (call->show_output)
@@ -671,7 +679,7 @@ run_git (PlumaGitPanel *panel, const gchar * const *argv, gboolean show_output, 
 	GError *error=NULL; GSubprocess *process=spawn_git(panel,argv,&error); GitCall *call;
 	if(!process){panel_show_error(panel,error?error->message:_("Git is unavailable"));g_clear_error(&error);return;}
 	call=g_new0(GitCall,1);call->panel=g_object_ref(panel);call->show_output=show_output;call->title=g_strdup(title);
-	g_subprocess_communicate_utf8_async(process,NULL,panel->cancellable,call_done,call);g_object_unref(process);
+	g_subprocess_communicate_async(process,NULL,panel->cancellable,call_done,call);g_object_unref(process);
 }
 
 static void
@@ -691,8 +699,8 @@ stage_all_then_commit (PlumaGitPanel *panel, const gchar *message)
 	call = g_new0 (GitCall, 1);
 	call->panel = g_object_ref (panel);
 	call->commit_after_success = g_strdup (message);
-	g_subprocess_communicate_utf8_async (process, NULL, panel->cancellable,
-	                                     call_done, call);
+	g_subprocess_communicate_async (process, NULL, panel->cancellable,
+	                                 call_done, call);
 	g_object_unref (process);
 }
 
@@ -786,7 +794,9 @@ get_git_output (PlumaGitPanel *panel, const gchar * const *argv)
 	gchar *out = NULL;
 	if (process)
 	{
-		g_subprocess_communicate_utf8 (process, NULL, NULL, &out, NULL, &error);
+		GBytes *stdout_bytes = NULL;
+		g_subprocess_communicate (process, NULL, NULL, &stdout_bytes, NULL, &error);
+		out = pluma_file_bytes_to_utf8 (stdout_bytes);
 		g_object_unref (process);
 	}
 	if (error)
@@ -829,8 +839,11 @@ run_git_with_input (PlumaGitPanel *panel, const gchar * const *argv,
 	}
 	call = g_new0 (GitCall, 1);
 	call->panel = g_object_ref (panel);
-	g_subprocess_communicate_utf8_async (process, input, panel->cancellable,
-	                                     call_done, call);
+	GBytes *stdin_bytes = input != NULL ? g_bytes_new (input, strlen (input)) : NULL;
+	g_subprocess_communicate_async (process, stdin_bytes, panel->cancellable,
+	                                 call_done, call);
+	if (stdin_bytes != NULL)
+		g_bytes_unref (stdin_bytes);
 	g_object_unref (process);
 }
 
@@ -2221,7 +2234,7 @@ revision_is_valid (PlumaGitPanel *panel, const gchar *revision)
 
 	if (process != NULL)
 	{
-		g_subprocess_communicate_utf8 (process, NULL, NULL, NULL, NULL, &error);
+		g_subprocess_communicate (process, NULL, NULL, NULL, NULL, &error);
 		valid = error == NULL && g_subprocess_get_successful (process);
 		g_object_unref (process);
 	}

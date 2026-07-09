@@ -60,6 +60,7 @@ NOINST_H_FILES =			\
 	pluma-file-browser-view.h	\
 	pluma-file-browser-widget.h	\
 	pluma-file-chooser-dialog.h	\
+	pluma-file-io.h			\
 	pluma-git-blame.h		\
 	pluma-git-commit.h		\
 	pluma-git-diff.h		\
@@ -150,6 +151,7 @@ libpluma_c_files = 			\
 	pluma-file-browser-view.c	\
 	pluma-file-browser-widget.c	\
 	pluma-file-chooser-dialog.c	\
+	pluma-file-io.c			\
 	pluma-help.c			\
 	pluma-history-entry.c		\
 	pluma-io-error-message-area.c	\

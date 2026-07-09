@@ -10,6 +10,7 @@
 #include "pluma-document.h"
 #include "pluma-tab.h"
 #include "pluma-settings.h"
+#include "pluma-file-io.h"
 
 enum { COL_TEXT, COL_PATH, COL_LINE, COL_COLUMN, COL_IS_FILE, N_COLS };
 
@@ -112,20 +113,36 @@ search_finished (GObject *source, GAsyncResult *result, gpointer user_data)
 	GRegex *parser, *grep_parser;
 	GHashTable *parents;
 	guint count = 0;
+	GBytes *stdout_bytes = NULL, *stderr_bytes = NULL;
 
-	if (!g_subprocess_communicate_utf8_finish (G_SUBPROCESS (source), result, &out, &err, &error))
+	if (!g_subprocess_communicate_finish (G_SUBPROCESS (source), result, &stdout_bytes, &stderr_bytes, &error))
 	{
 		if (G_SUBPROCESS (source) != panel->process)
 		{
-			g_clear_error (&error); g_free (out); g_free (err); g_object_unref (panel); return;
+			g_clear_error (&error); g_object_unref (panel); return;
 		}
 		if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
 			gtk_label_set_text (GTK_LABEL (panel->status), error->message);
 		g_clear_error (&error);
 		goto done;
 	}
-	if (panel->destroyed) { g_free (out); g_free (err); g_object_unref (panel); return; }
-	if (G_SUBPROCESS (source) != panel->process) { g_free (out); g_free (err); g_object_unref (panel); return; }
+	if (panel->destroyed)
+	{
+		if (stdout_bytes != NULL) g_bytes_unref (stdout_bytes);
+		if (stderr_bytes != NULL) g_bytes_unref (stderr_bytes);
+		g_object_unref (panel);
+		return;
+	}
+	if (G_SUBPROCESS (source) != panel->process)
+	{
+		if (stdout_bytes != NULL) g_bytes_unref (stdout_bytes);
+		if (stderr_bytes != NULL) g_bytes_unref (stderr_bytes);
+		g_object_unref (panel);
+		return;
+	}
+
+	out = pluma_file_bytes_to_utf8 (stdout_bytes);
+	err = pluma_file_bytes_to_utf8 (stderr_bytes);
 
 	root_file = get_root (panel);
 	root = g_file_get_path (root_file);
@@ -279,7 +296,7 @@ start_search (PlumaProjectSearchPanel *panel)
 		g_clear_error (&error); set_busy (panel, FALSE); return;
 	}
 	panel->cancellable = g_cancellable_new ();
-	g_subprocess_communicate_utf8_async (panel->process, NULL, panel->cancellable, search_finished, g_object_ref (panel));
+	g_subprocess_communicate_async (panel->process, NULL, panel->cancellable, search_finished, g_object_ref (panel));
 }
 
 static void
@@ -325,6 +342,32 @@ path_is_open (PlumaProjectSearchPanel *panel, const gchar *path)
 	return found;
 }
 
+static gboolean
+replace_file (PlumaProjectSearchPanel *panel, const gchar *path, GRegex *regex, const gchar *replacement, GError **error)
+{
+	gchar *contents = NULL;
+	gchar *updated = NULL;
+	gsize length = 0;
+	const PlumaEncoding *encoding = NULL;
+	gboolean success = FALSE;
+
+	contents = pluma_file_read_with_encoding (path, &length, &encoding, error);
+	if (contents == NULL)
+		return FALSE;
+
+	if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->regex_button)))
+		updated = g_regex_replace (regex, contents, length, 0, replacement, 0, error);
+	else
+		updated = g_regex_replace_literal (regex, contents, length, 0, replacement, 0, error);
+
+	if (updated != NULL)
+		success = pluma_file_write_with_encoding (path, updated, encoding, error);
+
+	g_free (contents);
+	g_free (updated);
+	return success;
+}
+
 static void
 replace_all_clicked (GtkButton *button, gpointer data)
 {
@@ -360,19 +403,17 @@ replace_all_clicked (GtkButton *button, gpointer data)
 
 	do
 	{
-		gchar *path = NULL, *contents = NULL, *updated = NULL; gsize length; GError *error = NULL;
+		gchar *path = NULL; GError *error = NULL;
 		gtk_tree_model_get (GTK_TREE_MODEL (panel->store), &iter, COL_PATH, &path, -1);
 		if (path_is_open (panel, path)) skipped++;
-		else if (!g_file_get_contents (path, &contents, &length, &error)) failed++;
 		else
 		{
-			if (gtk_toggle_button_get_active (GTK_TOGGLE_BUTTON (panel->regex_button)))
-				updated = g_regex_replace (regex, contents, length, 0, replacement, 0, &error);
+			if (replace_file (panel, path, regex, replacement, &error))
+				changed++;
 			else
-				updated = g_regex_replace_literal (regex, contents, length, 0, replacement, 0, &error);
-			if (updated != NULL && g_file_set_contents (path, updated, -1, &error)) changed++; else failed++;
+				failed++;
 		}
-		g_clear_error (&error); g_free (contents); g_free (updated); g_free (path);
+		g_clear_error (&error); g_free (path);
 	} while (gtk_tree_model_iter_next (GTK_TREE_MODEL (panel->store), &iter));
 	g_regex_unref (regex);
 	{
