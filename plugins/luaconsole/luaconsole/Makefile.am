@@ -5,7 +5,8 @@ plugin_DATA =		\
 	init.lua	\
 	console.lua	\
 	config.lua	\
-	compat.lua
+	compat.lua	\
+	engine.lua
 
 uidir = $(PLUMA_PLUGINS_DATA_DIR)/luaconsole/ui
 ui_files = config.ui

@@ -27,5 +27,13 @@
         A Pango font name. Examples are “Sans 12” or “Monospace Bold 14”.
       </description>
     </key>
+    <key name="lua-interpreter" type="s">
+      <default>''</default>
+      <summary>Lua Interpreter</summary>
+      <description>
+        Lua interpreter executable used by the console. An empty value uses
+        the default lua command from the system PATH.
+      </description>
+    </key>
   </schema>
 </schemalist>

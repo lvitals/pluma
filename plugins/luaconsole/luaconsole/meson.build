@@ -3,6 +3,7 @@ lua_files = [
   'console.lua',
   'config.lua',
   'compat.lua',
+  'engine.lua',
 ]
 
 install_data(lua_files,

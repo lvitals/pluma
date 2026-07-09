@@ -45,7 +45,7 @@ end
 
 function LuaConsolePlugin:do_create_configure_widget()
     if not self.priv.config_widget then
-        self.priv.config_widget = ConfigWidget.new(self.plugin_info:get_data_dir())
+        self.priv.config_widget = ConfigWidget.new(self.priv.plugin_info:get_data_dir())
     end
     return self.priv.config_widget:configure_widget()
 end

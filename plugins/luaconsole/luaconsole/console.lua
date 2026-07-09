@@ -4,9 +4,9 @@
   Structurally mirrors the pythonconsole plugin's console.py (same
   TextView-based terminal, history, key bindings, repl/edit modes and
   internal command set), but evaluation uses Lua's own compiler/pcall
-  instead of Python's code module. Targets Lua 5.1 (the version libpeas'
-  native "lua5.1" loader embeds), so `loadstring`/`setfenv` are used
-  instead of the 5.2+ `load(..., env)` form.
+  instead of Python's code module. By default it runs the system "lua"
+  command, and preferences can point evaluation at another Lua executable
+  or at the embedded interpreter used by the plugin loader.
 ]]
 
 local lgi = require('luaconsole.compat')
@@ -16,6 +16,7 @@ local Gtk = lgi.Gtk
 local Pango = lgi.Pango
 
 local Config = require('luaconsole.config').Config
+local Engine = require('luaconsole.engine')
 
 local DEFAULT_FONT = 'Monospace 10'
 
@@ -56,13 +57,6 @@ local function match_command(stripped)
         return name, arg
     end
     return nil
-end
-
--- Lua 5.1's parser reports an unfinished chunk (e.g. a dangling "if" or an
--- open string) with an error message ending in the quoted "<eof>" token.
--- That's the standard way lua.c itself detects "needs another line".
-local function is_incomplete(err)
-    return type(err) == 'string' and err:sub(-6) == "<eof>'"
 end
 
 -- Lua strings are raw bytes, not validated Unicode. The parser's own
@@ -112,17 +106,6 @@ local function sanitize_utf8(s)
     return table.concat(out)
 end
 
-local function compile_chunk(source, namespace, chunkname)
-    local chunk, err = loadstring('return ' .. source, chunkname)
-    if not chunk then
-        chunk, err = loadstring(source, chunkname)
-    end
-    if chunk then
-        setfenv(chunk, namespace)
-    end
-    return chunk, err
-end
-
 local Console = {}
 Console.__index = Console
 
@@ -169,14 +152,14 @@ function Console.new(namespace)
     self.command_tag = Gtk.TextTag.new('command')
     tag_table:add(self.command_tag)
 
-    self.config = Config.new()
-    self.config:add_handler(function() self:apply_preferences() end)
-    self:apply_preferences()
-
     namespace = namespace or {}
     setmetatable(namespace, { __index = _G })
     self.namespace = namespace
     self.window = namespace.window
+
+    self.config = Config.new()
+    self.config:add_handler(function() self:apply_preferences() end)
+    self:apply_preferences()
 
     -- print() would otherwise write to the real process stdout (the
     -- terminal pluma was launched from, if any), invisible from inside
@@ -225,12 +208,8 @@ function Console:reset()
     local buffer = self.buffer
     buffer:set_text('', -1)
 
-    -- Startup banner: interpreter version, then how to get help. _VERSION
-    -- is the one piece of version info the embedded interpreter actually
-    -- exposes to scripts (no patch digit, no copyright string), so the
-    -- copyright line below is accurate for the Lua 5.1 family this plugin
-    -- targets, not derived at runtime.
-    local version_line = (_VERSION or 'Lua') .. '  Copyright (C) 1994-2012 Lua.org, PUC-Rio\n'
+    -- Startup banner: selected interpreter version, then how to get help.
+    local version_line = self.engine:get_version() .. '\n'
     local help_line = "Type 'help' to list available commands and descriptions.\n"
     buffer:insert(buffer:get_end_iter(), version_line .. help_line, -1)
 
@@ -268,6 +247,15 @@ function Console:apply_preferences()
 
     local font_desc = Pango.FontDescription.from_string(font_name or DEFAULT_FONT)
     self.view:override_font(font_desc)
+
+    local old_interpreter = self.lua_interpreter
+    self.lua_interpreter = self.config:get_lua_interpreter()
+    self.engine = Engine.new(self.lua_interpreter, self.namespace)
+
+    if old_interpreter ~= nil and old_interpreter ~= self.lua_interpreter then
+        self.engine:reset()
+        self:reset()
+    end
 end
 
 function Console:stop()
@@ -345,27 +333,13 @@ end
 -- code buffer for "run"). silent_on_incomplete lets the repl caller treat
 -- an unfinished block as "need another line" instead of a real error.
 function Console:eval_chunk(command, silent_on_incomplete, chunkname)
-    local chunk, err = compile_chunk(command, self.namespace, chunkname or '=console')
-    if not chunk then
-        if silent_on_incomplete and is_incomplete(err) then
-            return 'incomplete'
-        end
-        self:write(tostring(err) .. '\n', self.error_tag)
-        return 'done'
+    local status, output, is_error = self.engine:execute(command, silent_on_incomplete, chunkname or '=console')
+
+    if output and output ~= '' then
+        self:write(output, is_error and self.error_tag or self.normal_tag)
     end
 
-    local results = { pcall(chunk) }
-    local ok = table.remove(results, 1)
-    if not ok then
-        self:write(tostring(results[1]) .. '\n', self.error_tag)
-    elseif #results > 0 then
-        local parts = {}
-        for _, value in ipairs(results) do
-            parts[#parts + 1] = tostring(value)
-        end
-        self:write(table.concat(parts, '\t') .. '\n', self.normal_tag)
-    end
-    return 'done'
+    return status
 end
 
 function Console:on_key_press_event(view, event)
