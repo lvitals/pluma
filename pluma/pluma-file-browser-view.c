@@ -29,6 +29,7 @@
 #include "pluma-file-bookmarks-store.h"
 #include "pluma-file-browser-view.h"
 #include "pluma-file-browser-enum-types.h"
+#include "pluma-file-browser-error.h"
 
 struct _PlumaFileBrowserViewPrivate
 {
@@ -933,6 +934,117 @@ cell_data_cb (GtkTreeViewColumn * tree_column, GtkCellRenderer * cell,
 }
 
 static void
+on_drag_data_received (GtkWidget        *widget,
+                       GdkDragContext   *context,
+                       gint              x,
+                       gint              y,
+                       GtkSelectionData *selection_data,
+                       guint             info,
+                       guint             time,
+                       gpointer          user_data)
+{
+	PlumaFileBrowserView *view = PLUMA_FILE_BROWSER_VIEW (widget);
+	GtkTreeView *tree_view = GTK_TREE_VIEW (widget);
+	GtkTreePath *path = NULL;
+	GtkTreeViewDropPosition pos;
+	GtkTreeModel *model;
+	GtkTreeIter iter;
+	gchar *target_uri = NULL;
+
+	model = view->priv->model;
+	if (!PLUMA_IS_FILE_BROWSER_STORE (model))
+		return;
+
+	if (gtk_tree_view_get_dest_row_at_pos (tree_view, x, y, &path, &pos))
+	{
+		if (gtk_tree_model_get_iter (model, &iter, path))
+		{
+			guint flags = 0;
+			gtk_tree_model_get (model, &iter,
+			                    PLUMA_FILE_BROWSER_STORE_COLUMN_FLAGS, &flags,
+			                    PLUMA_FILE_BROWSER_STORE_COLUMN_URI, &target_uri,
+			                    -1);
+
+			if (!(flags & PLUMA_FILE_BROWSER_STORE_FLAG_IS_DIRECTORY))
+			{
+				g_free (target_uri);
+				target_uri = NULL;
+
+				GtkTreeIter parent_iter;
+				if (gtk_tree_model_iter_parent (model, &parent_iter, &iter))
+				{
+					gtk_tree_model_get (model, &parent_iter,
+					                    PLUMA_FILE_BROWSER_STORE_COLUMN_URI, &target_uri,
+					                    -1);
+				}
+			}
+		}
+		gtk_tree_path_free (path);
+	}
+
+	if (target_uri == NULL)
+	{
+		target_uri = pluma_file_browser_store_get_virtual_root (PLUMA_FILE_BROWSER_STORE (model));
+	}
+
+	if (target_uri == NULL)
+		return;
+
+	gchar **uris = gtk_selection_data_get_uris (selection_data);
+	if (uris != NULL)
+	{
+		GFile *target_dir = g_file_new_for_uri (target_uri);
+		gboolean success = FALSE;
+
+		for (gint i = 0; uris[i] != NULL; i++)
+		{
+			GFile *src_file = g_file_new_for_uri (uris[i]);
+			gchar *basename = g_file_get_basename (src_file);
+			if (basename != NULL)
+			{
+				GFile *dest_file = g_file_get_child (target_dir, basename);
+				GError *error = NULL;
+
+				if (g_file_equal (src_file, dest_file))
+				{
+					g_free (basename);
+					g_object_unref (dest_file);
+					g_object_unref (src_file);
+					continue;
+				}
+
+				if (g_file_move (src_file, dest_file, G_FILE_COPY_NONE, NULL, NULL, NULL, &error))
+				{
+					success = TRUE;
+				}
+				else
+				{
+					g_signal_emit (view, signals[ERROR], 0,
+					               PLUMA_FILE_BROWSER_ERROR_RENAME, error->message);
+					g_clear_error (&error);
+				}
+
+				g_free (basename);
+				g_object_unref (dest_file);
+			}
+			g_object_unref (src_file);
+		}
+
+		g_object_unref (target_dir);
+		g_strfreev (uris);
+
+		if (success)
+		{
+			pluma_file_browser_store_refresh (PLUMA_FILE_BROWSER_STORE (model));
+		}
+
+		gtk_drag_finish (context, success, FALSE, time);
+	}
+
+	g_free (target_uri);
+}
+
+static void
 pluma_file_browser_view_init (PlumaFileBrowserView * obj)
 {
 	GdkDisplay *display;
@@ -970,6 +1082,15 @@ pluma_file_browser_view_init (PlumaFileBrowserView * obj)
 						drag_source_targets,
 						G_N_ELEMENTS (drag_source_targets),
 						GDK_ACTION_COPY);
+
+	gtk_drag_dest_set (GTK_WIDGET (obj),
+			   GTK_DEST_DEFAULT_ALL,
+			   drag_source_targets,
+			   G_N_ELEMENTS (drag_source_targets),
+			   GDK_ACTION_COPY | GDK_ACTION_MOVE);
+
+	g_signal_connect (obj, "drag-data-received",
+			  G_CALLBACK (on_drag_data_received), NULL);
 
 	display = gtk_widget_get_display (GTK_WIDGET (obj));
 	obj->priv->busy_cursor = gdk_cursor_new_for_display (display, GDK_WATCH);
