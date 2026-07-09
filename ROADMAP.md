@@ -2,12 +2,23 @@
 
 ## Visão
 
-Oferecer no Pluma uma experiência integrada de pesquisa e controle de código-fonte comparável aos fluxos do Visual Studio Code, preservando GTK 3, MATE, acessibilidade e a arquitetura do projeto.
+Oferecer pesquisa e integração Git nativas, leves e robustas, preservando a simplicidade, baixo consumo de memória e resposta imediata do Pluma.
 
 O painel lateral terá itens independentes para Documentos, Navegador de arquivos, Pesquisa, Controle de código-fonte e Histórico Git. Pesquisa e Git não devem depender de diálogos externos ou terminais para operações comuns.
 
-## Princípios
+## Princípios e Filosofia de Leveza
 
+O Pluma prioriza a **baixa utilização de memória, inicialização rápida e resposta imediata da interface**. Novas funcionalidades devem preservar essas características, evitando processos residentes, monitoramento contínuo do sistema de arquivos, caches extensivos e estruturas que aumentem significativamente o consumo de recursos.
+
+### Diretrizes de evolução:
+- **Nenhuma thread residente** apenas para atualizar a interface gráfica.
+- **Nenhum monitoramento contínuo** de arquivos, Git ou busca (com exceção do refresh sob demanda ou batching muito controlado).
+- **Nenhum cache volumoso** apenas para acelerar recursos pouco utilizados.
+- **Nenhum recurso** que aumente perceptivelmente o tempo de inicialização do editor.
+- **Acionamento sob demanda:** Funcionalidades novas complexas devem ser acionadas apenas sob demanda do usuário.
+- **Simplicidade:** Preferir algoritmos simples e previsíveis em vez de soluções mais sofisticadas que aumentem o consumo de recursos.
+
+### Princípios de desenvolvimento:
 - Interface nativa, assíncrona e cancelável.
 - Pesquisa, arquivos, alterações, histórico e referências usam modelos separados.
 - Nenhuma operação destrutiva ocorre sem confirmação contextual.
@@ -27,7 +38,6 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 - [x] Criar itens separados para Arquivos, Pesquisa e Git.
 - [x] Usar ícones simbólicos compatíveis com temas claro/escuro.
 - [ ] Adicionar tooltips, nomes acessíveis e navegação por teclado.
-- [ ] Exibir badges de resultados e alterações.
 - [ ] Preservar item ativo, largura e estado recolhido por janela.
 - [ ] Usar cabeçalhos compactos com ações contextuais.
 - [x] Evitar uma lista única misturando arquivos, commits, branches e conflitos.
@@ -55,8 +65,6 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 - [ ] Adicionar filtros recolhíveis de inclusão e exclusão.
 - [ ] Respeitar `.gitignore` por padrão.
 - [x] Permitir incluir arquivos ignorados.
-- [ ] Manter histórico de consultas e substituições.
-- [ ] Pesquisar automaticamente após debounce configurável.
 - [ ] Mostrar progresso, duração, cancelamento e erros de regex inline.
 - [x] Usar ripgrep com fallback funcional.
 
@@ -66,19 +74,13 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 - [ ] Exibir caminho relativo, linha, coluna e trecho destacado.
 - [x] Expandir/recolher arquivos ou todos os resultados.
 - [x] Abrir resultado com mouse ou teclado.
-- [ ] Exibir prévia sem criar aba definitiva.
 - [ ] Reutilizar documentos abertos.
-- [ ] Atualizar após salvar, criar, mover ou remover arquivos.
 - [ ] Copiar texto, caminho ou localização pelo menu de contexto.
 
 ## 2.3 Substituição segura
 
-- [ ] Substituir ocorrência, arquivo ou projeto.
-- [ ] Excluir resultados individuais antes de aplicar.
-- [ ] Mostrar diff/prévia da substituição global.
 - [x] Suportar grupos de captura regex.
-- [ ] Integrar documentos abertos ao histórico de desfazer.
-- [ ] Preservar codificação, final de linha e permissões.
+- [x] Preservar codificação, final de linha e permissões.
 - [x] Gravar arquivos fechados atomicamente.
 - [x] Confirmar alterações globais e resumir falhas.
 
@@ -224,7 +226,6 @@ O painel lateral terá itens independentes para Documentos, Navegador de arquivo
 - [x] Fetch de todos com prune.
 - [x] Pull segundo a configuração do Git.
 - [x] Push da branch atual.
-- [ ] Sincronizar pull/push como ação explícita.
 - [ ] Prune com confirmação.
 - [x] Mostrar falhas de transferência no painel.
 - [x] Nunca armazenar credenciais no Pluma.
@@ -324,9 +325,6 @@ considerar 100% validado.
 
 - [x] Criar visão/grupo dedicado de conflitos.
 - [x] Detectar estados unmerged pelo index.
-- [ ] Criar editor com Base, Current, Incoming e Result.
-- [ ] Aceitar Current, Incoming, ambos ou edição manual.
-- [ ] Navegar entre conflitos.
 - [ ] Marcar resolvido somente por stage explícito.
 - [ ] Tratar conflitos de adição, remoção e renomeação.
 - [x] Mostrar conflitos de merge, rebase, cherry-pick e revert no grupo dedicado.
@@ -348,12 +346,9 @@ considerar 100% validado.
 # 13. Operações avançadas
 
 - [x] Merge e rebase de referência informada.
-- [ ] Rebase interativo com editor de sequência seguro.
 - [x] Cherry-pick de commit informado.
 - [x] Revert de commit com confirmação.
 - [ ] Reset soft, mixed e hard com confirmações distintas.
-- [ ] Submódulos: status, init, update e sync.
-- [ ] Múltiplos worktrees.
 - [ ] Recuperação de operações interrompidas.
 
 Operações destrutivas avançadas só serão entregues após testes específicos de recuperação.
@@ -362,13 +357,10 @@ Operações destrutivas avançadas só serão entregues após testes específico
 
 # 14. Integração entre Arquivos, Pesquisa e Git
 
-- [ ] Exibir decoração Git no Navegador de arquivos.
 - [ ] Abrir diff, histórico e blame pelo menu do arquivo.
 - [ ] Filtrar Pesquisa por arquivos alterados.
 - [ ] Pesquisar em staged, working tree ou commit selecionado.
 - [ ] Revelar resultado no Navegador ou Source Control.
-- [ ] Atualizar badges Git após substituição global.
-- [ ] Comparar resultados antes/depois da substituição.
 
 ---
 
@@ -379,15 +371,13 @@ Operações destrutivas avançadas só serão entregues após testes específico
 - [ ] Classificar centralmente operações destrutivas.
 - [x] Informar arquivos e referências nas confirmações implementadas.
 - [x] Bloquear operações incompatíveis com buffers não salvos.
-- [ ] Tratar caminhos com espaços, hífen, Unicode e bytes inválidos.
+- [x] Tratar caminhos com espaços, hífen, Unicode e bytes inválidos.
 - [x] Não armazenar nem registrar tokens ou credenciais.
 - [ ] Oferecer recuperação clara após falhas parciais.
 
 ## Desempenho
 
-- [ ] Processar status, log e pesquisa incrementalmente.
 - [ ] Evitar varreduras completas após cada evento.
-- [ ] Virtualizar listas grandes.
 - [x] Cancelar tarefas ao destruir o painel e agrupar atualizações de status.
 - [ ] Configurar limites de resultados, tamanho e histórico.
 - [ ] Testar monorepos e milhares de alterações.
@@ -407,10 +397,9 @@ Operações destrutivas avançadas só serão entregues após testes específico
 - [x] Parser de `status --porcelain=v2 -z`.
 - [ ] Parsers de refs, log, diff e blame.
 - [x] Repositório inicial e commits normais em fixture isolada.
-- [ ] Worktrees, submódulos e bare repository.
+- [ ] Testes com bare repository.
 - [ ] Stage/unstage por arquivo, hunk e linha.
 - [x] Merge, conflito e abort em fixture isolada.
-- [ ] Substituição integrada ao status Git.
 - [ ] Pesquisa com e sem ripgrep.
 - [ ] Ambiente sem Git.
 - [ ] Cancelamento e fechamento de janela.
@@ -510,4 +499,4 @@ Stage por linha, editor de merge, worktrees, submódulos, desempenho, acessibili
 9. Dependências opcionais ausentes geram alertas agnósticos e não quebram o build.
 10. Testes cobrem estados normais, falhas e recuperação.
 
-“Paridade com VS Code” será medida pelos fluxos e critérios acima, não por cópia visual literal ou pela arquitetura de extensões do VS Code.
+A maturidade das novas funcionalidades será medida pela sua corretude, robustez e impacto nulo no desempenho geral do Pluma.
