@@ -39,7 +39,7 @@ __all__ = ('PythonConsole', 'OutFile')
 # Commands recognized by the terminal regardless of the current mode. They
 # take precedence over language evaluation, so e.g. typing the bare word
 # "list" always shows the buffer instead of evaluating the "list" builtin.
-_BARE_COMMANDS = ('help', 'clear', 'list', 'new', 'run', 'edit', 'repl', 'mode', 'quit')
+_BARE_COMMANDS = ('help', 'clear', 'list', 'new', 'run', 'edit', 'repl', 'mode', 'save', 'load', 'quit')
 _ARG_COMMAND_RE = re.compile(r'^(save|load)\s+(\S+)$')
 
 HELP_TEXT = (
@@ -115,6 +115,11 @@ class PythonConsole(Gtk.ScrolledWindow):
         # Code that "clear" hid from the screen but that's still part of
         # the buffer; see __sync_code_buffer/__cmd_clear.
         self.__hidden_prefix = ''
+        if hasattr(self, '_PythonConsole__output_ranges'):
+            self.__clear_output_ranges()
+        self.__output_ranges = []
+        self.__output_range_counter = 0
+        self.__pending_run_code = None
 
         self.history = ['']
         self.history_pos = 0
@@ -211,20 +216,32 @@ class PythonConsole(Gtk.ScrolledWindow):
 
     def __edit_key_press_event_cb(self, view, buffer, keyname, event_state):
         if keyname == "Return":
-            end = buffer.get_end_iter()
             ins = buffer.get_iter_at_mark(buffer.get_insert())
-            if ins.compare(end) != 0:
-                # Editing an earlier line: let GTK split it normally.
-                return False
+            line_no = ins.get_line()
+            line_start = buffer.get_iter_at_line(line_no)
 
-            line_start = buffer.get_iter_at_line(end.get_line())
-            line = buffer.get_text(line_start, end, False)
+            if line_no + 1 < buffer.get_line_count():
+                delete_end = buffer.get_iter_at_line(line_no + 1)
+                line_end = buffer.get_iter_at_line(line_no + 1)
+                line_end.backward_char()
+            else:
+                line_end = buffer.get_end_iter()
+                delete_end = line_end
+
+            line = buffer.get_text(line_start, line_end, False)
             cmd = self.__match_command(line.strip())
             if cmd:
-                buffer.delete(line_start, buffer.get_end_iter())
+                command_offset = line_start.get_offset()
+                buffer.delete(line_start, delete_end)
                 name, arg = cmd
+                if name == 'run':
+                    self.__pending_run_code = self.__collect_code_buffer(
+                        buffer.get_iter_at_offset(command_offset))
                 self.dispatch_command(name, arg)
             else:
+                if ins.compare(buffer.get_end_iter()) != 0:
+                    # Editing an earlier line: let GTK split it normally.
+                    return False
                 buffer.insert(buffer.get_end_iter(), "\n")
                 buffer.place_cursor(buffer.get_end_iter())
                 GObject.idle_add(self.scroll_to_end)
@@ -299,6 +316,7 @@ class PythonConsole(Gtk.ScrolledWindow):
             else:
                 # Eval the command
                 self.__run(self.current_command)
+                self.__append_code_buffer(self.current_command)
                 self.current_command = ''
                 self.block_command = False
                 com_mark = ">>> "
@@ -416,6 +434,18 @@ class PythonConsole(Gtk.ScrolledWindow):
             self.history_pos = self.history_pos + 1
             self.set_command_line(self.history[self.history_pos])
 
+    def __append_code_buffer(self, code):
+        if not code:
+            return
+
+        if self.code_buffer and not self.code_buffer.endswith('\n'):
+            self.code_buffer += '\n'
+
+        self.code_buffer += code
+
+        if not self.code_buffer.endswith('\n'):
+            self.code_buffer += '\n'
+
     def scroll_to_end(self):
         iter = self.view.get_buffer().get_end_iter()
         self.view.scroll_to_iter(iter, 0.0, False, 0.5, 0.5)
@@ -524,12 +554,87 @@ class PythonConsole(Gtk.ScrolledWindow):
         elif name == 'quit':
             self.destroy()
 
-    def __sync_code_buffer(self):
+    def __sorted_output_ranges(self):
         buffer = self.view.get_buffer()
-        mark = buffer.get_mark("buffer-start")
-        start = buffer.get_iter_at_mark(mark) if mark else buffer.get_start_iter()
-        visible = buffer.get_text(start, buffer.get_end_iter(), False)
-        self.code_buffer = self.__hidden_prefix + visible
+        ranges = list(self.__output_ranges)
+
+        def range_offset(output_range):
+            mark = output_range.get('start_mark')
+            if mark is None:
+                return -1
+            return buffer.get_iter_at_mark(mark).get_offset()
+
+        ranges.sort(key=range_offset)
+        return ranges
+
+    def __collect_code_buffer(self, limit_iter = None):
+        buffer = self.view.get_buffer()
+        start_mark = buffer.get_mark("buffer-start")
+        end_mark = buffer.get_mark("buffer-end")
+        start = buffer.get_iter_at_mark(start_mark) if start_mark else buffer.get_start_iter()
+        finish = limit_iter or (buffer.get_iter_at_mark(end_mark) if end_mark else buffer.get_end_iter())
+        chunks = []
+        cursor = start
+
+        for output_range in self.__sorted_output_ranges():
+            start_mark = output_range.get('start_mark')
+            end_mark = output_range.get('end_mark')
+            output_start = buffer.get_iter_at_mark(start_mark) if start_mark else None
+            output_end = buffer.get_iter_at_mark(end_mark) if end_mark else None
+            if output_start is not None and output_end is not None and \
+               output_end.compare(start) > 0 and output_start.compare(finish) < 0:
+                if output_start.compare(cursor) > 0:
+                    chunks.append(buffer.get_text(cursor, output_start, False))
+                if output_end.compare(cursor) > 0:
+                    cursor = output_end
+
+        if cursor.compare(finish) < 0:
+            chunks.append(buffer.get_text(cursor, finish, False))
+
+        visible = ''.join(chunks)
+        if self.__hidden_prefix and visible and not self.__hidden_prefix.endswith('\n'):
+            return self.__hidden_prefix + '\n' + visible
+        return self.__hidden_prefix + visible
+
+    def __sync_code_buffer(self):
+        self.code_buffer = self.__collect_code_buffer()
+
+    def __mark_code_region(self, start, end, end_left_gravity = False):
+        buffer = self.view.get_buffer()
+        start_mark = buffer.get_mark("buffer-start")
+        end_mark = buffer.get_mark("buffer-end")
+
+        if start_mark is None:
+            buffer.create_mark("buffer-start", start, True)
+        else:
+            buffer.move_mark(start_mark, start)
+
+        if end_mark is not None:
+            buffer.delete_mark(end_mark)
+        buffer.create_mark("buffer-end", end, end_left_gravity)
+
+    def __clear_output_ranges(self):
+        buffer = self.view.get_buffer()
+        for output_range in self.__output_ranges:
+            start_mark = output_range.get('start_mark')
+            end_mark = output_range.get('end_mark')
+            if start_mark is not None:
+                buffer.delete_mark(start_mark)
+            if end_mark is not None:
+                buffer.delete_mark(end_mark)
+        self.__output_ranges = []
+        self.__output_range_counter = 0
+
+    def __add_output_range(self, start, end):
+        buffer = self.view.get_buffer()
+        self.__output_range_counter += 1
+        index = self.__output_range_counter
+        start_mark = buffer.create_mark("output-start-%d" % index, start, False)
+        end_mark = buffer.create_mark("output-end-%d" % index, end, True)
+        self.__output_ranges.append({
+            'start_mark': start_mark,
+            'end_mark': end_mark,
+        })
 
     def __cmd_clear(self):
         buffer = self.view.get_buffer()
@@ -539,13 +644,10 @@ class PythonConsole(Gtk.ScrolledWindow):
             # not shown, until "list" (or any other command, which all
             # flatten this back via __finish_edit) redisplays it.
             self.__hidden_prefix = self.code_buffer
+            self.__clear_output_ranges()
             buffer.set_text('')
             end = buffer.get_end_iter()
-            mark = buffer.get_mark("buffer-start")
-            if mark is None:
-                buffer.create_mark("buffer-start", end, True)
-            else:
-                buffer.move_mark(mark, end)
+            self.__mark_code_region(end, end)
             buffer.place_cursor(end)
             self.view.set_editable(True)
             self.view.scroll_to_iter(end, 0.0, False, 0.5, 0.5)
@@ -570,35 +672,50 @@ class PythonConsole(Gtk.ScrolledWindow):
             self.__finish_repl('Buffer cleared.\n', self.normal)
 
     def __cmd_run(self):
-        code = self.code_buffer
+        pending_run_code = self.__pending_run_code
+        self.__pending_run_code = None
+
+        code = pending_run_code or self.code_buffer
+        display_code = self.code_buffer
         if self.mode == 'edit':
-            self.__finish_run_edit(code)
+            self.__finish_run_edit(code, display_code)
         else:
             self.__run(code)
             self.__finish_repl()
 
-    def __finish_run_edit(self, code):
+    def __finish_run_edit(self, code, display_code = None):
         """Show "run"'s output below the code, not above it - unlike
-        every other edit-mode command. The code just shown becomes the
-        hidden prefix (same trick "clear" uses): a fresh "buffer-start"
-        mark goes right after this whole display, so if the user keeps
-        typing without invoking another command, that new text is
-        appended to the program rather than getting mixed into this
-        one-off code+output display."""
+        every other edit-mode command. The output range is marked so it
+        stays visible/editable but is ignored when syncing code."""
+        if display_code is None:
+            display_code = code
+
         buffer = self.view.get_buffer()
+        self.__clear_output_ranges()
         buffer.set_text('')
+        code_start_offset = buffer.get_end_iter().get_offset()
         self.write(code)
-        if code and not code.endswith('\n'):
+        added_separator = code and not code.endswith('\n')
+        if added_separator:
             self.write('\n')
+        output_start_offset = buffer.get_end_iter().get_offset()
         self.__run(code)
-        self.__hidden_prefix = code
+        output_end_offset = buffer.get_end_iter().get_offset()
+        self.__hidden_prefix = ''
+
+        if output_end_offset > output_start_offset:
+            self.__add_output_range(buffer.get_iter_at_offset(output_start_offset),
+                                    buffer.get_iter_at_offset(output_end_offset))
+
+        if display_code.startswith(code):
+            suffix = display_code[len(code):]
+            if added_separator and suffix.startswith('\n'):
+                suffix = suffix[1:]
+            if suffix:
+                self.write(suffix)
 
         end = buffer.get_end_iter()
-        mark = buffer.get_mark("buffer-start")
-        if mark is None:
-            buffer.create_mark("buffer-start", end, True)
-        else:
-            buffer.move_mark(mark, end)
+        self.__mark_code_region(buffer.get_iter_at_offset(code_start_offset), end)
         buffer.place_cursor(end)
         self.view.set_editable(True)
         self.view.scroll_to_iter(end, 0.0, False, 0.5, 0.5)
@@ -665,6 +782,7 @@ class PythonConsole(Gtk.ScrolledWindow):
         # has any hidden prefix folded in, from the sync at the top of
         # dispatch_command).
         self.__hidden_prefix = ''
+        self.__clear_output_ranges()
         buffer = self.view.get_buffer()
         if not cleared:
             buffer.set_text('')
@@ -676,13 +794,10 @@ class PythonConsole(Gtk.ScrolledWindow):
         # confirmations...) is a one-off message, not code. Mark where the
         # real editable buffer starts so a later sync doesn't fold that
         # message back into the saved/run buffer.
-        start = buffer.get_end_iter()
-        mark = buffer.get_mark("buffer-start")
-        if mark is None:
-            buffer.create_mark("buffer-start", start, True)
-        else:
-            buffer.move_mark(mark, start)
+        start_offset = buffer.get_end_iter().get_offset()
         self.write(self.code_buffer)
+        self.__mark_code_region(buffer.get_iter_at_offset(start_offset),
+                                buffer.get_end_iter())
         cur = buffer.get_end_iter()
         buffer.place_cursor(cur)
         self.view.set_editable(True)
