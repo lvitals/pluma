@@ -25,7 +25,8 @@ local DEFAULT_FONT = 'Monospace 10'
 -- "list" always shows the buffer instead of evaluating a global named list.
 local BARE_COMMANDS = {
     help = true, clear = true, list = true, new = true, run = true,
-    edit = true, repl = true, mode = true, quit = true,
+    edit = true, repl = true, mode = true, save = true, load = true,
+    quit = true,
 }
 
 local HELP_TEXT = table.concat({
@@ -204,6 +205,11 @@ function Console:reset()
     -- Code that "clear" hid from the screen but that's still part of
     -- the buffer; see sync_code_buffer/cmd_clear.
     self.hidden_prefix = ''
+    if self.output_ranges then
+        self:clear_output_ranges()
+    end
+    self.output_ranges = {}
+    self.output_range_counter = 0
 
     local buffer = self.buffer
     buffer:set_text('', -1)
@@ -307,6 +313,22 @@ function Console:history_down()
     end
 end
 
+function Console:append_code_buffer(code)
+    if code == nil or code == '' then
+        return
+    end
+
+    if self.code_buffer ~= '' and self.code_buffer:sub(-1) ~= '\n' then
+        self.code_buffer = self.code_buffer .. '\n'
+    end
+
+    self.code_buffer = self.code_buffer .. code
+
+    if self.code_buffer:sub(-1) ~= '\n' then
+        self.code_buffer = self.code_buffer .. '\n'
+    end
+end
+
 function Console:scroll_to_end()
     local iter = self.buffer:get_end_iter()
     self.view:scroll_to_iter(iter, 0.0, false, 0.5, 0.5)
@@ -359,20 +381,35 @@ end
 
 function Console:on_edit_key_press_event(view, buffer, keyname, event)
     if keyname == 'Return' then
-        local end_iter = buffer:get_end_iter()
         local ins = buffer:get_iter_at_mark(buffer:get_insert())
-        if ins:compare(end_iter) ~= 0 then
-            -- Editing an earlier line: let GTK split it normally.
-            return false
+        local line_no = ins:get_line()
+        local line_start = buffer:get_iter_at_line(line_no)
+        local line_end
+        local delete_end
+
+        if line_no + 1 < buffer:get_line_count() then
+            delete_end = buffer:get_iter_at_line(line_no + 1)
+            line_end = buffer:get_iter_at_line(line_no + 1)
+            line_end:backward_char()
+        else
+            line_end = buffer:get_end_iter()
+            delete_end = line_end
         end
 
-        local line_start = buffer:get_iter_at_line(end_iter:get_line())
-        local line = buffer:get_text(line_start, end_iter, false)
+        local line = buffer:get_text(line_start, line_end, false)
         local name, arg = match_command((line:gsub('^%s+', ''):gsub('%s+$', '')))
         if name then
-            buffer:delete(line_start, buffer:get_end_iter())
+            local command_offset = line_start:get_offset()
+            buffer:delete(line_start, delete_end)
+            if name == 'run' then
+                self.pending_run_code = self:collect_code_buffer(buffer:get_iter_at_offset(command_offset))
+            end
             self:dispatch_command(name, arg)
         else
+            if ins:compare(buffer:get_end_iter()) ~= 0 then
+                -- Editing an earlier line: let GTK split it normally.
+                return false
+            end
             buffer:insert(buffer:get_end_iter(), '\n', -1)
             buffer:place_cursor(buffer:get_end_iter())
             GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, function() return self:scroll_to_end() end)
@@ -449,6 +486,7 @@ function Console:on_repl_key_press_event(view, buffer, keyname, event)
             self.block_command = true
             prompt = '.. '
         else
+            self:append_code_buffer(self.current_command)
             self.current_command = ''
             self.block_command = false
             prompt = '> '
@@ -568,12 +606,109 @@ function Console:dispatch_command(name, arg)
     end
 end
 
-function Console:sync_code_buffer()
+function Console:sorted_output_ranges()
     local buffer = self.buffer
-    local mark = buffer:get_mark('buffer-start')
-    local start = mark and buffer:get_iter_at_mark(mark) or buffer:get_start_iter()
-    local visible = buffer:get_text(start, buffer:get_end_iter(), false)
-    self.code_buffer = self.hidden_prefix .. visible
+    local ranges = {}
+
+    for _, range in ipairs(self.output_ranges or {}) do
+        ranges[#ranges + 1] = range
+    end
+
+    table.sort(ranges, function(a, b)
+        local a_start = a.start_mark and buffer:get_iter_at_mark(a.start_mark)
+        local b_start = b.start_mark and buffer:get_iter_at_mark(b.start_mark)
+        if not a_start then
+            return false
+        elseif not b_start then
+            return true
+        end
+        return a_start:compare(b_start) < 0
+    end)
+
+    return ranges
+end
+
+function Console:collect_code_buffer(limit_iter)
+    local buffer = self.buffer
+    local start_mark = buffer:get_mark('buffer-start')
+    local end_mark = buffer:get_mark('buffer-end')
+    local start = start_mark and buffer:get_iter_at_mark(start_mark) or buffer:get_start_iter()
+    local finish = limit_iter or (end_mark and buffer:get_iter_at_mark(end_mark) or buffer:get_end_iter())
+    local chunks = {}
+    local cursor = start
+
+    for _, range in ipairs(self:sorted_output_ranges()) do
+        local output_start = range.start_mark and buffer:get_iter_at_mark(range.start_mark)
+        local output_end = range.end_mark and buffer:get_iter_at_mark(range.end_mark)
+        if output_start and output_end and
+           output_end:compare(start) > 0 and output_start:compare(finish) < 0 then
+            if output_start:compare(cursor) > 0 then
+                chunks[#chunks + 1] = buffer:get_text(cursor, output_start, false)
+            end
+            if output_end:compare(cursor) > 0 then
+                cursor = output_end
+            end
+        end
+    end
+
+    if cursor:compare(finish) < 0 then
+        chunks[#chunks + 1] = buffer:get_text(cursor, finish, false)
+    end
+
+    local visible = table.concat(chunks)
+    if self.hidden_prefix ~= '' and visible ~= '' and self.hidden_prefix:sub(-1) ~= '\n' then
+        return self.hidden_prefix .. '\n' .. visible
+    else
+        return self.hidden_prefix .. visible
+    end
+end
+
+function Console:sync_code_buffer()
+    self.code_buffer = self:collect_code_buffer()
+end
+
+function Console:mark_code_region(start_iter, end_iter, end_left_gravity)
+    local buffer = self.buffer
+    local start_mark = buffer:get_mark('buffer-start')
+    local end_mark = buffer:get_mark('buffer-end')
+
+    if start_mark then
+        buffer:move_mark(start_mark, start_iter)
+    else
+        buffer:create_mark('buffer-start', start_iter, true)
+    end
+
+    if end_mark then
+        buffer:delete_mark(end_mark)
+    end
+    buffer:create_mark('buffer-end', end_iter, end_left_gravity or false)
+end
+
+function Console:clear_output_ranges()
+    local buffer = self.buffer
+    for _, range in ipairs(self.output_ranges or {}) do
+        if range.start_mark then
+            buffer:delete_mark(range.start_mark)
+        end
+        if range.end_mark then
+            buffer:delete_mark(range.end_mark)
+        end
+    end
+    self.output_ranges = {}
+    self.output_range_counter = 0
+end
+
+function Console:add_output_range(start_iter, end_iter)
+    local buffer = self.buffer
+    self.output_range_counter = (self.output_range_counter or 0) + 1
+    local index = self.output_range_counter
+    local start_mark = buffer:create_mark('output-start-' .. index, start_iter, false)
+    local end_mark = buffer:create_mark('output-end-' .. index, end_iter, true)
+
+    self.output_ranges[index] = {
+        start_mark = start_mark,
+        end_mark = end_mark,
+    }
 end
 
 function Console:cmd_clear()
@@ -584,14 +719,10 @@ function Console:cmd_clear()
         -- shown, until "list" (or any other command, which all flatten
         -- this back via finish_edit) redisplays it.
         self.hidden_prefix = self.code_buffer
+        self:clear_output_ranges()
         buffer:set_text('', -1)
         local end_iter = buffer:get_end_iter()
-        local mark = buffer:get_mark('buffer-start')
-        if mark then
-            buffer:move_mark(mark, end_iter)
-        else
-            buffer:create_mark('buffer-start', end_iter, true)
-        end
+        self:mark_code_region(end_iter, end_iter)
         buffer:place_cursor(end_iter)
         self.view:set_editable(true)
         self.view:scroll_to_iter(end_iter, 0.0, false, 0.5, 0.5)
@@ -623,9 +754,13 @@ function Console:cmd_new()
 end
 
 function Console:cmd_run()
-    local code = self.code_buffer
+    local pending_run_code = self.pending_run_code
+    self.pending_run_code = nil
+
+    local code = pending_run_code or self.code_buffer
+    local display_code = self.code_buffer
     if self.mode == 'edit' then
-        self:finish_run_edit(code)
+        self:finish_run_edit(code, display_code)
     else
         self:eval_chunk(code, false, '=buffer')
         self:finish_repl()
@@ -633,28 +768,39 @@ function Console:cmd_run()
 end
 
 -- Shows "run"'s output below the code, not above it - unlike every
--- other edit-mode command. The code just shown becomes the hidden
--- prefix (same trick cmd_clear uses): a fresh "buffer-start" mark goes
--- right after this whole display, so if the user keeps typing without
--- invoking another command, that new text is appended to the program
--- rather than getting mixed into this one-off code+output display.
-function Console:finish_run_edit(code)
+-- other edit-mode command. The whole view remains editable, but the
+-- output range is excluded when syncing the logical buffer.
+function Console:finish_run_edit(code, display_code)
     local buffer = self.buffer
+    display_code = display_code or code
+    self:clear_output_ranges()
     buffer:set_text('', -1)
+    local code_start_offset = buffer:get_end_iter():get_offset()
     self:write(code)
-    if code ~= '' and code:sub(-1) ~= '\n' then
+    local added_separator = code ~= '' and code:sub(-1) ~= '\n'
+    if added_separator then
         self:write('\n')
     end
+    local output_start_offset = buffer:get_end_iter():get_offset()
     self:eval_chunk(code, false, '=buffer')
-    self.hidden_prefix = code
+    local output_end_offset = buffer:get_end_iter():get_offset()
+    self.hidden_prefix = ''
+    if output_end_offset > output_start_offset then
+        self:add_output_range(buffer:get_iter_at_offset(output_start_offset),
+                              buffer:get_iter_at_offset(output_end_offset))
+    end
+    if display_code:sub(1, #code) == code then
+        local suffix = display_code:sub(#code + 1)
+        if added_separator and suffix:sub(1, 1) == '\n' then
+            suffix = suffix:sub(2)
+        end
+        if suffix ~= '' then
+            self:write(suffix)
+        end
+    end
 
     local end_iter = buffer:get_end_iter()
-    local mark = buffer:get_mark('buffer-start')
-    if mark then
-        buffer:move_mark(mark, end_iter)
-    else
-        buffer:create_mark('buffer-start', end_iter, true)
-    end
+    self:mark_code_region(buffer:get_iter_at_offset(code_start_offset), end_iter)
     buffer:place_cursor(end_iter)
     self.view:set_editable(true)
     self.view:scroll_to_iter(end_iter, 0.0, false, 0.5, 0.5)
@@ -746,6 +892,7 @@ function Console:finish_edit(message, tag, cleared, output_fn)
     -- has any hidden prefix folded in, from the sync at the top of
     -- dispatch_command).
     self.hidden_prefix = ''
+    self:clear_output_ranges()
     local buffer = self.buffer
     if not cleared then
         buffer:set_text('', -1)
@@ -760,14 +907,9 @@ function Console:finish_edit(message, tag, cleared, output_fn)
     -- confirmations...) is a one-off message, not code. Mark where the
     -- real editable buffer starts so a later sync doesn't fold that
     -- message back into the saved/run buffer.
-    local start = buffer:get_end_iter()
-    local mark = buffer:get_mark('buffer-start')
-    if mark then
-        buffer:move_mark(mark, start)
-    else
-        buffer:create_mark('buffer-start', start, true)
-    end
+    local start_offset = buffer:get_end_iter():get_offset()
     self:write(self.code_buffer)
+    self:mark_code_region(buffer:get_iter_at_offset(start_offset), buffer:get_end_iter())
     local cur = buffer:get_end_iter()
     buffer:place_cursor(cur)
     self.view:set_editable(true)
