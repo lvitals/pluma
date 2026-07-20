@@ -27,6 +27,10 @@ TEST_PROGS			+= document-saver
 document_saver_SOURCES		= document-saver.c
 document_saver_LDADD		= $(progs_ldadd)
 
+TEST_PROGS			+= text-buffer
+text_buffer_SOURCES		= text-buffer.c
+text_buffer_LDADD		= $(progs_ldadd)
+
 if ENABLE_GIT_TESTS
 TEST_PROGS			+= git-diff
 git_diff_SOURCES		= git-diff.c

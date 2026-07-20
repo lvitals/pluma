@@ -80,6 +80,9 @@ NOINST_H_FILES =			\
 	pluma-smart-charset-converter.h	\
 	pluma-style-scheme-manager.h	\
 	pluma-tab-label.h		\
+	pluma-text-buffer.h		\
+	pluma-text-buffer-private.h	\
+	pluma-text-iter.h		\
 	plumatextregion.h		\
 	pluma-ui.h			\
 	pluma-window-private.h
@@ -176,6 +179,8 @@ libpluma_c_files = 			\
 	pluma-style-scheme-manager.c	\
 	pluma-tab.c 			\
 	pluma-tab-label.c		\
+	pluma-text-buffer.c		\
+	pluma-text-iter.c		\
 	pluma-utils.c 			\
 	pluma-view.c 			\
 	pluma-view-activatable.c 	\

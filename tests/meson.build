@@ -5,6 +5,7 @@ test_progs = [
   'document-output-stream',
   'document-loader',
   'document-saver',
+  'text-buffer',
 ]
 
 foreach t : test_progs
