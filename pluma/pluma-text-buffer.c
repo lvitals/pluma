@@ -26,6 +26,7 @@
 
 #include "pluma-text-buffer-private.h"
 
+#include <gio/gio.h>
 #include <glib/gstdio.h>
 #include <string.h>
 #include <errno.h>
@@ -506,13 +507,15 @@ pluma_text_buffer_new (void)
 
 	buffer->add_data = g_byte_array_new ();
 	buffer->original_fd = -1;
+	buffer->ref_count = 1;
 
 	return buffer;
 }
 
 PlumaTextBuffer *
-pluma_text_buffer_new_from_file (const gchar  *path,
-                                  GError      **error)
+pluma_text_buffer_new_from_file (const gchar   *path,
+                                  GCancellable  *cancellable,
+                                  GError       **error)
 {
 	PlumaTextBuffer *buffer;
 	gint fd;
@@ -559,6 +562,7 @@ pluma_text_buffer_new_from_file (const gchar  *path,
 		buffer->original_data = (gchar *) addr;
 		buffer->original_size = (gsize) st.st_size;
 		buffer->original_is_mmap = TRUE;
+		buffer->original_fd = fd;
 
 		/*
 		 * The mapped file is *not* handed to the tree as a single giant
@@ -578,11 +582,24 @@ pluma_text_buffer_new_from_file (const gchar  *path,
 
 			while (pos < buffer->original_size)
 			{
-				gsize chunk_len = MIN (buffer->original_size - pos, (gsize) PLUMA_ORIGINAL_CHUNK_SIZE);
+				gsize chunk_len;
 				gsize line_breaks;
 				gsize *checkpoints;
 				gsize n_checkpoints;
 				PlumaPieceNode *chunk;
+
+				/* Checked once per 64KB chunk: frequent enough that
+				 * cancelling a multi-GB scan (e.g. the tab it belongs
+				 * to was closed) takes effect promptly, without adding
+				 * meaningful overhead to the scan itself. */
+				if (g_cancellable_set_error_if_cancelled (cancellable, error))
+				{
+					node_free_recursive (root);
+					pluma_text_buffer_free (buffer);
+					return NULL;
+				}
+
+				chunk_len = MIN (buffer->original_size - pos, (gsize) PLUMA_ORIGINAL_CHUNK_SIZE);
 
 				build_checkpoints (buffer->original_data + pos, chunk_len,
 				                    &line_breaks, &checkpoints, &n_checkpoints);
@@ -597,18 +614,17 @@ pluma_text_buffer_new_from_file (const gchar  *path,
 			buffer->root = root;
 		}
 	}
-
-	buffer->original_fd = fd;
+	else
+	{
+		buffer->original_fd = fd;
+	}
 
 	return buffer;
 }
 
-void
-pluma_text_buffer_free (PlumaTextBuffer *buffer)
+static void
+text_buffer_really_free (PlumaTextBuffer *buffer)
 {
-	if (buffer == NULL)
-		return;
-
 	node_free_recursive (buffer->root);
 
 	if (buffer->original_is_mmap && buffer->original_data != NULL)
@@ -621,6 +637,32 @@ pluma_text_buffer_free (PlumaTextBuffer *buffer)
 		g_byte_array_free (buffer->add_data, TRUE);
 
 	g_free (buffer);
+}
+
+PlumaTextBuffer *
+pluma_text_buffer_ref (PlumaTextBuffer *buffer)
+{
+	g_return_val_if_fail (buffer != NULL, NULL);
+
+	g_atomic_int_inc (&buffer->ref_count);
+
+	return buffer;
+}
+
+void
+pluma_text_buffer_unref (PlumaTextBuffer *buffer)
+{
+	if (buffer == NULL)
+		return;
+
+	if (g_atomic_int_dec_and_test (&buffer->ref_count))
+		text_buffer_really_free (buffer);
+}
+
+void
+pluma_text_buffer_free (PlumaTextBuffer *buffer)
+{
+	pluma_text_buffer_unref (buffer);
 }
 
 gsize
@@ -783,14 +825,30 @@ save_node (PlumaTextBuffer  *buffer,
  * Streams the document to @path node by node, without ever materializing
  * the whole content in memory. This is a plain synchronous helper for the
  * engine's own tests; it is not a replacement for PlumaDocumentSaver
- * (atomic replace, backups, encoding conversion, async off the UI thread)
- * which is a separate, GTK-facing concern.
+ * (backups, encoding conversion, async off the UI thread) which is a
+ * separate, GTK-facing concern.
+ *
+ * Crucially, this never opens @path itself for writing. If @path is the
+ * same file this buffer was loaded from (the common case: plain Save),
+ * buffer->original_data is still mmap'd onto it, and any piece not yet
+ * overwritten by an edit is read from that mapping while saving. Opening
+ * @path with O_TRUNC would truncate the file out from under those mapped
+ * pages -- any read of them after that (this save's own remaining
+ * pieces, or another thread redrawing the view concurrently) faults
+ * with SIGBUS, not a catchable error. So instead this writes to a fresh
+ * temp file in the same directory (never touching @path) and only
+ * replaces @path with an atomic rename() once the write has fully
+ * succeeded -- rename() doesn't invalidate @path's old inode for
+ * whoever still has it mapped or open, it just repoints the directory
+ * entry.
  */
 gboolean
 pluma_text_buffer_save (PlumaTextBuffer  *buffer,
                          const gchar      *path,
                          GError          **error)
 {
+	gchar *dir;
+	gchar *tmp_path;
 	gint fd;
 	gboolean ok;
 
@@ -798,15 +856,32 @@ pluma_text_buffer_save (PlumaTextBuffer  *buffer,
 	g_return_val_if_fail (path != NULL, FALSE);
 	g_return_val_if_fail (error == NULL || *error == NULL, FALSE);
 
-	fd = g_open (path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	dir = g_path_get_dirname (path);
+	tmp_path = g_build_filename (dir, ".pluma-save-XXXXXX", NULL);
+	g_free (dir);
+
+	fd = g_mkstemp (tmp_path);
 	if (fd < 0)
 	{
 		g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (errno),
 		             "%s", g_strerror (errno));
+		g_free (tmp_path);
 		return FALSE;
 	}
 
 	ok = save_node (buffer, buffer->root, fd, error);
+
+	/* A successful write() only means the data was handed to the page
+	 * cache; without fsync(), a crash or power loss right after the
+	 * rename() below could still leave the "saved" file truncated or
+	 * empty on some filesystems. This is what makes the replace not
+	 * just atomically *visible*, but actually durable. */
+	if (ok && fsync (fd) < 0)
+	{
+		g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (errno),
+		             "%s", g_strerror (errno));
+		ok = FALSE;
+	}
 
 	if (close (fd) < 0 && ok)
 	{
@@ -814,6 +889,30 @@ pluma_text_buffer_save (PlumaTextBuffer  *buffer,
 		             "%s", g_strerror (errno));
 		ok = FALSE;
 	}
+
+	if (ok)
+	{
+		struct stat st;
+
+		/* g_mkstemp() creates the file 0600 regardless of the original
+		 * file's permissions; preserve them across the replace when
+		 * possible (best-effort: a new/never-saved file has nothing to
+		 * match, and permission errors here shouldn't fail the save). */
+		if (stat (path, &st) == 0)
+			chmod (tmp_path, st.st_mode & 07777);
+
+		if (g_rename (tmp_path, path) != 0)
+		{
+			g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (errno),
+			             "%s", g_strerror (errno));
+			ok = FALSE;
+		}
+	}
+
+	if (!ok)
+		g_unlink (tmp_path);
+
+	g_free (tmp_path);
 
 	return ok;
 }

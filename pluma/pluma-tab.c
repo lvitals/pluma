@@ -37,6 +37,7 @@
 #include "pluma-app.h"
 #include "pluma-notebook.h"
 #include "pluma-tab.h"
+#include "pluma-window.h"
 #include "pluma-utils.h"
 #include "pluma-io-error-message-area.h"
 #include "pluma-print-job.h"
@@ -69,6 +70,7 @@ struct _PlumaTabPrivate
 	GtkWidget	       *large_file_view;
 	GtkWidget	       *large_file_scrolled_window;
 	GtkWidget	       *large_file_loading_box;
+	GCancellable	       *large_file_cancellable;
 
 	GtkWidget	       *message_area;
 	GtkWidget	       *print_preview;
@@ -248,6 +250,7 @@ pluma_tab_finalize (GObject *object)
 	g_free (tab->priv->tmp_save_uri);
 
 	g_clear_object (&tab->priv->large_file_location);
+	g_clear_object (&tab->priv->large_file_cancellable);
 
 	if (tab->priv->auto_save_timeout > 0)
 		remove_auto_save_timeout (tab);
@@ -266,10 +269,81 @@ pluma_tab_finalize (GObject *object)
 }
 
 static void
+cancel_large_file_load (PlumaTab *tab)
+{
+	/* Idempotent: g_cancellable_cancel() on an already-cancelled (or
+	 * NULL, guarded here) cancellable is a safe no-op, so this can be
+	 * called from both destroy() and dispose() without tracking whether
+	 * it already ran. */
+	if (tab->priv->large_file_cancellable != NULL)
+		g_cancellable_cancel (tab->priv->large_file_cancellable);
+}
+
+static void
+clear_large_file_view (PlumaTab *tab)
+{
+	/* Defensive: large_file_view is a plain child widget of this tab
+	 * and is normally destroyed as part of this tab's own GTK teardown
+	 * well before tab->priv itself is freed, which is what keeps the
+	 * weak pointer registered below (&tab->priv->large_file_view) a
+	 * valid address for GObject to clear. But dispose() is exactly the
+	 * place to stop relying on that ordering implicitly: remove the
+	 * registration ourselves before there is any chance of tab->priv
+	 * going away first. */
+	if (tab->priv->large_file_view != NULL)
+	{
+		g_object_remove_weak_pointer (G_OBJECT (tab->priv->large_file_view),
+					      (gpointer *) &tab->priv->large_file_view);
+		tab->priv->large_file_view = NULL;
+	}
+}
+
+/*
+ * GtkWidgetClass::destroy, not GObject::dispose, is where an in-flight
+ * large-file load must be cancelled. g_task_new() in
+ * _pluma_tab_load_large_file() takes a strong ref on this tab as its
+ * source_object, and that ref -- not anything holding the *widget*
+ * alive -- is what keeps this GObject from reaching refcount 0. So
+ * closing the tab (removing it from the notebook, which calls
+ * gtk_widget_destroy()) fires this vfunc immediately, independent of
+ * the task's ref; dispose() would not run until the task itself
+ * releases that ref, i.e. not until the (uncancelled) load has already
+ * finished on its own -- too late to be useful.
+ */
+static void
+pluma_tab_destroy (GtkWidget *widget)
+{
+	PlumaTab *tab = PLUMA_TAB (widget);
+
+	cancel_large_file_load (tab);
+
+	GTK_WIDGET_CLASS (pluma_tab_parent_class)->destroy (widget);
+}
+
+static void
+pluma_tab_dispose (GObject *object)
+{
+	PlumaTab *tab = PLUMA_TAB (object);
+
+	/* Fallback for the (in this codebase, hypothetical) case of a tab
+	 * disposed without ever going through gtk_widget_destroy(); the
+	 * normal case is handled by pluma_tab_destroy() above, well before
+	 * this can run (see its comment for why that distinction matters). */
+	cancel_large_file_load (tab);
+	clear_large_file_view (tab);
+
+	G_OBJECT_CLASS (pluma_tab_parent_class)->dispose (object);
+}
+
+static void
 pluma_tab_class_init (PlumaTabClass *klass)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS (klass);
+	GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (klass);
 
+	widget_class->destroy = pluma_tab_destroy;
+
+	object_class->dispose = pluma_tab_dispose;
 	object_class->finalize = pluma_tab_finalize;
 	object_class->get_property = pluma_tab_get_property;
 	object_class->set_property = pluma_tab_set_property;
@@ -1776,7 +1850,7 @@ large_file_load_thread (GTask        *task,
 		return;
 	}
 
-	buffer = pluma_text_buffer_new_from_file (path, &error);
+	buffer = pluma_text_buffer_new_from_file (path, cancellable, &error);
 	g_free (path);
 
 	if (buffer == NULL)
@@ -1832,6 +1906,14 @@ finish_large_file_load (PlumaTab        *tab,
 	tab->priv->large_file_view = pluma_large_file_view_new (buffer);
 	gtk_widget_show (tab->priv->large_file_view);
 
+	/* Tracked with a weak pointer (auto-cleared to NULL on destroy,
+	 * whatever destroys it) rather than assumed to live exactly as long
+	 * as the tab: large_file_save_done() runs later, on the main loop,
+	 * and needs to be able to tell if the view is still there instead
+	 * of dereferencing a dangling pointer. */
+	g_object_add_weak_pointer (G_OBJECT (tab->priv->large_file_view),
+				   (gpointer *) &tab->priv->large_file_view);
+
 	g_signal_connect (tab->priv->large_file_view, "notify::modified",
 			  G_CALLBACK (large_file_view_modified_notify), tab);
 
@@ -1852,7 +1934,17 @@ large_file_load_error_response (GtkWidget *message_area,
 				gint       response_id,
 				PlumaTab  *tab)
 {
-	gtk_widget_destroy (GTK_WIDGET (tab));
+	GtkWidget *toplevel = gtk_widget_get_toplevel (GTK_WIDGET (tab));
+
+	/* Route through the window rather than gtk_widget_destroy()-ing the
+	 * tab directly, so the notebook/window's own bookkeeping (active
+	 * tab, documents list, action sensitivity, window-state
+	 * persistence) stays consistent -- the same as closing any other
+	 * tab. */
+	if (PLUMA_IS_WINDOW (toplevel))
+		pluma_window_close_tab (PLUMA_WINDOW (toplevel), tab);
+	else
+		gtk_widget_destroy (GTK_WIDGET (tab));
 }
 
 static void
@@ -1888,9 +1980,17 @@ large_file_load_done (GObject      *source_object,
 
 	buffer = g_task_propagate_pointer (task, &error);
 
+	g_clear_object (&tab->priv->large_file_cancellable);
+
 	if (buffer == NULL)
 	{
-		show_large_file_load_error (tab, error);
+		/* Cancelled means the tab was already closed while loading
+		 * (see pluma_tab_dispose()): the widget hierarchy underneath
+		 * may already be torn down, so there is nothing left to show
+		 * an error message area in -- just drop it. */
+		if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+			show_large_file_load_error (tab, error);
+
 		g_error_free (error);
 	}
 	else
@@ -1925,8 +2025,13 @@ _pluma_tab_load_large_file (PlumaTab *tab,
 	show_large_file_loading_placeholder (tab);
 
 	/* g_task_new() takes a ref on @tab (a GObject), keeping it alive for
-	 * the duration of the load even if the user closes the tab. */
-	task = g_task_new (tab, NULL, large_file_load_done, NULL);
+	 * the duration of the load even if the user closes the tab; the
+	 * cancellable is what makes closing actually interrupt the scan
+	 * instead of just wasting disk/CPU in the background until it
+	 * finishes on its own (see pluma_tab_dispose()). */
+	tab->priv->large_file_cancellable = g_cancellable_new ();
+
+	task = g_task_new (tab, tab->priv->large_file_cancellable, large_file_load_done, NULL);
 	g_task_set_task_data (task, g_object_ref (file), g_object_unref);
 	g_task_run_in_thread (task, large_file_load_thread);
 	g_object_unref (task);
@@ -1990,6 +2095,16 @@ pluma_tab_is_large_file (PlumaTab *tab)
 	g_return_val_if_fail (PLUMA_IS_TAB (tab), FALSE);
 
 	return tab->priv->large_file_location != NULL;
+}
+
+gboolean
+pluma_tab_large_file_is_ready (PlumaTab *tab)
+{
+	g_return_val_if_fail (PLUMA_IS_TAB (tab), FALSE);
+
+	return tab->priv->large_file_location != NULL &&
+	       tab->priv->large_file_view != NULL &&
+	       tab->priv->state == PLUMA_TAB_STATE_NORMAL;
 }
 
 #define MAX_DOC_NAME_LENGTH 40
@@ -2405,31 +2520,87 @@ _pluma_tab_revert (PlumaTab *tab)
 }
 
 /*
- * Saves (or Save-As's, if @target differs from the tab's current
- * location) a large-file tab's real PlumaTextBuffer directly, bracketed
- * by a SAVING->NORMAL state round-trip so pluma-commands-file.c's
- * "wait for state to go back to NORMAL, then close the tab" logic (used
- * by Save-and-close-tab / Save-and-quit) keeps working unmodified.
+ * Writing a multi-GB buffer to disk is exactly as capable of blocking the
+ * UI for a long time as reading one was (see large_file_load_thread()),
+ * so saving runs on a worker thread too.
+ *
+ * pluma_window_close_tab() refuses to close a tab in PLUMA_TAB_STATE_SAVING,
+ * which is the *normal* way this stays safe -- but it is not the only
+ * code path that can remove a tab (pluma-tab.c's own remove_tab(), used
+ * by the ordinary document-load-error/cancel flow, calls
+ * pluma_notebook_remove_tab() directly and does not check tab state at
+ * all). So belt and suspenders: the save takes its own reference on the
+ * PlumaTextBuffer (pluma_text_buffer_ref()/_unref()) for the duration of
+ * the worker thread's I/O, independent of whatever owns the buffer the
+ * rest of the time; and large_file_view is tracked with a weak pointer
+ * so large_file_save_done() (running later, back on the main thread)
+ * can tell if the view got destroyed out from under it instead of
+ * dereferencing a dangling pointer.
  */
-static void
-save_large_file_tab (PlumaTab *tab,
-		     GFile    *target)
+typedef struct
 {
-	PlumaTextBuffer *buffer;
+	PlumaTextBuffer *buffer; /* owns a ref, released in the free func below */
+	GFile *target;
+} LargeFileSaveData;
+
+static void
+large_file_save_data_free (LargeFileSaveData *data)
+{
+	pluma_text_buffer_unref (data->buffer);
+	g_object_unref (data->target);
+	g_free (data);
+}
+
+static void
+large_file_save_thread (GTask        *task,
+			gpointer      source_object,
+			gpointer      task_data,
+			GCancellable *cancellable)
+{
+	LargeFileSaveData *data = task_data;
 	GError *error = NULL;
 	gchar *path;
-	gboolean ok;
 
-	buffer = pluma_large_file_view_get_buffer (PLUMA_LARGE_FILE_VIEW (tab->priv->large_file_view));
-	path = g_file_get_path (target);
+	path = g_file_get_path (data->target);
 
-	pluma_tab_set_state (tab, PLUMA_TAB_STATE_SAVING);
-
-	ok = (path != NULL) && pluma_text_buffer_save (buffer, path, &error);
-
-	if (ok)
+	if (path == NULL || !pluma_text_buffer_save (data->buffer, path, &error))
 	{
-		pluma_large_file_view_mark_saved (PLUMA_LARGE_FILE_VIEW (tab->priv->large_file_view));
+		if (path == NULL)
+			g_set_error (&error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+				     "Large file mode only supports local files");
+
+		g_task_return_error (task, error);
+	}
+	else
+	{
+		g_task_return_boolean (task, TRUE);
+	}
+
+	g_free (path);
+}
+
+static void
+large_file_save_done (GObject      *source_object,
+		      GAsyncResult *result,
+		      gpointer      user_data)
+{
+	PlumaTab *tab = PLUMA_TAB (source_object);
+	GTask *task = G_TASK (result);
+	LargeFileSaveData *data = g_task_get_task_data (task);
+	GFile *target = data->target;
+	GError *error = NULL;
+
+	if (g_task_propagate_boolean (task, &error))
+	{
+		/* tab->priv->large_file_view is a weak pointer (see
+		 * finish_large_file_load()): NULL here means the view was
+		 * destroyed while this save was in flight via some path that
+		 * bypassed the PLUMA_TAB_STATE_SAVING guard. The file was
+		 * still written successfully (that part only touched the
+		 * ref'd PlumaTextBuffer, not the widget) -- there's just
+		 * nothing left to update the UI of. */
+		if (tab->priv->large_file_view != NULL)
+			pluma_large_file_view_mark_saved (PLUMA_LARGE_FILE_VIEW (tab->priv->large_file_view));
 
 		if (!g_file_equal (target, tab->priv->large_file_location))
 		{
@@ -2463,9 +2634,40 @@ save_large_file_tab (PlumaTab *tab,
 		gtk_widget_destroy (dialog);
 	}
 
-	g_free (path);
+	if (tab->priv->large_file_view != NULL)
+		gtk_widget_set_sensitive (tab->priv->large_file_view, TRUE);
 
+	/* Always safe: tab->priv->view (the placeholder) is unaffected by
+	 * whatever happened to large_file_view above. */
 	pluma_tab_set_state (tab, PLUMA_TAB_STATE_NORMAL);
+}
+
+/*
+ * Saves (or Save-As's, if @target differs from the tab's current
+ * location) a large-file tab's real PlumaTextBuffer. @tab must be
+ * pluma_tab_large_file_is_ready() (checked by callers via the "save"/
+ * "save-as" action sensitivity, and re-asserted here defensively).
+ */
+static void
+save_large_file_tab (PlumaTab *tab,
+		     GFile    *target)
+{
+	LargeFileSaveData *data;
+	GTask *task;
+
+	g_return_if_fail (tab->priv->large_file_view != NULL);
+
+	pluma_tab_set_state (tab, PLUMA_TAB_STATE_SAVING);
+	gtk_widget_set_sensitive (tab->priv->large_file_view, FALSE);
+
+	data = g_new0 (LargeFileSaveData, 1);
+	data->buffer = pluma_text_buffer_ref (pluma_large_file_view_get_buffer (PLUMA_LARGE_FILE_VIEW (tab->priv->large_file_view)));
+	data->target = g_object_ref (target);
+
+	task = g_task_new (tab, NULL, large_file_save_done, NULL);
+	g_task_set_task_data (task, data, (GDestroyNotify) large_file_save_data_free);
+	g_task_run_in_thread (task, large_file_save_thread);
+	g_object_unref (task);
 }
 
 void

@@ -84,6 +84,12 @@ struct _PlumaTextBuffer
 	GByteArray *add_data;
 
 	PlumaPieceNode *root;
+
+	/* Accessed with g_atomic_int_*(): a background save (see
+	 * pluma-tab.c's save_large_file_tab()) takes its own ref so the
+	 * buffer survives even if whatever owns it (a PlumaLargeFileView)
+	 * is destroyed while the save is still in flight. */
+	gint ref_count;
 };
 
 const gchar     *_pluma_piece_node_data     (PlumaTextBuffer *buffer,

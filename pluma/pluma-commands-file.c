@@ -204,8 +204,13 @@ load_file_list (PlumaWindow         *window,
 			}
 			else if (should_open_as_large_file (l->data))
 			{
-				pluma_window_create_tab_from_large_file (window, l->data, jump_to);
-				jump_to = FALSE;
+				tab = pluma_window_create_tab_from_large_file (window, l->data, jump_to);
+
+				if (tab != NULL)
+				{
+					jump_to = FALSE;
+					++loaded_files;
+				}
 			}
 			else
 			{

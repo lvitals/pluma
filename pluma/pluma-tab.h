@@ -111,6 +111,14 @@ PlumaDocument	*pluma_tab_get_document		(PlumaTab            *tab);
  * content lives in a PlumaLargeFileView instead. */
 gboolean	 pluma_tab_is_large_file	(PlumaTab            *tab);
 
+/* TRUE once a large-file tab's content has actually finished loading
+ * (i.e. pluma_tab_get_state() == PLUMA_TAB_STATE_NORMAL and the
+ * PlumaLargeFileView exists) -- FALSE while the spinner is still showing
+ * or a save is in progress. Actions like Save/Save-As must be gated on
+ * this, not just pluma_tab_is_large_file(), since large_file_location is
+ * set before the PlumaLargeFileView (and its PlumaTextBuffer) exist. */
+gboolean	 pluma_tab_large_file_is_ready	(PlumaTab            *tab);
+
 PlumaTab	*pluma_tab_get_from_document	(PlumaDocument       *doc);
 
 PlumaTabState	 pluma_tab_get_state		(PlumaTab	     *tab);

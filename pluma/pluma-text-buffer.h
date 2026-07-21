@@ -24,6 +24,7 @@
 #define __PLUMA_TEXT_BUFFER_H__
 
 #include <glib.h>
+#include <gio/gio.h>
 
 G_BEGIN_DECLS
 
@@ -46,21 +47,44 @@ G_BEGIN_DECLS
  * scans, without maintaining a separate sparse checkpoint index.
  *
  * This module has no GTK/GtkSourceView dependency on purpose, so it can
- * be unit tested in isolation. It is not yet wired into PlumaDocument;
- * integrating it (e.g. routing very large files through this engine
- * while keeping GtkSourceBuffer for everything else) is a separate,
- * substantially larger follow-up that touches loading, undo/redo,
- * syntax highlighting and plugin-visible APIs.
+ * be unit tested in isolation. It backs PlumaLargeFileView (see
+ * pluma-large-file-view.h) for files too big for a normal GtkSourceView
+ * tab; PlumaDocument/GtkSourceBuffer are untouched otherwise.
+ *
+ * Thread safety: a PlumaTextBuffer has no internal locking. Concurrent
+ * *read-only* access from multiple threads is fine (this is exactly what
+ * pluma-tab.c's asynchronous save relies on: a worker thread streams the
+ * buffer to disk via pluma_text_buffer_ref() while the main thread may
+ * still be redrawing it). Concurrently *mutating* it (insert/delete)
+ * while another thread reads or writes it is not supported and will
+ * corrupt the piece tree; callers that allow editing during a background
+ * read must keep the two mutually exclusive themselves (pluma-tab.c does
+ * this by making the view insensitive for the duration of a save).
  */
 
 typedef struct _PlumaTextBuffer PlumaTextBuffer;
 
 PlumaTextBuffer *pluma_text_buffer_new              (void);
 
+/* @cancellable (nullable) is checked roughly once per 64KB while the
+ * file is scanned to build the initial line index, so cancelling it
+ * promptly aborts an in-flight open of a very large file. */
 PlumaTextBuffer *pluma_text_buffer_new_from_file     (const gchar      *path,
+                                                       GCancellable     *cancellable,
                                                        GError          **error);
 
+/* Drops one reference; the buffer (mmap, add-buffer, piece tree) is
+ * actually freed once the ref count reaches zero. Equivalent to
+ * pluma_text_buffer_unref() -- kept as the primary name since callers
+ * that never share a buffer (the common case) can just treat this as
+ * "free" and ignore ref-counting entirely. */
 void              pluma_text_buffer_free             (PlumaTextBuffer  *buffer);
+
+/* For code that needs the buffer to outlive its current owner -- e.g. a
+ * background save reading it after the widget that displays it could be
+ * destroyed. Pairs with pluma_text_buffer_free()/_unref(). */
+PlumaTextBuffer  *pluma_text_buffer_ref              (PlumaTextBuffer  *buffer);
+void              pluma_text_buffer_unref            (PlumaTextBuffer  *buffer);
 
 gsize             pluma_text_buffer_get_length        (PlumaTextBuffer  *buffer);
 

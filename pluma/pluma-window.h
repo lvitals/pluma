@@ -115,8 +115,10 @@ PlumaTab	*pluma_window_create_tab_from_uri	(PlumaWindow         *window,
 
 /* Creates a tab showing @file in large-file mode (see pluma-tab.h /
  * pluma-large-file-view.h) instead of the normal GtkSourceView pipeline.
- * Returns NULL (after showing an error dialog) if @file could not be
- * opened. */
+ * The tab is added to the notebook and returned immediately, before
+ * @file has actually been read: loading happens on a worker thread, and
+ * if it fails the tab shows an inline error message area (same as a
+ * normal document load failure) rather than reporting back here. */
 PlumaTab	*pluma_window_create_tab_from_large_file
 							(PlumaWindow         *window,
 							 GFile               *file,

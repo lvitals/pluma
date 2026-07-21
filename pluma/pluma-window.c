@@ -1019,10 +1019,18 @@ set_sensitivity_according_to_tab (PlumaWindow *window,
      */
     if (pluma_tab_is_large_file (tab))
     {
+        /* large_file_location is set as soon as loading starts, well
+         * before the PlumaLargeFileView (and its PlumaTextBuffer) exist
+         * -- and again transiently unusable while a save is in flight
+         * (state != NORMAL then too). Save/Save-As must stay disabled
+         * for all of that, or they call into a NULL view. */
+        gboolean ready = pluma_tab_large_file_is_ready (tab);
+
         set_action_enabled (window, "save",
+                             ready &&
                              gtk_text_buffer_get_modified (GTK_TEXT_BUFFER (doc)) &&
                              !(lockdown & PLUMA_LOCKDOWN_SAVE_TO_DISK));
-        set_action_enabled (window, "save-as", !(lockdown & PLUMA_LOCKDOWN_SAVE_TO_DISK));
+        set_action_enabled (window, "save-as", ready && !(lockdown & PLUMA_LOCKDOWN_SAVE_TO_DISK));
         set_action_enabled (window, "revert", FALSE);
         set_action_enabled (window, "print-preview", FALSE);
         set_action_enabled (window, "print", FALSE);
