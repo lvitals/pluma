@@ -1984,8 +1984,8 @@ large_file_load_done (GObject      *source_object,
 
 	if (buffer == NULL)
 	{
-		/* Cancelled means the tab was already closed while loading
-		 * (see pluma_tab_dispose()): the widget hierarchy underneath
+		/* Cancelled normally means the tab was destroyed while loading
+		 * (see pluma_tab_destroy()): the widget hierarchy underneath
 		 * may already be torn down, so there is nothing left to show
 		 * an error message area in -- just drop it. */
 		if (!g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
@@ -2028,7 +2028,7 @@ _pluma_tab_load_large_file (PlumaTab *tab,
 	 * the duration of the load even if the user closes the tab; the
 	 * cancellable is what makes closing actually interrupt the scan
 	 * instead of just wasting disk/CPU in the background until it
-	 * finishes on its own (see pluma_tab_dispose()). */
+	 * finishes on its own (see pluma_tab_destroy()). */
 	tab->priv->large_file_cancellable = g_cancellable_new ();
 
 	task = g_task_new (tab, tab->priv->large_file_cancellable, large_file_load_done, NULL);

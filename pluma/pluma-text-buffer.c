@@ -592,7 +592,7 @@ pluma_text_buffer_new_from_file (const gchar   *path,
 				 * cancelling a multi-GB scan (e.g. the tab it belongs
 				 * to was closed) takes effect promptly, without adding
 				 * meaningful overhead to the scan itself. */
-				if (g_cancellable_set_error_if_cancelled (cancellable, error))
+				if (cancellable != NULL && g_cancellable_set_error_if_cancelled (cancellable, error))
 				{
 					node_free_recursive (root);
 					pluma_text_buffer_free (buffer);
@@ -871,11 +871,28 @@ pluma_text_buffer_save (PlumaTextBuffer  *buffer,
 
 	ok = save_node (buffer, buffer->root, fd, error);
 
+	if (ok)
+	{
+		struct stat st;
+
+		/* g_mkstemp() creates the file 0600 regardless of the original
+		 * file's permissions; preserve them across the replace when
+		 * possible (best-effort: a new/never-saved file has nothing to
+		 * match, and permission errors here shouldn't fail the save).
+		 * Done via the still-open fd (fchmod), both to avoid a second
+		 * pathname lookup and so the mode change is covered by the
+		 * fsync() below rather than racing it. */
+		if (stat (path, &st) == 0)
+			fchmod (fd, st.st_mode & 07777);
+	}
+
 	/* A successful write() only means the data was handed to the page
 	 * cache; without fsync(), a crash or power loss right after the
-	 * rename() below could still leave the "saved" file truncated or
-	 * empty on some filesystems. This is what makes the replace not
-	 * just atomically *visible*, but actually durable. */
+	 * rename() below could still leave the file this temp file replaces
+	 * truncated or empty on some filesystems. This makes the *contents*
+	 * durable before they become visible at @path. It does not, on its
+	 * own, guarantee the rename() itself survives a crash -- that would
+	 * additionally need an fsync() on the containing directory. */
 	if (ok && fsync (fd) < 0)
 	{
 		g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (errno),
@@ -890,23 +907,11 @@ pluma_text_buffer_save (PlumaTextBuffer  *buffer,
 		ok = FALSE;
 	}
 
-	if (ok)
+	if (ok && g_rename (tmp_path, path) != 0)
 	{
-		struct stat st;
-
-		/* g_mkstemp() creates the file 0600 regardless of the original
-		 * file's permissions; preserve them across the replace when
-		 * possible (best-effort: a new/never-saved file has nothing to
-		 * match, and permission errors here shouldn't fail the save). */
-		if (stat (path, &st) == 0)
-			chmod (tmp_path, st.st_mode & 07777);
-
-		if (g_rename (tmp_path, path) != 0)
-		{
-			g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (errno),
-			             "%s", g_strerror (errno));
-			ok = FALSE;
-		}
+		g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (errno),
+		             "%s", g_strerror (errno));
+		ok = FALSE;
 	}
 
 	if (!ok)
