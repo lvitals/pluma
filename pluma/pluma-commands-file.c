@@ -48,6 +48,7 @@
 #include "pluma-statusbar.h"
 #include "pluma-debug.h"
 #include "pluma-utils.h"
+#include "pluma-settings.h"
 #include "pluma-file-chooser-dialog.h"
 #include "dialogs/pluma-close-confirmation-dialog.h"
 
@@ -123,6 +124,35 @@ is_duplicated_file (GSList *files, GFile *file)
 	return FALSE;
 }
 
+static gboolean
+should_open_as_large_file (GFile *file)
+{
+	GSettings *settings;
+	guint threshold_mb;
+	GFileInfo *info;
+	guint64 size;
+
+	if (!g_file_is_native (file))
+		return FALSE;
+
+	settings = g_settings_new (PLUMA_SCHEMA_ID);
+	threshold_mb = g_settings_get_uint (settings, PLUMA_SETTINGS_LARGE_FILE_THRESHOLD);
+	g_object_unref (settings);
+
+	if (threshold_mb == 0)
+		return FALSE;
+
+	info = g_file_query_info (file, G_FILE_ATTRIBUTE_STANDARD_SIZE,
+				  G_FILE_QUERY_INFO_NONE, NULL, NULL);
+	if (info == NULL)
+		return FALSE;
+
+	size = (guint64) g_file_info_get_size (info);
+	g_object_unref (info);
+
+	return size > ((guint64) threshold_mb * 1024 * 1024);
+}
+
 /* File loading */
 static gint
 load_file_list (PlumaWindow         *window,
@@ -171,6 +201,11 @@ load_file_list (PlumaWindow         *window,
 				}
 
 				++loaded_files;
+			}
+			else if (should_open_as_large_file (l->data))
+			{
+				pluma_window_create_tab_from_large_file (window, l->data, jump_to);
+				jump_to = FALSE;
 			}
 			else
 			{
@@ -970,6 +1005,16 @@ file_save (PlumaTab    *tab,
 
 	g_return_if_fail (PLUMA_IS_TAB (tab));
 	g_return_if_fail (PLUMA_IS_WINDOW (window));
+
+	/* Large-file tabs are always reported as "untitled" by their hidden
+	 * placeholder document (see pluma-tab.c), so they need to bypass
+	 * that check and go straight to _pluma_tab_save(), which already
+	 * knows how to save the real content. */
+	if (pluma_tab_is_large_file (tab))
+	{
+		_pluma_tab_save (tab);
+		return;
+	}
 
 	doc = pluma_tab_get_document (tab);
 	g_return_if_fail (PLUMA_IS_DOCUMENT (doc));

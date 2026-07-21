@@ -104,6 +104,13 @@ PlumaView	*pluma_tab_get_view		(PlumaTab            *tab);
 /* This is only an helper function */
 PlumaDocument	*pluma_tab_get_document		(PlumaTab            *tab);
 
+/* TRUE if @tab is showing a file too large for the normal editor (see
+ * pluma-large-file-view.h). pluma_tab_get_view()/get_document() still
+ * return a real (but empty, invisible) view/document for such tabs, to
+ * keep every existing PlumaWindow code path type-safe; the actual
+ * content lives in a PlumaLargeFileView instead. */
+gboolean	 pluma_tab_is_large_file	(PlumaTab            *tab);
+
 PlumaTab	*pluma_tab_get_from_document	(PlumaDocument       *doc);
 
 PlumaTabState	 pluma_tab_get_state		(PlumaTab	     *tab);
@@ -133,6 +140,16 @@ void		 pluma_tab_set_info_bar		(PlumaTab            *tab,
  * Non exported methods
  */
 GtkWidget 	*_pluma_tab_new 		(void);
+
+/* Asynchronously loads @file into @tab as a large-file tab instead of the
+ * normal GtkSourceView-backed path (the load itself runs on a worker
+ * thread so it never blocks the UI, however large the file). @tab must
+ * be freshly created (as from _pluma_tab_new()) and not yet loaded any
+ * other content. On failure, an error message area is shown in the tab
+ * (mirroring the normal document-loading-error UX) rather than reporting
+ * back to the caller. */
+void		 _pluma_tab_load_large_file	(PlumaTab            *tab,
+						 GFile               *file);
 
 /* Whether create is TRUE, creates a new empty document if location does
    not refer to an existing file */

@@ -1006,6 +1006,46 @@ set_sensitivity_according_to_tab (PlumaWindow *window,
 
     doc = PLUMA_DOCUMENT (gtk_text_view_get_buffer (GTK_TEXT_VIEW (view)));
 
+    /*
+     * Large-file tabs don't have a real GtkSourceBuffer backing them (see
+     * pluma-large-file-view.h), so most of the actions below -- which
+     * assume syntax highlighting, GtkSourceView-based undo/redo, find &
+     * replace, printing, etc. -- simply don't apply. Give them a
+     * deliberately reduced profile and skip the rest of this function.
+     * "doc" here is the real-but-hidden placeholder document, whose
+     * modified flag is kept in sync with the actual PlumaLargeFileView
+     * (see large_file_view_modified_notify() in pluma-tab.c), so this
+     * check is accurate.
+     */
+    if (pluma_tab_is_large_file (tab))
+    {
+        set_action_enabled (window, "save",
+                             gtk_text_buffer_get_modified (GTK_TEXT_BUFFER (doc)) &&
+                             !(lockdown & PLUMA_LOCKDOWN_SAVE_TO_DISK));
+        set_action_enabled (window, "save-as", !(lockdown & PLUMA_LOCKDOWN_SAVE_TO_DISK));
+        set_action_enabled (window, "revert", FALSE);
+        set_action_enabled (window, "print-preview", FALSE);
+        set_action_enabled (window, "print", FALSE);
+        set_action_enabled (window, "close", state != PLUMA_TAB_STATE_CLOSING);
+        set_action_enabled (window, "undo", FALSE);
+        set_action_enabled (window, "redo", FALSE);
+        set_action_enabled (window, "cut", FALSE);
+        set_action_enabled (window, "copy", FALSE);
+        set_action_enabled (window, "paste", FALSE);
+        set_action_enabled (window, "delete", FALSE);
+        set_action_enabled (window, "find", FALSE);
+        set_action_enabled (window, "incremental-search", FALSE);
+        set_action_enabled (window, "replace", FALSE);
+        set_action_enabled (window, "find-next", FALSE);
+        set_action_enabled (window, "find-previous", FALSE);
+        set_action_enabled (window, "clear-highlight", FALSE);
+        set_action_enabled (window, "goto-line", FALSE);
+        set_action_enabled (window, "highlight-mode", FALSE);
+
+        update_next_prev_doc_sensitivity (window, tab);
+        return;
+    }
+
     clipboard = gtk_widget_get_clipboard (GTK_WIDGET (window),
                                           GDK_SELECTION_CLIPBOARD);
 
@@ -4568,6 +4608,48 @@ pluma_window_create_tab_from_uri (PlumaWindow         *window,
     {
         gtk_window_present (GTK_WINDOW (window));
     }
+
+    return PLUMA_TAB (tab);
+}
+
+/**
+ * pluma_window_create_tab_from_large_file:
+ * @window: a #PlumaWindow
+ * @file: the file to open in large-file mode
+ * @jump_to: %TRUE to set the new #PlumaTab as active
+ *
+ * The tab is added to the notebook immediately, showing a loading
+ * indicator while @file is read on a worker thread (see
+ * _pluma_tab_load_large_file()); if loading fails, the tab shows an
+ * inline error message instead of content, same as a normal document
+ * load failure.
+ *
+ * Returns: (transfer none): the new #PlumaTab
+ */
+PlumaTab *
+pluma_window_create_tab_from_large_file (PlumaWindow *window,
+                                         GFile       *file,
+                                         gboolean     jump_to)
+{
+    GtkWidget *tab;
+
+    g_return_val_if_fail (PLUMA_IS_WINDOW (window), NULL);
+    g_return_val_if_fail (G_IS_FILE (file), NULL);
+
+    tab = _pluma_tab_new ();
+    gtk_widget_show (tab);
+
+    pluma_notebook_add_tab (PLUMA_NOTEBOOK (window->priv->notebook),
+                            PLUMA_TAB (tab),
+                            -1,
+                            jump_to);
+
+    if (!gtk_widget_get_visible (GTK_WIDGET (window)))
+    {
+        gtk_window_present (GTK_WINDOW (window));
+    }
+
+    _pluma_tab_load_large_file (PLUMA_TAB (tab), file);
 
     return PLUMA_TAB (tab);
 }

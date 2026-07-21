@@ -45,6 +45,7 @@
 #include "pluma-debug.h"
 #include "pluma-enum-types.h"
 #include "pluma-settings.h"
+#include "pluma-large-file-view.h"
 
 #define PLUMA_TAB_KEY "PLUMA_TAB_KEY"
 
@@ -57,6 +58,17 @@ struct _PlumaTabPrivate
 	GtkWidget	       *view;
 	GtkWidget	       *view_scrolled_window;
 	GtkWidget	       *view_map_frame;
+
+	/* Non-NULL marks this tab as a "large file" tab: the actual visible
+	 * content is large_file_view (a PlumaLargeFileView), packed as a
+	 * sibling in the tab's box. @view above stays a real, valid, but
+	 * permanently empty PlumaView/PlumaDocument pair in that case --
+	 * kept alive (never shown) purely so pluma_tab_get_view()/
+	 * get_document() remain type-safe for every existing caller. */
+	GFile		       *large_file_location;
+	GtkWidget	       *large_file_view;
+	GtkWidget	       *large_file_scrolled_window;
+	GtkWidget	       *large_file_loading_box;
 
 	GtkWidget	       *message_area;
 	GtkWidget	       *print_preview;
@@ -234,6 +246,8 @@ pluma_tab_finalize (GObject *object)
 		g_timer_destroy (tab->priv->timer);
 
 	g_free (tab->priv->tmp_save_uri);
+
+	g_clear_object (&tab->priv->large_file_location);
 
 	if (tab->priv->auto_save_timeout > 0)
 		remove_auto_save_timeout (tab);
@@ -431,7 +445,7 @@ pluma_tab_set_state (PlumaTab      *tab,
 	}
 	else
 	{
-		if (tab->priv->print_preview == NULL)
+		if (tab->priv->print_preview == NULL && tab->priv->large_file_location == NULL)
 		{
 			gtk_widget_show (tab->priv->view_scrolled_window);
 			gtk_widget_show (tab->priv->overlay);
@@ -1713,6 +1727,211 @@ _pluma_tab_new (void)
 	return GTK_WIDGET (g_object_new (PLUMA_TYPE_TAB, NULL));
 }
 
+/*
+ * Keeps the hidden placeholder PlumaDocument's "modified" flag in sync
+ * with the real PlumaLargeFileView's. This is the single trick that lets
+ * most of the rest of pluma-window.c (close confirmation, tab label
+ * asterisk, document_needs_saving() in pluma-commands-file.c, ...) keep
+ * working unmodified for large-file tabs: they all ultimately check
+ * gtk_text_buffer_get_modified() on "the document", and with this in
+ * place that now reports the truth instead of "never modified".
+ */
+static void
+large_file_view_modified_notify (GObject    *object,
+				 GParamSpec *pspec,
+				 PlumaTab   *tab)
+{
+	PlumaDocument *doc = pluma_tab_get_document (tab);
+	gboolean modified = pluma_large_file_view_get_modified (PLUMA_LARGE_FILE_VIEW (object));
+
+	gtk_text_buffer_set_modified (GTK_TEXT_BUFFER (doc), modified);
+}
+
+/*
+ * pluma_text_buffer_new_from_file() mmaps the file (cheap) but also has to
+ * scan every byte of it once to build the line-checkpoint index, which
+ * means paging the whole file in from disk. For a multi-GB file that can
+ * take anywhere from a couple of seconds to over a minute depending on
+ * storage speed -- running it on the main thread would freeze the whole
+ * editor for that long. So it runs in a worker thread via GTask; the
+ * PlumaTextBuffer itself is plain C with no GTK/GObject-mainloop
+ * dependency, so this is safe.
+ */
+static void
+large_file_load_thread (GTask        *task,
+			gpointer      source_object,
+			gpointer      task_data,
+			GCancellable *cancellable)
+{
+	GFile *file = task_data;
+	PlumaTextBuffer *buffer;
+	GError *error = NULL;
+	gchar *path;
+
+	path = g_file_get_path (file);
+	if (path == NULL)
+	{
+		g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+					 "Large file mode only supports local files");
+		return;
+	}
+
+	buffer = pluma_text_buffer_new_from_file (path, &error);
+	g_free (path);
+
+	if (buffer == NULL)
+		g_task_return_error (task, error);
+	else
+		g_task_return_pointer (task, buffer, (GDestroyNotify) pluma_text_buffer_free);
+}
+
+static void
+show_large_file_loading_placeholder (PlumaTab *tab)
+{
+	GtkWidget *box;
+	GtkWidget *spinner;
+	GtkWidget *label;
+	gchar *text;
+
+	box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 12);
+	gtk_widget_set_valign (box, GTK_ALIGN_CENTER);
+	gtk_widget_set_halign (box, GTK_ALIGN_CENTER);
+
+	spinner = gtk_spinner_new ();
+	gtk_widget_set_size_request (spinner, 32, 32);
+	gtk_spinner_start (GTK_SPINNER (spinner));
+	gtk_box_pack_start (GTK_BOX (box), spinner, FALSE, FALSE, 0);
+
+	text = g_strdup_printf ("<big>%s</big>", _("Opening large file\342\200\246"));
+	label = gtk_label_new (NULL);
+	gtk_label_set_markup (GTK_LABEL (label), text);
+	g_free (text);
+	gtk_box_pack_start (GTK_BOX (box), label, FALSE, FALSE, 0);
+
+	gtk_widget_show_all (box);
+
+	tab->priv->large_file_loading_box = box;
+	gtk_box_pack_end (GTK_BOX (tab), box, TRUE, TRUE, 0);
+}
+
+static void
+hide_large_file_loading_placeholder (PlumaTab *tab)
+{
+	if (tab->priv->large_file_loading_box != NULL)
+	{
+		gtk_widget_destroy (tab->priv->large_file_loading_box);
+		tab->priv->large_file_loading_box = NULL;
+	}
+}
+
+static void
+finish_large_file_load (PlumaTab        *tab,
+			PlumaTextBuffer *buffer)
+{
+	/* @buffer's ownership moves to the view. */
+	tab->priv->large_file_view = pluma_large_file_view_new (buffer);
+	gtk_widget_show (tab->priv->large_file_view);
+
+	g_signal_connect (tab->priv->large_file_view, "notify::modified",
+			  G_CALLBACK (large_file_view_modified_notify), tab);
+
+	tab->priv->large_file_scrolled_window = gtk_scrolled_window_new (NULL, NULL);
+	gtk_scrolled_window_set_shadow_type (GTK_SCROLLED_WINDOW (tab->priv->large_file_scrolled_window),
+					     GTK_SHADOW_IN);
+	gtk_container_add (GTK_CONTAINER (tab->priv->large_file_scrolled_window), tab->priv->large_file_view);
+	gtk_widget_show (tab->priv->large_file_scrolled_window);
+
+	hide_large_file_loading_placeholder (tab);
+	gtk_box_pack_end (GTK_BOX (tab), tab->priv->large_file_scrolled_window, TRUE, TRUE, 0);
+
+	pluma_tab_set_state (tab, PLUMA_TAB_STATE_NORMAL);
+}
+
+static void
+large_file_load_error_response (GtkWidget *message_area,
+				gint       response_id,
+				PlumaTab  *tab)
+{
+	gtk_widget_destroy (GTK_WIDGET (tab));
+}
+
+static void
+show_large_file_load_error (PlumaTab     *tab,
+			    const GError *error)
+{
+	gchar *uri;
+	GtkWidget *emsg;
+
+	pluma_tab_set_state (tab, PLUMA_TAB_STATE_LOADING_ERROR);
+	hide_large_file_loading_placeholder (tab);
+
+	uri = g_file_get_uri (tab->priv->large_file_location);
+	emsg = pluma_io_loading_error_message_area_new (uri, NULL, error);
+	g_free (uri);
+
+	g_signal_connect (emsg, "response",
+			  G_CALLBACK (large_file_load_error_response), tab);
+
+	gtk_box_pack_end (GTK_BOX (tab), emsg, FALSE, FALSE, 0);
+	gtk_widget_show (emsg);
+}
+
+static void
+large_file_load_done (GObject      *source_object,
+		      GAsyncResult *result,
+		      gpointer      user_data)
+{
+	PlumaTab *tab = PLUMA_TAB (source_object);
+	GTask *task = G_TASK (result);
+	PlumaTextBuffer *buffer;
+	GError *error = NULL;
+
+	buffer = g_task_propagate_pointer (task, &error);
+
+	if (buffer == NULL)
+	{
+		show_large_file_load_error (tab, error);
+		g_error_free (error);
+	}
+	else
+	{
+		finish_large_file_load (tab, buffer);
+	}
+}
+
+void
+_pluma_tab_load_large_file (PlumaTab *tab,
+			    GFile    *file)
+{
+	PlumaDocument *doc;
+	gchar *basename;
+	GTask *task;
+
+	g_return_if_fail (PLUMA_IS_TAB (tab));
+	g_return_if_fail (G_IS_FILE (file));
+	g_return_if_fail (tab->priv->large_file_location == NULL);
+
+	tab->priv->large_file_location = g_object_ref (file);
+
+	basename = g_file_get_basename (file);
+	doc = pluma_tab_get_document (tab);
+	pluma_document_set_short_name_for_display (doc, basename);
+	g_free (basename);
+
+	pluma_tab_set_state (tab, PLUMA_TAB_STATE_LOADING);
+
+	gtk_widget_hide (tab->priv->view_scrolled_window);
+	gtk_widget_hide (tab->priv->overlay);
+	show_large_file_loading_placeholder (tab);
+
+	/* g_task_new() takes a ref on @tab (a GObject), keeping it alive for
+	 * the duration of the load even if the user closes the tab. */
+	task = g_task_new (tab, NULL, large_file_load_done, NULL);
+	g_task_set_task_data (task, g_object_ref (file), g_object_unref);
+	g_task_run_in_thread (task, large_file_load_thread);
+	g_object_unref (task);
+}
+
 /* Whether create is TRUE, creates a new empty document if location does
    not refer to an existing file */
 GtkWidget *
@@ -1763,6 +1982,14 @@ pluma_tab_get_document (PlumaTab *tab)
 {
 	return PLUMA_DOCUMENT (gtk_text_view_get_buffer (
 					GTK_TEXT_VIEW (tab->priv->view)));
+}
+
+gboolean
+pluma_tab_is_large_file (PlumaTab *tab)
+{
+	g_return_val_if_fail (PLUMA_IS_TAB (tab), FALSE);
+
+	return tab->priv->large_file_location != NULL;
 }
 
 #define MAX_DOC_NAME_LENGTH 40
@@ -2059,16 +2286,23 @@ _pluma_tab_get_icon (PlumaTab *tab)
 
 		default:
 		{
-			GFile *location;
-			PlumaDocument *doc;
+			if (tab->priv->large_file_location != NULL)
+			{
+				pixbuf = get_icon (theme, tab->priv->large_file_location, icon_size);
+			}
+			else
+			{
+				GFile *location;
+				PlumaDocument *doc;
 
-			doc = pluma_tab_get_document (tab);
+				doc = pluma_tab_get_document (tab);
 
-			location = pluma_document_get_location (doc);
-			pixbuf = get_icon (theme, location, icon_size);
+				location = pluma_document_get_location (doc);
+				pixbuf = get_icon (theme, location, icon_size);
 
-			if (location)
-				g_object_unref (location);
+				if (location)
+					g_object_unref (location);
+			}
 		}
 	}
 
@@ -2132,6 +2366,13 @@ _pluma_tab_revert (PlumaTab *tab)
 	gchar *uri;
 
 	g_return_if_fail (PLUMA_IS_TAB (tab));
+
+	/* "revert" is already kept disabled for large-file tabs (they're
+	 * always reported as "untitled" by the placeholder document); this
+	 * is just a defensive backstop. */
+	if (tab->priv->large_file_location != NULL)
+		return;
+
 	g_return_if_fail ((tab->priv->state == PLUMA_TAB_STATE_NORMAL) ||
 			  (tab->priv->state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION));
 
@@ -2163,6 +2404,70 @@ _pluma_tab_revert (PlumaTab *tab)
 	g_free (uri);
 }
 
+/*
+ * Saves (or Save-As's, if @target differs from the tab's current
+ * location) a large-file tab's real PlumaTextBuffer directly, bracketed
+ * by a SAVING->NORMAL state round-trip so pluma-commands-file.c's
+ * "wait for state to go back to NORMAL, then close the tab" logic (used
+ * by Save-and-close-tab / Save-and-quit) keeps working unmodified.
+ */
+static void
+save_large_file_tab (PlumaTab *tab,
+		     GFile    *target)
+{
+	PlumaTextBuffer *buffer;
+	GError *error = NULL;
+	gchar *path;
+	gboolean ok;
+
+	buffer = pluma_large_file_view_get_buffer (PLUMA_LARGE_FILE_VIEW (tab->priv->large_file_view));
+	path = g_file_get_path (target);
+
+	pluma_tab_set_state (tab, PLUMA_TAB_STATE_SAVING);
+
+	ok = (path != NULL) && pluma_text_buffer_save (buffer, path, &error);
+
+	if (ok)
+	{
+		pluma_large_file_view_mark_saved (PLUMA_LARGE_FILE_VIEW (tab->priv->large_file_view));
+
+		if (!g_file_equal (target, tab->priv->large_file_location))
+		{
+			gchar *basename;
+
+			g_object_unref (tab->priv->large_file_location);
+			tab->priv->large_file_location = g_object_ref (target);
+
+			basename = g_file_get_basename (target);
+			pluma_document_set_short_name_for_display (pluma_tab_get_document (tab), basename);
+			g_free (basename);
+		}
+	}
+	else
+	{
+		GtkWidget *toplevel = gtk_widget_get_toplevel (GTK_WIDGET (tab));
+		GtkWidget *dialog;
+
+		dialog = gtk_message_dialog_new (GTK_IS_WINDOW (toplevel) ? GTK_WINDOW (toplevel) : NULL,
+						 GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+						 GTK_MESSAGE_ERROR, GTK_BUTTONS_OK,
+						 _("Could not save the file"));
+
+		if (error != NULL)
+		{
+			gtk_message_dialog_format_secondary_text (GTK_MESSAGE_DIALOG (dialog), "%s", error->message);
+			g_error_free (error);
+		}
+
+		gtk_dialog_run (GTK_DIALOG (dialog));
+		gtk_widget_destroy (dialog);
+	}
+
+	g_free (path);
+
+	pluma_tab_set_state (tab, PLUMA_TAB_STATE_NORMAL);
+}
+
 void
 _pluma_tab_save (PlumaTab *tab)
 {
@@ -2170,6 +2475,13 @@ _pluma_tab_save (PlumaTab *tab)
 	PlumaDocumentSaveFlags save_flags;
 
 	g_return_if_fail (PLUMA_IS_TAB (tab));
+
+	if (tab->priv->large_file_location != NULL)
+	{
+		save_large_file_tab (tab, tab->priv->large_file_location);
+		return;
+	}
+
 	g_return_if_fail ((tab->priv->state == PLUMA_TAB_STATE_NORMAL) ||
 			  (tab->priv->state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION) ||
 			  (tab->priv->state == PLUMA_TAB_STATE_SHOWING_PRINT_PREVIEW));
@@ -2282,6 +2594,16 @@ _pluma_tab_save_as (PlumaTab                 *tab,
 	PlumaDocument *doc;
 
 	g_return_if_fail (PLUMA_IS_TAB (tab));
+
+	if (tab->priv->large_file_location != NULL)
+	{
+		GFile *target = g_file_new_for_uri (uri);
+
+		save_large_file_tab (tab, target);
+		g_object_unref (target);
+		return;
+	}
+
 	g_return_if_fail ((tab->priv->state == PLUMA_TAB_STATE_NORMAL) ||
 			  (tab->priv->state == PLUMA_TAB_STATE_EXTERNALLY_MODIFIED_NOTIFICATION) ||
 			  (tab->priv->state == PLUMA_TAB_STATE_SHOWING_PRINT_PREVIEW));
@@ -2646,6 +2968,14 @@ pluma_tab_print_or_print_preview (PlumaTab                *tab,
 
 	g_return_if_fail (tab->priv->print_job == NULL);
 	g_return_if_fail (tab->priv->state == PLUMA_TAB_STATE_NORMAL);
+
+	/* Printing operates on the real GtkSourceView pipeline, which the
+	 * large-file engine doesn't have; the "print"/"print-preview"
+	 * actions are already kept disabled for these tabs in
+	 * set_sensitivity_according_to_tab(), this is just a defensive
+	 * backstop in case something else tries to trigger it. */
+	if (tab->priv->large_file_location != NULL)
+		return;
 
 	view = pluma_tab_get_view (tab);
 

@@ -149,6 +149,7 @@ GSList *                pluma_settings_get_writable_vfs_schemes (GSettings *sett
 /* White list of writable mate-vfs methods */
 #define PLUMA_SETTINGS_WRITABLE_VFS_SCHEMES         "writable-vfs-schemes"
 #define PLUMA_SETTINGS_SMART_HOME_END               "smart-home-end"
+#define PLUMA_SETTINGS_LARGE_FILE_THRESHOLD         "large-file-mode-threshold"
 
 /* window state keys */
 #define PLUMA_SETTINGS_WINDOW_STATE                 "state"

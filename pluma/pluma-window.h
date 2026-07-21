@@ -113,6 +113,15 @@ PlumaTab	*pluma_window_create_tab_from_uri	(PlumaWindow         *window,
 							 gboolean             create,
 							 gboolean             jump_to);
 
+/* Creates a tab showing @file in large-file mode (see pluma-tab.h /
+ * pluma-large-file-view.h) instead of the normal GtkSourceView pipeline.
+ * Returns NULL (after showing an error dialog) if @file could not be
+ * opened. */
+PlumaTab	*pluma_window_create_tab_from_large_file
+							(PlumaWindow         *window,
+							 GFile               *file,
+							 gboolean             jump_to);
+
 void		 pluma_window_close_tab			(PlumaWindow         *window,
 							 PlumaTab            *tab);
 

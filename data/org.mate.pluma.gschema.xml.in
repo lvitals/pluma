@@ -60,6 +60,11 @@
       <summary>Writable VFS schemes</summary>
       <description>List of VFS schemes pluma supports in write mode. The 'file' scheme is writable by default.</description>
     </key>
+    <key name="large-file-mode-threshold" type="u">
+      <default>50</default>
+      <summary>Large file mode threshold, in megabytes</summary>
+      <description>Local files larger than this many megabytes are opened in a separate, lightweight large-file window instead of the normal editor tab, since GtkSourceView loads the whole file into memory. Set to 0 to always use the normal editor regardless of file size.</description>
+    </key>
     <key name="max-undo-actions" type="u">
       <default>2000</default>
       <summary>Maximum Number of Undo Actions</summary>

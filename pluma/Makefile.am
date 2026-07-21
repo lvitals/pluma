@@ -83,6 +83,7 @@ NOINST_H_FILES =			\
 	pluma-text-buffer.h		\
 	pluma-text-buffer-private.h	\
 	pluma-text-iter.h		\
+	pluma-large-file-view.h		\
 	plumatextregion.h		\
 	pluma-ui.h			\
 	pluma-window-private.h
@@ -181,6 +182,7 @@ libpluma_c_files = 			\
 	pluma-tab-label.c		\
 	pluma-text-buffer.c		\
 	pluma-text-iter.c		\
+	pluma-large-file-view.c		\
 	pluma-utils.c 			\
 	pluma-view.c 			\
 	pluma-view-activatable.c 	\
